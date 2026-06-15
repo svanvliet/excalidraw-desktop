@@ -2,6 +2,7 @@ mod commands;
 mod error;
 
 use commands::files::{open_file, save_file};
+use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -9,7 +10,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![open_file, save_file])
+        .invoke_handler(tauri::generate_handler![
+            open_file,
+            save_file,
+            write_scratch,
+            read_scratch,
+            delete_scratch,
+            list_scratch
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

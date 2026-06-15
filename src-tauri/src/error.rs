@@ -15,7 +15,6 @@ pub enum AppError {
     #[error("invalid file: {0}")]
     InvalidFile(String),
 
-    #[allow(dead_code)] // surfaced in M3+ when more error sources land
     #[error("{0}")]
     Other(String),
 }
