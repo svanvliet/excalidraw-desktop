@@ -20,6 +20,7 @@
  */
 import { create } from "zustand";
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { log } from "../lib/logger";
 
 export interface OnlineFeaturesSettings {
   collab: boolean;
@@ -91,7 +92,7 @@ async function persist(values: OnlineFeaturesSettings & SecretsSettings): Promis
     await store().save();
   } catch (e) {
     // Never block the UI on persistence; surface for debugging.
-    console.warn("settingsStore: failed to persist", e);
+    log.warn("settingsStore: failed to persist", e);
   }
 }
 
@@ -104,7 +105,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const raw = await store().get<PersistedSettings>(STORE_KEY);
       set({ ...sanitize(raw), loaded: true });
     } catch (e) {
-      console.warn("settingsStore: failed to load, falling back to defaults", e);
+      log.warn("settingsStore: failed to load, falling back to defaults", e);
       set({ ...DEFAULTS, loaded: true });
     }
   },

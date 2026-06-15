@@ -64,6 +64,8 @@ export default [
         Node: "readonly",
         Document: "readonly",
         Event: "readonly",
+        ErrorEvent: "readonly",
+        PromiseRejectionEvent: "readonly",
         SVGSVGElement: "readonly",
         atob: "readonly",
         btoa: "readonly",

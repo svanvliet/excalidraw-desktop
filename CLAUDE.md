@@ -55,6 +55,13 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
 - **Buttons.** The base class is `.icon-btn`. Add `--icon-only` when the button shows only an icon (and always pair with `aria-label` + `title` in that case). Use `--primary` for the dialog's affirmative action, `--danger` for destructive verbs (Reset / Clear / Delete).
 - **Modals.** Use `.modal-backdrop` + `.modal` with `.modal__header`, `.modal__body`, `.modal__actions`. Body scrolls; header and footer stick. Always wire Escape → close and backdrop-click → close.
 
+### Logging & debugging
+
+- Every diagnostic goes through `src/lib/logger.ts` — never sprinkle raw `console.warn` / `console.error` in app code. The logger forwards to `@tauri-apps/plugin-log`, which writes to **stdout, the devtools console, and a rolling file at `$HOME/.excalidraw-desktop/excalidraw-desktop.log`** (configured in `src-tauri/src/lib.rs`). Outside Tauri (vitest, browser preview) the logger transparently falls back to `console.*`.
+- `installGlobalLogHandlers()` is called once from `src/main.tsx`. It captures `window.onerror` and `unhandledrejection`, mirrors `console.warn`/`error` from third-party libs into the file, and emits a startup banner.
+- When the user reports an issue, the first step is to ask them for the log file: `tail -n 200 ~/.excalidraw-desktop/excalidraw-desktop.log`. The file persists across runs (with rotation).
+- Rust code logs via the `log` crate (`log::info!`, `log::warn!`, `log::error!`). Key boot, file-open, and menu events are already instrumented in `src-tauri/src/lib.rs`.
+
 ### Rust
 
 - Every public command in `src-tauri/src/commands/` returns `Result<T, AppError>` where `AppError` is the project's error enum.

@@ -5,13 +5,30 @@ mod menu;
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
 
+use std::path::PathBuf;
 use tauri::{Emitter, Manager, RunEvent};
+use tauri_plugin_log::{Target, TargetKind};
 
 /// Event name shared with the frontend (`src/ipc/openEvents.ts`). Whenever
 /// the OS hands us a file — via `RunEvent::Opened` on macOS, via CLI args
 /// on Windows/Linux, or via the single-instance plugin for a second
 /// invocation — we forward the path here.
 const FILE_OPEN_EVENT: &str = "excalidraw://file-open";
+
+/// Directory inside the user's home where we drop log files. Chosen to be
+/// easy to find and easy to share when triaging.
+const LOG_DIR_NAME: &str = ".excalidraw-desktop";
+const LOG_FILE_NAME: &str = "excalidraw-desktop";
+
+/// Resolve the absolute path for our log directory: `$HOME/.excalidraw-desktop`.
+/// Returns `None` when there's no home (sandboxed envs, CI) — the log
+/// plugin then falls back to its default appdata location, which is still
+/// useful.
+fn log_dir() -> Option<PathBuf> {
+    #[allow(deprecated)]
+    let home = std::env::home_dir()?;
+    Some(home.join(LOG_DIR_NAME))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +42,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // The 2nd invocation typically passes the file path in argv.
             // Forward each .excalidraw / .png path to the running window.
+            log::info!("single-instance: 2nd invocation argv={:?}", argv);
             for arg in argv.iter().skip(1) {
                 if looks_like_openable(arg) {
                     let _ = app.emit(FILE_OPEN_EVENT, arg);
@@ -36,7 +54,47 @@ pub fn run() {
         }));
     }
 
+    // Logging plugin. Writes to:
+    //   * stdout (so `npm run tauri dev` shows everything live)
+    //   * the webview devtools (so the JS console shows Rust logs too)
+    //   * a rolling file at $HOME/.excalidraw-desktop/excalidraw-desktop.log
+    //
+    // Forwards every JS `console.*` call into the same sinks via the
+    // `withWebview: true` capture in `attach_logger` from the JS side.
+    let mut log_builder = tauri_plugin_log::Builder::new()
+        .targets([
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::Webview),
+        ])
+        .level(log::LevelFilter::Debug)
+        // Quiet the noisier third-party crates so our own logs stand out.
+        .level_for("hyper", log::LevelFilter::Info)
+        .level_for("tao", log::LevelFilter::Info)
+        .level_for("wry", log::LevelFilter::Info)
+        .max_file_size(2 * 1024 * 1024)
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{} {} {}] {}",
+                chrono_like_timestamp(),
+                record.level(),
+                record.target(),
+                message
+            ))
+        });
+    if let Some(dir) = log_dir() {
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!("could not create log dir {dir:?}: {e}");
+        } else {
+            log_builder = log_builder.target(Target::new(TargetKind::Folder {
+                path: dir,
+                file_name: Some(LOG_FILE_NAME.to_string()),
+            }));
+        }
+    }
+
     let app = builder
+        .plugin(log_builder.build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -51,12 +109,22 @@ pub fn run() {
             list_scratch
         ])
         .setup(|app| {
+            log::info!(
+                "setup: bootstrapping Excalidraw Desktop v{} on {}",
+                app.package_info().version,
+                std::env::consts::OS
+            );
+            if let Some(dir) = log_dir() {
+                log::info!("setup: log dir = {}", dir.display());
+            }
+
             // First-launch CLI args. On macOS the file path arrives via
             // RunEvent::Opened instead so we just look for it on win/linux.
             #[cfg(not(target_os = "macos"))]
             {
                 for arg in std::env::args().skip(1) {
                     if looks_like_openable(&arg) {
+                        log::info!("setup: forwarding cli file arg {arg}");
                         let _ = app.emit(FILE_OPEN_EVENT, arg);
                     }
                 }
@@ -67,8 +135,13 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 let handle = app.handle();
-                let menu = menu::build_menu(handle)?;
-                app.set_menu(menu)?;
+                match menu::build_menu(handle) {
+                    Ok(menu) => match app.set_menu(menu) {
+                        Ok(_) => log::info!("setup: native menu installed"),
+                        Err(e) => log::error!("setup: set_menu failed: {e}"),
+                    },
+                    Err(e) => log::error!("setup: build_menu failed: {e}"),
+                }
                 app.on_menu_event(menu::forward_menu_event);
             }
             let _ = app;
@@ -81,6 +154,7 @@ pub fn run() {
         // macOS Finder double-click while running, and "Open With" on launch,
         // both arrive here.
         if let RunEvent::Opened { urls } = event {
+            log::info!("RunEvent::Opened urls={:?}", urls);
             for url in urls {
                 let path = url.to_file_path().ok();
                 let display = path
@@ -100,4 +174,71 @@ pub fn run() {
 fn looks_like_openable(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
     lower.ends_with(".excalidraw") || lower.ends_with(".png")
+}
+
+/// Tiny ISO-ish UTC timestamp without pulling in the `chrono` crate.
+/// Resolution is seconds — fine for human triage.
+fn chrono_like_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // YYYY-MM-DDTHH:MM:SS via integer math on UNIX seconds.
+    let (year, month, day, hour, minute, second) = unix_to_ymdhms(secs);
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn unix_to_ymdhms(mut secs: u64) -> (i32, u32, u32, u32, u32, u32) {
+    let second = (secs % 60) as u32;
+    secs /= 60;
+    let minute = (secs % 60) as u32;
+    secs /= 60;
+    let hour = (secs % 24) as u32;
+    secs /= 24;
+    let mut days = secs as i64;
+    let mut year: i32 = 1970;
+    loop {
+        let dy = if is_leap(year) { 366 } else { 365 };
+        if days < dy {
+            break;
+        }
+        days -= dy;
+        year += 1;
+    }
+    let months_len = [
+        31,
+        days_in_feb(year),
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    let mut month: u32 = 1;
+    for &dlen in months_len.iter() {
+        if days < dlen {
+            break;
+        }
+        days -= dlen;
+        month += 1;
+    }
+    let day = (days as u32) + 1;
+    (year, month, day, hour, minute, second)
+}
+
+fn is_leap(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+fn days_in_feb(y: i32) -> i64 {
+    if is_leap(y) {
+        29
+    } else {
+        28
+    }
 }

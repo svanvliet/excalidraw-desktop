@@ -9,6 +9,7 @@
  */
 import { create } from "zustand";
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { log } from "../lib/logger";
 
 const STORE_FILE = "recent-files.json";
 const STORE_KEY = "paths";
@@ -73,7 +74,7 @@ export const useRecentFilesStore = create<RecentFilesState>((set, get) => ({
       // Plugin-store needs the Tauri runtime. Outside of it (web preview,
       // tests without a mock), degrade to an empty list and keep the UI
       // usable. Surface for debugging.
-      console.warn("recentFilesStore.load failed, defaulting to empty", e);
+      log.warn("recentFilesStore.load failed, defaulting to empty", e);
       set({ paths: [] });
     }
   },

@@ -14,6 +14,7 @@ import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { useTabsStore, type Tab } from "./tabsStore";
 import { openFile, listScratch, isAppError } from "../ipc/commands";
 import { detectFormat } from "../lib/fileFormat";
+import { log } from "../lib/logger";
 
 const STORE_FILE = "session.json";
 const STORE_KEY = "v1";
@@ -67,7 +68,7 @@ export async function persistSession(): Promise<void> {
     await store.set(STORE_KEY, snapshot);
     await store.save();
   } catch (err) {
-    console.warn("session persist failed", err);
+    log.warn("session persist failed", err);
   }
 }
 
@@ -79,7 +80,7 @@ export async function readPersistedSession(): Promise<PersistedSession | null> {
     if (!raw || !Array.isArray(raw.tabs)) return null;
     return raw;
   } catch (e) {
-    console.warn("session read failed, treating as empty", e);
+    log.warn("session read failed, treating as empty", e);
     return null;
   }
 }
@@ -99,61 +100,87 @@ export interface RestoreResult {
  *   the caller's ensureActiveTab() can seed a blank tab as usual.
  */
 export async function restoreSession(): Promise<RestoreResult> {
-  const persisted = await readPersistedSession();
-  if (!persisted || persisted.tabs.length === 0) {
+  log.info("restoreSession: start");
+  let persisted: PersistedSession | null = null;
+  try {
+    persisted = await readPersistedSession();
+  } catch (err) {
+    log.error("restoreSession: read failed, starting fresh", err);
     return { restored: 0, skipped: 0 };
   }
+  if (!persisted || persisted.tabs.length === 0) {
+    log.info("restoreSession: nothing to restore");
+    return { restored: 0, skipped: 0 };
+  }
+  log.info(
+    `restoreSession: found ${persisted.tabs.length} persisted tabs, activeTabId=${persisted.activeTabId}`,
+  );
 
-  const scratchEntries = await listScratch().catch(() => []);
+  const scratchEntries = await listScratch().catch((err) => {
+    log.warn("restoreSession: listScratch failed", err);
+    return [];
+  });
   const scratchByKey = new Map(scratchEntries.map((e) => [e.key, e.contents]));
 
   const restored: Tab[] = [];
   let skipped = 0;
 
   for (const entry of persisted.tabs) {
-    if (entry.path) {
-      try {
-        const opened = await openFile(entry.path);
-        const detected = detectFormat(opened.contents);
+    try {
+      if (entry.path) {
+        try {
+          const opened = await openFile(entry.path);
+          const detected = detectFormat(opened.contents);
+          if (detected.kind !== "excalidraw-json" || !detected.parsed) {
+            log.warn(
+              `restoreSession: skipping tab ${entry.id} — file content not JSON (${detected.kind})`,
+            );
+            skipped += 1;
+            continue;
+          }
+          restored.push({
+            id: entry.id,
+            path: opened.path,
+            dirty: false,
+            initialData: toInitial(detected.parsed),
+          });
+        } catch (err) {
+          if (isAppError(err)) {
+            log.warn(`restoreSession: skipping missing recent tab ${entry.path}`, err);
+          } else {
+            log.error(`restoreSession: open failed for ${entry.path}`, err);
+          }
+          skipped += 1;
+        }
+      } else {
+        const scratch = scratchByKey.get(entry.id);
+        if (!scratch) {
+          log.warn(`restoreSession: no scratch found for untitled tab ${entry.id}`);
+          skipped += 1;
+          continue;
+        }
+        const detected = detectFormat(scratch);
         if (detected.kind !== "excalidraw-json" || !detected.parsed) {
+          log.warn(`restoreSession: scratch for tab ${entry.id} not JSON (${detected.kind})`);
           skipped += 1;
           continue;
         }
         restored.push({
           id: entry.id,
-          path: opened.path,
-          dirty: false,
+          path: null,
+          dirty: true,
           initialData: toInitial(detected.parsed),
         });
-      } catch (err) {
-        if (isAppError(err)) {
-          console.warn(`skipping missing recent tab: ${entry.path}`, err);
-        }
-        skipped += 1;
       }
-    } else {
-      const scratch = scratchByKey.get(entry.id);
-      if (!scratch) {
-        skipped += 1;
-        continue;
-      }
-      const detected = detectFormat(scratch);
-      if (detected.kind !== "excalidraw-json" || !detected.parsed) {
-        skipped += 1;
-        continue;
-      }
-      restored.push({
-        id: entry.id,
-        path: null,
-        // Untitled-from-scratch starts dirty because it's never been saved
-        // to a real file.
-        dirty: true,
-        initialData: toInitial(detected.parsed),
-      });
+    } catch (err) {
+      // Belt and braces: a malformed entry must never crash the whole boot.
+      log.error(`restoreSession: unexpected failure on tab ${entry.id}`, err);
+      skipped += 1;
     }
   }
 
   if (restored.length === 0) {
+    log.info(`restoreSession: nothing restored (skipped=${skipped})`);
     return { restored: 0, skipped };
   }
 
@@ -162,7 +189,13 @@ export async function restoreSession(): Promise<RestoreResult> {
       ? persisted.activeTabId
       : restored[0].id;
 
-  useTabsStore.getState().replaceAll(restored, wantedActive);
+  try {
+    useTabsStore.getState().replaceAll(restored, wantedActive);
+  } catch (err) {
+    log.error("restoreSession: replaceAll threw — clearing tabs", err);
+    return { restored: 0, skipped: skipped + restored.length };
+  }
+  log.info(`restoreSession: restored=${restored.length} skipped=${skipped} active=${wantedActive}`);
   return { restored: restored.length, skipped };
 }
 

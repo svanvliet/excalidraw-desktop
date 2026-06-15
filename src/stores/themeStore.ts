@@ -13,6 +13,7 @@
  */
 import { create } from "zustand";
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { log } from "../lib/logger";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -90,7 +91,7 @@ async function persist(mode: ThemeMode): Promise<void> {
     await store().set(STORE_KEY, mode);
     await store().save();
   } catch (e) {
-    console.warn("themeStore: failed to persist", e);
+    log.warn("themeStore: failed to persist", e);
   }
 }
 
@@ -107,8 +108,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       const resolved = resolve(mode);
       set({ mode, resolved, loaded: true });
       applyToDom(resolved);
+      log.info(`themeStore: loaded mode=${mode} resolved=${resolved}`);
     } catch (e) {
-      console.warn("themeStore: failed to load, falling back to system", e);
+      log.warn("themeStore: failed to load, falling back to system", e);
       const resolved = resolve(DEFAULT_MODE);
       set({ mode: DEFAULT_MODE, resolved, loaded: true });
       applyToDom(resolved);

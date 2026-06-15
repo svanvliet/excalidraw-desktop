@@ -37,6 +37,7 @@ import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
+import { log } from "./lib/logger";
 
 const OPEN_FILTERS = [
   { name: "Excalidraw", extensions: ["excalidraw", "png"] },
@@ -98,7 +99,7 @@ export function App() {
           },
           onError: (_target, err) => {
             // Surface but don't block the UI — autosave is best-effort.
-            console.warn("autosave failed", err);
+            log.warn("autosave failed", err);
           },
         },
         2000,
@@ -137,6 +138,7 @@ export function App() {
   const menuActionRef = useRef<(id: MenuItemId) => void>(() => {});
 
   useEffect(() => {
+    log.info("App: mount effect starting");
     let cancelled = false;
     let unlistenFileOpen: (() => void) | null = null;
     let unlistenDrop: (() => void) | null = null;
@@ -144,36 +146,49 @@ export function App() {
     (async () => {
       // Try to restore the previous session first; only seed a blank tab
       // if there was nothing to restore (or every entry was missing).
-      const { restored } = await restoreSession();
+      let restored = 0;
+      try {
+        const result = await restoreSession();
+        restored = result.restored;
+      } catch (err) {
+        log.error("App: restoreSession threw, falling back to blank tab", err);
+      }
       if (cancelled) return;
-      if (restored === 0) ensureActiveTab();
+      if (restored === 0) {
+        log.info("App: seeding blank tab via ensureActiveTab()");
+        ensureActiveTab();
+      }
       void loadRecent();
       void loadSettings();
       void loadTheme();
+      log.info("App: stores loaded (recent, settings, theme)");
       // Subscribe to OS file-open events (double-click, drag-onto-icon,
       // single-instance reroute) and route them through the latest openPath.
       // Each subscription is wrapped so a missing Tauri runtime (web preview
       // for Playwright smoke) doesn't crash the mount effect.
       try {
         unlistenFileOpen = await onFileOpenRequest((path) => {
+          log.info(`App: file-open event path=${path}`);
           void openPathRef.current(path);
         });
       } catch (e) {
-        console.warn("file-open subscription unavailable", e);
+        log.warn("App: file-open subscription unavailable", e);
       }
       try {
         unlistenDrop = await onWindowFileDrop((path) => {
+          log.info(`App: file-drop event path=${path}`);
           void openPathRef.current(path);
         });
       } catch (e) {
-        console.warn("drag-drop subscription unavailable", e);
+        log.warn("App: drag-drop subscription unavailable", e);
       }
       try {
         unlistenMenu = await onMenuEvent((id) => {
+          log.info(`App: menu event id=${id}`);
           menuActionRef.current(id);
         });
       } catch (e) {
-        console.warn("menu subscription unavailable", e);
+        log.warn("App: menu subscription unavailable", e);
       }
       if (cancelled) {
         unlistenFileOpen?.();
@@ -182,6 +197,8 @@ export function App() {
         unlistenFileOpen = null;
         unlistenDrop = null;
         unlistenMenu = null;
+      } else {
+        log.info("App: mount effect ready");
       }
     })();
     // Persist session on every tabs-store change.

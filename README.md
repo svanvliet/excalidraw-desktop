@@ -124,6 +124,31 @@ post-v1**.
 
 ---
 
+## Troubleshooting
+
+The app writes a rolling log file to:
+
+```
+~/.excalidraw-desktop/excalidraw-desktop.log
+```
+
+(On Windows: `%USERPROFILE%\.excalidraw-desktop\excalidraw-desktop.log`.)
+
+It contains both Rust-side events (startup, native menu, file-open IPC)
+and JavaScript-side events (mount lifecycle, session restore, persisted
+store loads, plus any `console.warn` / `console.error` and uncaught
+exceptions). When triaging an issue, grab the last few hundred lines:
+
+```bash
+tail -n 200 ~/.excalidraw-desktop/excalidraw-desktop.log
+```
+
+To get more detail in a single run, launch the app with verbose stdout
+via `npm run tauri dev` — every log line is also printed live to the
+terminal.
+
+---
+
 ## Documentation
 
 - [`docs/requirements.md`](docs/requirements.md) — what we're building and why.
