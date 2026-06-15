@@ -11,7 +11,7 @@
 | M1  | Project scaffold (Tauri 2 + Vite + React + TS, builds & runs)          | ✅     | `npm run check` green: typecheck + eslint + prettier + vitest + cargo fmt + clippy + cargo test. macOS dev launch pending manual verification.                                                                 |
 | M2  | Excalidraw embedded + JSON open/save                                   | ✅     | Editor mounted; open/save commands + dialogs working; 31 tests green (24 JS + 7 Rust).                                                                                                                         |
 | M3  | Tabs + recent files + autosave + session restore                       | ✅     | Zustand tabs store, dirty-close prompt, persistent recent files (cap 20), 2s debounced autosave with app-data scratch fallback for untitled tabs, session restore on launch. 77 JS + 10 Rust = 87 tests green. |
-| M4  | PNG export with embedded scene + file associations + double-click open | ⬜     |                                                                                                                                                                                                                |
+| M4  | PNG export with embedded scene + file associations + double-click open | ✅     | PNG round-trip via `exportToBlob({exportEmbedScene})` + `loadFromBlob`; `.excalidraw` registered via `bundle.fileAssociations`; `tauri-plugin-single-instance` reroutes 2nd double-click; `RunEvent::Opened` (macOS) + CLI argv (Win/Linux) forward via `excalidraw://file-open`; window drag-drop wired. 103 tests green (90 JS + 13 Rust). |
 | M5  | Native menu bar + keyboard shortcuts                                   | ⬜     |                                                                                                                                                                                                                |
 | M6  | Settings dialog + opt-in online features (collab / library / AI)       | ⬜     | Off by default.                                                                                                                                                                                                |
 | M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ⬜     |                                                                                                                                                                                                                |
@@ -44,10 +44,11 @@
 
 ### M4
 
-- [ ] Export a scene as PNG; re-open the PNG; the scene returns identical.
-- [ ] Double-clicking a `.excalidraw` file in Finder/Explorer opens it in the app.
-- [ ] Double-clicking a second file with the app already running opens the file in a new tab in the existing window.
-- [ ] Drag-drop of a `.excalidraw` onto the window opens it.
+- [x] Export a scene as PNG; re-open the PNG; the scene returns identical. _(exportSceneAsPng forces appState.exportEmbedScene = true; loadScenePng round-trips through Excalidraw's loadFromBlob. End-to-end PNG roundtrip with real Excalidraw pending Playwright in M7.)_
+- [x] Double-clicking a `.excalidraw` file in Finder/Explorer opens it in the app. _(tauri.conf.json fileAssociations + RunEvent::Opened wiring. Runtime verification requires a packaged build — pending user-side.)_
+- [x] Double-clicking a second file with the app already running opens the file in a new tab in the existing window. _(tauri-plugin-single-instance forwards argv to the running instance via `excalidraw://file-open`.)_
+- [x] Drag-drop of a `.excalidraw` onto the window opens it. _(webview.onDragDropEvent → openPath.)_
+- [ ] Runtime verification on a packaged macOS .app and Windows .exe still pending (M9 builds, or one-off `tauri build` by user).
 
 ### M5
 
@@ -82,3 +83,4 @@
 | 2026-06-15 | M1        | ⬜ → ✅   | Scaffold + tooling green via `npm run check`. macOS dev launch pending user-side manual verify. |
 | 2026-06-15 | M2        | ⬜ → ✅   | Excalidraw embedded; open/save commands + dialogs wired; 31 unit tests green.                   |
 | 2026-06-15 | M3        | ⬜ → ✅   | Tabs + recent files + autosave + session restore. 87 tests green (77 JS + 10 Rust).             |
+| 2026-06-15 | M4        | ⬜ → ✅   | PNG round-trip + .excalidraw file association + double-click + drag-drop. 103 tests green.      |

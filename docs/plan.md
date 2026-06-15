@@ -153,14 +153,19 @@ excalidraw-app/
 - `sessionStore.ts` persists `{ tabs: [{ id, path }], activeTabId }` to `session.json` on every store change. On launch, files are reopened, untitled tabs are matched to scratch entries by tab id, missing files are silently dropped (console warn). If everything is skipped, `ensureActiveTab()` seeds a blank tab as usual.
 - 77 JS + 10 Rust = 87 tests green.
 
-### M4 — PNG export with embedded scene + file associations
+### M4 — PNG export with embedded scene + file associations ✅
 
-- Use `@excalidraw/excalidraw`'s `exportToBlob` to produce PNG with `appState` and `elements` embedded in metadata.
-- Rust command `export_png(path, bytes)`; FE chooses path via `tauri-plugin-dialog`.
-- Re-open of PNG: detect Excalidraw metadata via `lib/fileFormat.ts`, parse, restore scene.
-- `tauri.conf.json` `bundle.fileAssociations`: register `.excalidraw` (role: Editor, MIME: `application/vnd.excalidraw+json`).
-- macOS: file-open events arrive via `RunEvent::Opened`. Windows: use `tauri-plugin-deep-link` argv handler + `tauri-plugin-single-instance` to route to running instance.
-- Drag-drop onto window: Tauri's `FileDrop` event → open as new tab.
+**Done. Final design:**
+
+- `src/lib/pngScene.ts`: `exportSceneAsPng` forces `appState.exportEmbedScene = true` so the scene survives regardless of editor state; `loadScenePng` round-trips via Excalidraw's `loadFromBlob` and returns `null` on failure.
+- `src/lib/fileFormat.ts`: `looksLikePng` (magic check), `base64ToBytes` / `bytesToBase64` (chunked for big buffers), `formatFromExtension`.
+- Rust: `read_file_bytes` + `write_file_bytes` (base64 over IPC because Tauri serializes `Vec<u8>` as a JSON array, which is huge for a 200 KB PNG). New `base64` crate.
+- `tauri.conf.json` `bundle.fileAssociations`: `.excalidraw` registered as Editor with MIME `application/vnd.excalidraw+json`.
+- `tauri-plugin-single-instance` initialized as the first plugin so a second double-click routes argv to the running window via `excalidraw://file-open`.
+- macOS file-open: `RunEvent::Opened { urls }` in `app.run`. Win/Linux: parse argv in `setup`. Same event name in both paths.
+- Drag-drop: `getCurrentWebview().onDragDropEvent` → flatten paths → `openPath`.
+- `openPathRef` so the long-lived event subscription always calls the freshest `openPath` closure without re-subscribing.
+- 90 JS + 13 Rust = 103 tests green.
 
 ### M5 — Native menus & keyboard shortcuts
 
