@@ -178,15 +178,21 @@ excalidraw-app/
 - Frontend: `src/ipc/menuEvents.ts` exposes the typed `MenuItemId`, an `onMenuEvent` subscriber, and a `dispatchShortcut` helper. App.tsx subscribes once at mount via a `menuActionRef` so its `handleMenuAction` closure is always called fresh. Undo/Redo/Zoom dispatch a synthetic keydown into the document because Excalidraw owns its history stack and does not respond to the OS "undo:" responder.
 - 96 JS + 15 Rust = 111 tests green.
 
-### M6 — Settings dialog + opt-in online features
+### M6 — Settings dialog + opt-in online features ✅
 
-- `SettingsDialog.tsx`: three toggles (Collab, Library browser, AI) + key/config fields.
-- `settingsStore`: persisted via `tauri-plugin-store`; secrets via `tauri-plugin-keyring`.
-- Wire toggles into the props passed to `@excalidraw/excalidraw`:
-  - `isCollaborating` / Firebase config injected only if enabled.
-  - Library browser: open `https://libraries.excalidraw.com` in system browser via `tauri-plugin-opener` (no in-app webview).
-  - AI: pass user-supplied OpenAI key to Excalidraw's AI panel via its prop hook.
-- CSP: default forbids remote scripts; relax per-toggle at runtime via dynamic header injection (or by enabling specific domains in capabilities).
+**Done. Final design:**
+
+- `src/stores/settingsStore.ts`: Zustand store of three booleans (`collab`, `library`, `ai`) and two secrets (`openAiKey`, `firebaseConfig`). Persisted via `tauri-plugin-store` to `<appData>/settings.json`. A `sanitize()` step on load ignores wrong-typed values so a tampered file degrades to defaults. `resetAll()` is exposed for the dialog and tests.
+- `src/components/SettingsDialog.tsx`: modal with one toggle per feature, a hint describing what data leaves the device, two password/textarea secret fields, a loud "values stored unencrypted on disk" warning, plus Done and Reset-all buttons. Closes on Esc or backdrop click.
+- `src/components/ExcalidrawCanvas.tsx`: now accepts `aiEnabled` / `isCollaborating` / `libraryReturnUrl`. All three default to off / undefined so the editor stays fully offline unless a flag is true.
+- `src/App.tsx`: `loadSettings()` runs on mount; toggle values are read each render and passed into every `ExcalidrawCanvas`. Dialog opens from the toolbar `Settings` button or from the native `excalidraw:file:settings` menu item.
+- Native menu (`src-tauri/src/menu.rs`): on macOS the Settings item lives in the App menu (between About and Services) with `Cmd+,`; on Win/Linux it goes into File with `Ctrl+,`.
+
+**Follow-ups deferred post-v1:**
+
+- Native keychain integration for secrets (replace plain `settings.json` storage with the OS keyring).
+- Library: when `library` is true, optionally surface a toolbar button that opens libraries.excalidraw.com in the system browser via `tauri-plugin-opener` (today Excalidraw itself handles the library UI once we pass `libraryReturnUrl`).
+- CSP relaxation per-toggle (currently CSP is open enough for the embedded editor; revisit when adding remote endpoints).
 
 ### M7 — Tests
 

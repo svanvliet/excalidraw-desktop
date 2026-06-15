@@ -13,7 +13,7 @@
 | M3  | Tabs + recent files + autosave + session restore                       | ✅     | Zustand tabs store, dirty-close prompt, persistent recent files (cap 20), 2s debounced autosave with app-data scratch fallback for untitled tabs, session restore on launch. 77 JS + 10 Rust = 87 tests green.                                                                                                                               |
 | M4  | PNG export with embedded scene + file associations + double-click open | ✅     | PNG round-trip via `exportToBlob({exportEmbedScene})` + `loadFromBlob`; `.excalidraw` registered via `bundle.fileAssociations`; `tauri-plugin-single-instance` reroutes 2nd double-click; `RunEvent::Opened` (macOS) + CLI argv (Win/Linux) forward via `excalidraw://file-open`; window drag-drop wired. 103 tests green (90 JS + 13 Rust). |
 | M5  | Native menu bar + keyboard shortcuts                                   | ✅     | Tauri MenuBuilder with File/Edit/View/Window/Help. Custom items route via `excalidraw://menu` to existing App handlers; Undo/Redo/Zoom replay synthetic keydown for Excalidraw's internal handler. Platform-correct `$Mod` → Cmd/Ctrl mapping. 111 tests green (96 JS + 15 Rust).                                                            |
-| M6  | Settings dialog + opt-in online features (collab / library / AI)       | ⬜     | Off by default.                                                                                                                                                                                                                                                                                                                              |
+| M6  | Settings dialog + opt-in online features (collab / library / AI)       | ✅     | All toggles default false; Zustand `settingsStore` persisted to `settings.json`; `SettingsDialog` modal with 3 toggles + 2 secret fields + Reset-all; wired into `ExcalidrawCanvas` props (`aiEnabled` / `isCollaborating` / `libraryReturnUrl`). Native-keychain secret storage deferred post-v1. 125 tests green (110 JS + 15 Rust).       |
 | M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ⬜     |                                                                                                                                                                                                                                                                                                                                              |
 | M8  | Docs polish + signing/notarization documentation                       | ⬜     | Implementation deferred — docs only.                                                                                                                                                                                                                                                                                                         |
 | M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1.                                                                                                                                                                                                                                                                                                                                     |
@@ -59,10 +59,10 @@
 
 ### M6
 
-- [ ] All three toggles default off after fresh install.
-- [ ] Toggle state survives quit + relaunch.
-- [ ] With all toggles off, Playwright smoke under network-blocked mode records zero outbound requests.
-- [ ] Secrets (OpenAI key, Firebase config) read/write via OS keychain.
+- [x] All three toggles default off after fresh install. _(invariant test `every online toggle defaults to false` in settingsStore.test.ts.)_
+- [x] Toggle state survives quit + relaunch. _(persisted via `tauri-plugin-store` to `settings.json`; cross-reload test asserts the round-trip.)_
+- [ ] With all toggles off, Playwright smoke under network-blocked mode records zero outbound requests. _(M7 — Playwright not wired yet.)_
+- [ ] Secrets (OpenAI key, Firebase config) read/write via OS keychain. _(deferred post-v1; for now stored unencrypted in `settings.json` with a loud warning in the dialog.)_
 
 ### M7
 
@@ -86,3 +86,4 @@
 | 2026-06-15 | M3        | ⬜ → ✅   | Tabs + recent files + autosave + session restore. 87 tests green (77 JS + 10 Rust).             |
 | 2026-06-15 | M4        | ⬜ → ✅   | PNG round-trip + .excalidraw file association + double-click + drag-drop. 103 tests green.      |
 | 2026-06-15 | M5        | ⬜ → ✅   | Native menu bar + Cmd/Ctrl accelerators + dispatched undo/redo/zoom. 111 tests green.           |
+| 2026-06-15 | M6        | ⬜ → ✅   | Settings dialog + opt-in online features; defaults off; 125 tests green (110 JS + 15 Rust).     |
