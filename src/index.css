@@ -15,15 +15,76 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1.5rem;
 }
 
-.app-shell__header h1 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.5rem;
+.app-shell__canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
 }
 
-.app-shell__header p {
-  margin: 0;
+.excalidraw-canvas,
+.excalidraw-canvas .excalidraw,
+.excalidraw-canvas .excalidraw .excalidraw-container {
+  height: 100%;
+  width: 100%;
+}
+
+.app-shell__error {
+  background: #fee2e2;
+  color: #7f1d1d;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #fca5a5;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+  background: var(--toolbar-bg, transparent);
+}
+
+.toolbar__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.toolbar__name {
+  font-weight: 600;
+}
+
+.toolbar__dirty {
   opacity: 0.7;
+  font-size: 0.9em;
+}
+
+.toolbar__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.toolbar__actions button {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.toolbar__actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolbar__actions button:not(:disabled):hover {
+  background: rgba(127, 127, 127, 0.1);
 }
