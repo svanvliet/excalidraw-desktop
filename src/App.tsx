@@ -13,11 +13,33 @@ import { RecentMenu } from "./components/RecentMenu";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { persistSession, restoreSession } from "./stores/sessionStore";
-import { openFile, saveFile, writeScratch, deleteScratch, isAppError } from "./ipc/commands";
-import { detectFormat, serializeScene } from "./lib/fileFormat";
+import {
+  openFile,
+  saveFile,
+  readFileBytes,
+  writeFileBytes,
+  writeScratch,
+  deleteScratch,
+  isAppError,
+} from "./ipc/commands";
+import {
+  detectFormat,
+  serializeScene,
+  looksLikePng,
+  base64ToBytes,
+  bytesToBase64,
+  formatFromExtension,
+} from "./lib/fileFormat";
+import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
 
+const OPEN_FILTERS = [
+  { name: "Excalidraw", extensions: ["excalidraw", "png"] },
+  { name: "Excalidraw JSON", extensions: ["excalidraw"] },
+  { name: "PNG (with embedded scene)", extensions: ["png"] },
+];
 const EXCALIDRAW_FILTERS = [{ name: "Excalidraw", extensions: ["excalidraw"] }];
+const PNG_FILTERS = [{ name: "PNG", extensions: ["png"] }];
 
 export function App() {
   const tabs = useTabsStore((s) => s.tabs);
@@ -121,6 +143,23 @@ export function App() {
     async (path: string) => {
       setError(null);
       try {
+        if (formatFromExtension(path) === "png") {
+          const opened = await readFileBytes(path);
+          const bytes = base64ToBytes(opened.base64);
+          if (!looksLikePng(bytes)) {
+            setError("File extension is .png but the contents are not a valid PNG.");
+            return;
+          }
+          const initial = await loadScenePng(bytes);
+          if (!initial) {
+            setError("No Excalidraw scene found in this PNG.");
+            return;
+          }
+          openTabAction(opened.path, initial);
+          void addRecent(opened.path);
+          return;
+        }
+
         const opened = await openFile(path);
         const detected = detectFormat(opened.contents);
         if (detected.kind !== "excalidraw-json" || !detected.parsed) {
@@ -152,7 +191,7 @@ export function App() {
       const selected = await openDialog({
         multiple: false,
         directory: false,
-        filters: EXCALIDRAW_FILTERS,
+        filters: OPEN_FILTERS,
       });
       if (typeof selected !== "string") return;
       await openPath(selected);
@@ -216,6 +255,30 @@ export function App() {
     }
   }, [handleSaveAsInternal]);
 
+  const handleExportPng = useCallback(async () => {
+    setError(null);
+    try {
+      if (!activeTab) return;
+      const api = apisRef.current.get(activeTab.id);
+      if (!api) return;
+      const defaultName = activeTab.path
+        ? activeTab.path.replace(/\.(excalidraw|png)$/i, "") + ".png"
+        : "untitled.png";
+      const chosen = await saveDialog({
+        defaultPath: defaultName,
+        filters: PNG_FILTERS,
+      });
+      if (typeof chosen !== "string") return;
+      const blob = await exportSceneAsPng(api);
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      await writeFileBytes(chosen, bytesToBase64(buf));
+      // Track the exported PNG in recent files so the user can re-open it.
+      void addRecent(chosen);
+    } catch (e) {
+      setError(formatError(e));
+    }
+  }, [activeTab, addRecent]);
+
   const handleNew = useCallback(() => newTab(), [newTab]);
 
   const requestCloseTab = useCallback(
@@ -276,6 +339,7 @@ export function App() {
         onOpen={handleOpen}
         onSave={() => void handleSave()}
         onSaveAs={handleSaveAs}
+        onExportPng={handleExportPng}
       >
         <RecentMenu
           paths={recentPaths}

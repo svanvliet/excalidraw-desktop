@@ -3,6 +3,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: () => <div data-testid="excalidraw-mock" />,
+  exportToBlob: vi.fn(async () => new Blob()),
+  loadFromBlob: vi.fn(async () => ({ elements: [], appState: {}, files: {} })),
 }));
 
 vi.mock("@excalidraw/excalidraw/index.css", () => ({}));
@@ -29,6 +31,8 @@ vi.mock("@tauri-apps/plugin-store", () => {
 vi.mock("./ipc/commands", () => ({
   openFile: vi.fn(),
   saveFile: vi.fn(),
+  readFileBytes: vi.fn(),
+  writeFileBytes: vi.fn(),
   writeScratch: vi.fn(),
   readScratch: vi.fn(),
   deleteScratch: vi.fn(),

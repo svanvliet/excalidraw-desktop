@@ -2,7 +2,10 @@
  * Helpers for detecting and parsing Excalidraw file formats.
  *
  * The native Excalidraw format is JSON with a `type: "excalidraw"` discriminator.
- * In M4 we'll also detect PNG-with-embedded-scene; for now we only deal with JSON.
+ * Excalidraw can also embed the scene inside a PNG (via a tEXt/iTXt chunk):
+ * - On read we detect the magic bytes and let the upstream `loadFromBlob`
+ *   helper extract the scene.
+ * - On write we use Excalidraw's `exportToBlob({ embedScene: true })`.
  */
 
 /** Minimal shape we care about when validating an Excalidraw JSON file. */
@@ -78,4 +81,42 @@ export function serializeScene(
     files,
   };
   return JSON.stringify(document, null, 2);
+}
+
+/** PNG magic bytes — first 8 bytes of every PNG file. */
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** True if `bytes` begins with the PNG signature. */
+export function looksLikePng(bytes: Uint8Array): boolean {
+  if (bytes.length < PNG_MAGIC.length) return false;
+  for (let i = 0; i < PNG_MAGIC.length; i++) {
+    if (bytes[i] !== PNG_MAGIC[i]) return false;
+  }
+  return true;
+}
+
+/** Decode standard base64 into a Uint8Array. Works in jsdom. */
+export function base64ToBytes(b64: string): Uint8Array {
+  // atob is available in browser + jsdom environments.
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+/** Encode a Uint8Array into a standard base64 string. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  // chunked to avoid call-stack overflow on large buffers
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as number[]);
+  }
+  return btoa(binary);
+}
+
+/** Pick the file format based on its path extension. Defaults to JSON. */
+export function formatFromExtension(path: string): "png" | "json" {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".png") ? "png" : "json";
 }

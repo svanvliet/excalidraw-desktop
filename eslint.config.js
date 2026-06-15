@@ -60,6 +60,8 @@ export default [
         MouseEvent: "readonly",
         Node: "readonly",
         Event: "readonly",
+        atob: "readonly",
+        btoa: "readonly",
       },
     },
     plugins: {
