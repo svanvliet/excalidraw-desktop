@@ -12,6 +12,7 @@ import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
+import { persistSession, restoreSession } from "./stores/sessionStore";
 import { openFile, saveFile, writeScratch, deleteScratch, isAppError } from "./ipc/commands";
 import { detectFormat, serializeScene } from "./lib/fileFormat";
 import { createAutosaver } from "./lib/autosave";
@@ -88,9 +89,22 @@ export function App() {
   );
 
   useEffect(() => {
-    ensureActiveTab();
-    void loadRecent();
+    let cancelled = false;
+    (async () => {
+      // Try to restore the previous session first; only seed a blank tab
+      // if there was nothing to restore (or every entry was missing).
+      const { restored } = await restoreSession();
+      if (cancelled) return;
+      if (restored === 0) ensureActiveTab();
+      void loadRecent();
+    })();
+    // Persist session on every tabs-store change.
+    const unsubscribe = useTabsStore.subscribe(() => {
+      void persistSession();
+    });
     return () => {
+      cancelled = true;
+      unsubscribe();
       autosaver.cancelAll();
     };
   }, [loadRecent, autosaver]);
