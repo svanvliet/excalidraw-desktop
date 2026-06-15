@@ -14,6 +14,16 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
+
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: vi.fn(async () => () => {}),
+  }),
+}));
+
 vi.mock("@tauri-apps/plugin-store", () => {
   class FakeStore {
     private data = new Map<string, unknown>();

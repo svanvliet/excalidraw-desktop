@@ -32,6 +32,7 @@ import {
 } from "./lib/fileFormat";
 import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
+import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 
 const OPEN_FILTERS = [
   { name: "Excalidraw", extensions: ["excalidraw", "png"] },
@@ -110,8 +111,14 @@ export function App() {
     [autosaver, captureSnapshot],
   );
 
+  // Ref to the latest openPath so the file-open subscription doesn't have
+  // to re-subscribe whenever the callback identity changes.
+  const openPathRef = useRef<(path: string) => Promise<void> | void>(() => {});
+
   useEffect(() => {
     let cancelled = false;
+    let unlistenFileOpen: (() => void) | null = null;
+    let unlistenDrop: (() => void) | null = null;
     (async () => {
       // Try to restore the previous session first; only seed a blank tab
       // if there was nothing to restore (or every entry was missing).
@@ -119,6 +126,21 @@ export function App() {
       if (cancelled) return;
       if (restored === 0) ensureActiveTab();
       void loadRecent();
+      // Subscribe to OS file-open events (double-click, drag-onto-icon,
+      // single-instance reroute) and route them through the latest openPath.
+      unlistenFileOpen = await onFileOpenRequest((path) => {
+        void openPathRef.current(path);
+      });
+      // Drop a file onto the window → open it as a new tab.
+      unlistenDrop = await onWindowFileDrop((path) => {
+        void openPathRef.current(path);
+      });
+      if (cancelled) {
+        unlistenFileOpen?.();
+        unlistenDrop?.();
+        unlistenFileOpen = null;
+        unlistenDrop = null;
+      }
     })();
     // Persist session on every tabs-store change.
     const unsubscribe = useTabsStore.subscribe(() => {
@@ -127,6 +149,8 @@ export function App() {
     return () => {
       cancelled = true;
       unsubscribe();
+      unlistenFileOpen?.();
+      unlistenDrop?.();
       autosaver.cancelAll();
     };
   }, [loadRecent, autosaver]);
@@ -184,6 +208,12 @@ export function App() {
     },
     [openTabAction, addRecent, removeRecent],
   );
+
+  // Keep the ref pointed at the latest openPath so the file-open subscriber
+  // (registered once at mount) always calls the freshest closure.
+  useEffect(() => {
+    openPathRef.current = openPath;
+  }, [openPath]);
 
   const handleOpen = useCallback(async () => {
     setError(null);
