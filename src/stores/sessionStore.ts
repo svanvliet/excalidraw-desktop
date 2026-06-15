@@ -73,10 +73,15 @@ export async function persistSession(): Promise<void> {
 
 /** Read the persisted session, returning null if nothing is saved. */
 export async function readPersistedSession(): Promise<PersistedSession | null> {
-  const store = await getStore();
-  const raw = await store.get<PersistedSession>(STORE_KEY);
-  if (!raw || !Array.isArray(raw.tabs)) return null;
-  return raw;
+  try {
+    const store = await getStore();
+    const raw = await store.get<PersistedSession>(STORE_KEY);
+    if (!raw || !Array.isArray(raw.tabs)) return null;
+    return raw;
+  } catch (e) {
+    console.warn("session read failed, treating as empty", e);
+    return null;
+  }
 }
 
 export interface RestoreResult {

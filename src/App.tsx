@@ -148,17 +148,29 @@ export function App() {
       void loadSettings();
       // Subscribe to OS file-open events (double-click, drag-onto-icon,
       // single-instance reroute) and route them through the latest openPath.
-      unlistenFileOpen = await onFileOpenRequest((path) => {
-        void openPathRef.current(path);
-      });
-      // Drop a file onto the window → open it as a new tab.
-      unlistenDrop = await onWindowFileDrop((path) => {
-        void openPathRef.current(path);
-      });
-      // Native menu bar items.
-      unlistenMenu = await onMenuEvent((id) => {
-        menuActionRef.current(id);
-      });
+      // Each subscription is wrapped so a missing Tauri runtime (web preview
+      // for Playwright smoke) doesn't crash the mount effect.
+      try {
+        unlistenFileOpen = await onFileOpenRequest((path) => {
+          void openPathRef.current(path);
+        });
+      } catch (e) {
+        console.warn("file-open subscription unavailable", e);
+      }
+      try {
+        unlistenDrop = await onWindowFileDrop((path) => {
+          void openPathRef.current(path);
+        });
+      } catch (e) {
+        console.warn("drag-drop subscription unavailable", e);
+      }
+      try {
+        unlistenMenu = await onMenuEvent((id) => {
+          menuActionRef.current(id);
+        });
+      } catch (e) {
+        console.warn("menu subscription unavailable", e);
+      }
       if (cancelled) {
         unlistenFileOpen?.();
         unlistenDrop?.();

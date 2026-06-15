@@ -85,9 +85,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   markDirty: (id) => {
-    set((state) => ({
-      tabs: state.tabs.map((t) => (t.id === id && !t.dirty ? { ...t, dirty: true } : t)),
-    }));
+    // Skip the state update if nothing would actually change — otherwise
+    // Excalidraw's onChange firing repeatedly during layout would create
+    // a fresh `tabs` array on every notification, churning subscribers
+    // and (in the web-preview build) racing the persist effect.
+    const tabs = get().tabs;
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab || tab.dirty) return;
+    set({
+      tabs: tabs.map((t) => (t.id === id ? { ...t, dirty: true } : t)),
+    });
   },
 
   markSaved: (id, path) => {

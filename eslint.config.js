@@ -13,6 +13,8 @@ export default [
       "src-tauri/target/**",
       "src-tauri/gen/**",
       "coverage/**",
+      "playwright-report/**",
+      "test-results/**",
     ],
   },
   js.configs.recommended,

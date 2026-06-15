@@ -65,9 +65,17 @@ export const useRecentFilesStore = create<RecentFilesState>((set, get) => ({
   paths: [],
 
   async load() {
-    const store = await getStore();
-    const raw = await store.get<string[]>(STORE_KEY);
-    set({ paths: Array.isArray(raw) ? raw.slice(0, MAX_RECENT) : [] });
+    try {
+      const store = await getStore();
+      const raw = await store.get<string[]>(STORE_KEY);
+      set({ paths: Array.isArray(raw) ? raw.slice(0, MAX_RECENT) : [] });
+    } catch (e) {
+      // Plugin-store needs the Tauri runtime. Outside of it (web preview,
+      // tests without a mock), degrade to an empty list and keep the UI
+      // usable. Surface for debugging.
+      console.warn("recentFilesStore.load failed, defaulting to empty", e);
+      set({ paths: [] });
+    }
   },
 
   async add(path) {
