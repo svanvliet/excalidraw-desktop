@@ -208,11 +208,13 @@ excalidraw-app/
 
 **Deferred to M9 / post-v1:** `tauri-driver`-based native shell automation (file associations, drag-drop, native menus running through the actual webview). The Playwright web suite covers the React layer end-to-end today.
 
-### M8 — Docs polish + signing/notarization documentation (deferred impl)
+### M8 — Docs polish + signing/notarization documentation (deferred impl) ✅
 
-- `docs/signing-macos.md`: Developer ID prerequisites, `codesign` flags, `notarytool submit --wait`, stapling, troubleshooting.
-- `docs/signing-windows.md`: cert acquisition options (EV, OV, Azure Trusted Signing), `signtool` invocation, timestamp servers, MSI vs NSIS trade-offs.
-- README quickstart: install, dev, build, test.
+- ✅ `docs/signing-macos.md`: Developer ID prerequisites, `codesign --options runtime` + entitlements, `notarytool store-credentials` + `submit --wait`, `stapler staple`, troubleshooting table. Includes Tauri 2 `bundle.macOS.signingIdentity`/`hardenedRuntime` config.
+- ✅ `docs/signing-windows.md`: cert acquisition options (Standard / EV / **Azure Trusted Signing recommended**), `azuresigntool` and classic `signtool sign` invocations with timestamping, MSI/NSIS coverage, troubleshooting table, optional SmartScreen reputation submission, Tauri 2 `bundle.windows.certificateThumbprint` wiring.
+- ✅ README quickstart: install, dev, build, test, e2e, scripts table, project layout, signing pointers.
+
+**Deferred to M9:** the actual signed-release pipeline (the docs are copy-pasteable so a future developer or CI workflow can follow them verbatim).
 
 ### M9 — Deferred for post-v1
 

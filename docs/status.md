@@ -15,7 +15,7 @@
 | M5  | Native menu bar + keyboard shortcuts                                   | ✅     | Tauri MenuBuilder with File/Edit/View/Window/Help. Custom items route via `excalidraw://menu` to existing App handlers; Undo/Redo/Zoom replay synthetic keydown for Excalidraw's internal handler. Platform-correct `$Mod` → Cmd/Ctrl mapping. 111 tests green (96 JS + 15 Rust).                                                            |
 | M6  | Settings dialog + opt-in online features (collab / library / AI)       | ✅     | All toggles default false; Zustand `settingsStore` persisted to `settings.json`; `SettingsDialog` modal with 3 toggles + 2 secret fields + Reset-all; wired into `ExcalidrawCanvas` props (`aiEnabled` / `isCollaborating` / `libraryReturnUrl`). Native-keychain secret storage deferred post-v1. 125 tests green (110 JS + 15 Rust).       |
 | M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ✅     | Vitest (110 unit + integration tests) and cargo test (15) green via `npm run check`; Playwright web-build smoke (3 tests) green via `npm run e2e`, including a zero-outbound-requests privacy regression test. Tauri-driver native automation deferred post-v1 (M9).                                                                         |
-| M8  | Docs polish + signing/notarization documentation                       | ⬜     | Implementation deferred — docs only.                                                                                                                                                                                                                                                                                                         |
+| M8  | Docs polish + signing/notarization documentation                       | ✅     | New `README.md` with privacy contract, features, quickstart, scripts, layout, signing pointers. `docs/signing-macos.md` (Developer ID + notarytool + stapler runbook). `docs/signing-windows.md` (Azure Trusted Signing + signtool runbook). Implementation of signing/release pipeline deferred to M9.                                      |
 | M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1.                                                                                                                                                                                                                                                                                                                                     |
 
 ## Acceptance checks (per milestone)
@@ -73,9 +73,9 @@
 
 ### M8
 
-- [ ] `docs/signing-macos.md` complete with commands a developer can copy/paste.
-- [ ] `docs/signing-windows.md` complete with commands a developer can copy/paste.
-- [ ] README quickstart walks a fresh contributor from clone → running dev build in under 5 minutes of reading.
+- [x] `docs/signing-macos.md` complete with commands a developer can copy/paste.
+- [x] `docs/signing-windows.md` complete with commands a developer can copy/paste.
+- [x] README quickstart walks a fresh contributor from clone → running dev build in under 5 minutes of reading.
 
 ## Changelog of status changes
 
@@ -89,3 +89,4 @@
 | 2026-06-15 | M5        | ⬜ → ✅   | Native menu bar + Cmd/Ctrl accelerators + dispatched undo/redo/zoom. 111 tests green.           |
 | 2026-06-15 | M6        | ⬜ → ✅   | Settings dialog + opt-in online features; defaults off; 125 tests green (110 JS + 15 Rust).     |
 | 2026-06-15 | M7        | ⬜ → ✅   | Playwright web-build smoke incl. zero-outbound-requests test. tauri-driver E2E deferred to M9.  |
+| 2026-06-15 | M8        | ⬜ → ✅   | Comprehensive README + macOS / Windows signing runbooks. Signing pipeline impl deferred to M9.  |
