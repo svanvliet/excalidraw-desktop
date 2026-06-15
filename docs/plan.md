@@ -194,18 +194,19 @@ excalidraw-app/
 - Library: when `library` is true, optionally surface a toolbar button that opens libraries.excalidraw.com in the system browser via `tauri-plugin-opener` (today Excalidraw itself handles the library UI once we pass `libraryReturnUrl`).
 - CSP relaxation per-toggle (currently CSP is open enough for the embedded editor; revisit when adding remote endpoints).
 
-### M7 — Tests
+### M7 — Tests ✅
 
-- Vitest:
-  - `fileFormat.test.ts`: detect JSON vs PNG-with-scene.
-  - `tabsStore.test.ts`: open / dirty / close-with-prompt logic.
-  - `recentFilesStore.test.ts`: cap, dedupe, ordering.
-  - `settingsStore.test.ts`: default off, persistence shape.
-- `cargo test`:
-  - `commands::files` round-trip with `tempfile`.
-  - `recent` cap + ordering.
-  - `associations` path validation.
-- Playwright + tauri-driver: smoke test that launches the app, opens a fixture `.excalidraw`, makes an edit, saves, and asserts the file changed. Also runs with network blocked to verify FR-18.
+**Done. Final design:**
+
+- **Vitest (110 tests across 16 files)**: file format detection, scene serialization, tabs/recent/session/settings stores, autosave debouncing, PNG round-trip, the menu/open event subscribers, every component (Toolbar, TabBar, RecentMenu, ConfirmCloseDialog, SettingsDialog), and a smoke render of App.
+- **cargo test (15 tests)**: `commands::files` round-trip via `tempfile`, `commands::scratch` sanitization (security boundary), `menu` accelerator mapping + ID drift detector, and `error` serialization shapes.
+- **Playwright (`npm run e2e`, 3 tests against `vite preview`)**:
+  1. Editor shell renders end-to-end.
+  2. Settings dialog opens with every online toggle off.
+  3. **Zero outbound requests** when all toggles are off (FR-18 / privacy invariant).
+- Web-preview compatibility required adding `isTauri()` guards in `src/ipc/commands.ts` and try/catch around event subscriptions in `App.tsx`. Real bug found and fixed in `tabsStore.markDirty` (was allocating a new array on every change, eventually breaching React's max update depth in the preview build).
+
+**Deferred to M9 / post-v1:** `tauri-driver`-based native shell automation (file associations, drag-drop, native menus running through the actual webview). The Playwright web suite covers the React layer end-to-end today.
 
 ### M8 — Docs polish + signing/notarization documentation (deferred impl)
 

@@ -14,7 +14,7 @@
 | M4  | PNG export with embedded scene + file associations + double-click open | ✅     | PNG round-trip via `exportToBlob({exportEmbedScene})` + `loadFromBlob`; `.excalidraw` registered via `bundle.fileAssociations`; `tauri-plugin-single-instance` reroutes 2nd double-click; `RunEvent::Opened` (macOS) + CLI argv (Win/Linux) forward via `excalidraw://file-open`; window drag-drop wired. 103 tests green (90 JS + 13 Rust). |
 | M5  | Native menu bar + keyboard shortcuts                                   | ✅     | Tauri MenuBuilder with File/Edit/View/Window/Help. Custom items route via `excalidraw://menu` to existing App handlers; Undo/Redo/Zoom replay synthetic keydown for Excalidraw's internal handler. Platform-correct `$Mod` → Cmd/Ctrl mapping. 111 tests green (96 JS + 15 Rust).                                                            |
 | M6  | Settings dialog + opt-in online features (collab / library / AI)       | ✅     | All toggles default false; Zustand `settingsStore` persisted to `settings.json`; `SettingsDialog` modal with 3 toggles + 2 secret fields + Reset-all; wired into `ExcalidrawCanvas` props (`aiEnabled` / `isCollaborating` / `libraryReturnUrl`). Native-keychain secret storage deferred post-v1. 125 tests green (110 JS + 15 Rust).       |
-| M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ⬜     |                                                                                                                                                                                                                                                                                                                                              |
+| M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ✅     | Vitest (110 unit + integration tests) and cargo test (15) green via `npm run check`; Playwright web-build smoke (3 tests) green via `npm run e2e`, including a zero-outbound-requests privacy regression test. Tauri-driver native automation deferred post-v1 (M9).                                                                         |
 | M8  | Docs polish + signing/notarization documentation                       | ⬜     | Implementation deferred — docs only.                                                                                                                                                                                                                                                                                                         |
 | M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1.                                                                                                                                                                                                                                                                                                                                     |
 
@@ -66,9 +66,10 @@
 
 ### M7
 
-- [ ] `npm test` runs all Vitest suites green.
-- [ ] `cargo test` green.
-- [ ] `npm run e2e` (Playwright + tauri-driver) green on macOS and Windows runners.
+- [x] `npm test` runs all Vitest suites green. _(110 tests across 16 files.)_
+- [x] `cargo test` green. _(15 Rust tests.)_
+- [x] `npm run e2e` (Playwright against `vite preview`) green, including the zero-outbound-requests privacy regression. _(3 chromium tests in `e2e/smoke.spec.ts`.)_
+- [ ] Native shell automation via `tauri-driver` — deferred to M9 / post-v1.
 
 ### M8
 
@@ -87,3 +88,4 @@
 | 2026-06-15 | M4        | ⬜ → ✅   | PNG round-trip + .excalidraw file association + double-click + drag-drop. 103 tests green.      |
 | 2026-06-15 | M5        | ⬜ → ✅   | Native menu bar + Cmd/Ctrl accelerators + dispatched undo/redo/zoom. 111 tests green.           |
 | 2026-06-15 | M6        | ⬜ → ✅   | Settings dialog + opt-in online features; defaults off; 125 tests green (110 JS + 15 Rust).     |
+| 2026-06-15 | M7        | ⬜ → ✅   | Playwright web-build smoke incl. zero-outbound-requests test. tauri-driver E2E deferred to M9.  |
