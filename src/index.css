@@ -227,3 +227,87 @@ body,
   color: white;
   border-color: transparent;
 }
+
+.recent-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.recent-menu__trigger {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.recent-menu__trigger:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.recent-menu__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 280px;
+  max-width: 480px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--menu-bg, white);
+  color: var(--menu-fg, inherit);
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 50;
+}
+
+@media (prefers-color-scheme: dark) {
+  .recent-menu__list {
+    --menu-bg: #1f1f23;
+    --menu-fg: #f5f5f5;
+  }
+}
+
+.recent-menu__item,
+.recent-menu__clear {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.recent-menu__item:hover,
+.recent-menu__clear:hover {
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.recent-menu__name {
+  display: block;
+  font-weight: 500;
+}
+
+.recent-menu__path {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.recent-menu__separator {
+  border-top: 1px solid rgba(127, 127, 127, 0.25);
+  margin: 4px 0;
+  list-style: none;
+}

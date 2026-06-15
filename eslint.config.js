@@ -58,6 +58,7 @@ export default [
         fetch: "readonly",
         KeyboardEvent: "readonly",
         MouseEvent: "readonly",
+        Node: "readonly",
         Event: "readonly",
       },
     },

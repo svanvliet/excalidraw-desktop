@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: () => <div data-testid="excalidraw-mock" />,
@@ -12,6 +12,20 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/plugin-store", () => {
+  class FakeStore {
+    private data = new Map<string, unknown>();
+    async get<T>(key: string): Promise<T | undefined> {
+      return this.data.get(key) as T | undefined;
+    }
+    async set(key: string, value: unknown): Promise<void> {
+      this.data.set(key, value);
+    }
+    async save(): Promise<void> {}
+  }
+  return { LazyStore: FakeStore, Store: FakeStore };
+});
+
 vi.mock("./ipc/commands", () => ({
   openFile: vi.fn(),
   saveFile: vi.fn(),
@@ -20,6 +34,7 @@ vi.mock("./ipc/commands", () => ({
 
 import { App } from "./App";
 import { useTabsStore, __resetIdCounter } from "./stores/tabsStore";
+import { useRecentFilesStore } from "./stores/recentFilesStore";
 
 beforeEach(() => {
   __resetIdCounter();
@@ -27,19 +42,23 @@ beforeEach(() => {
     tabs: [{ id: "boot", path: null, initialData: null, dirty: false }],
     activeTabId: null,
   });
+  useRecentFilesStore.setState({ paths: [] });
 });
 
 describe("App", () => {
-  it("renders the toolbar, tab bar, and a canvas slot for the only tab", () => {
+  it("renders the toolbar, tab bar, and a canvas slot for the only tab", async () => {
     render(<App />);
     expect(screen.getByTestId("toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("tabbar")).toBeInTheDocument();
     // One Excalidraw per tab; with a single boot tab there's one mount.
     expect(screen.getAllByTestId("excalidraw-mock")).toHaveLength(1);
+    // Flush the async loadRecent() effect to keep React quiet.
+    await waitFor(() => expect(useRecentFilesStore.getState().paths).toEqual([]));
   });
 
-  it("shows 'Untitled' in both the toolbar and the only tab before any file opens", () => {
+  it("shows 'Untitled' in both the toolbar and the only tab before any file opens", async () => {
     render(<App />);
     expect(screen.getAllByText("Untitled").length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => expect(useRecentFilesStore.getState().paths).toEqual([]));
   });
 });

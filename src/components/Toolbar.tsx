@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, type ReactNode } from "react";
 
 export interface ToolbarProps {
   documentPath: string | null;
@@ -6,6 +6,7 @@ export interface ToolbarProps {
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  children?: ReactNode;
 }
 
 /**
@@ -13,7 +14,7 @@ export interface ToolbarProps {
  * the native menu bar arrives in M5. The native menu will dispatch into
  * the same handlers.
  */
-export function Toolbar({ documentPath, dirty, onOpen, onSave, onSaveAs }: ToolbarProps) {
+export function Toolbar({ documentPath, dirty, onOpen, onSave, onSaveAs, children }: ToolbarProps) {
   const titleLabel = documentPath ?? "Untitled";
   const dirtyMark = dirty ? " •" : "";
 
@@ -31,6 +32,7 @@ export function Toolbar({ documentPath, dirty, onOpen, onSave, onSaveAs }: Toolb
         <button type="button" onClick={handleOpen}>
           Open…
         </button>
+        {children}
         <button type="button" onClick={handleSave} disabled={!dirty && documentPath !== null}>
           Save
         </button>

@@ -9,7 +9,9 @@ import { ExcalidrawCanvas } from "./components/ExcalidrawCanvas";
 import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
+import { RecentMenu } from "./components/RecentMenu";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
+import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { openFile, saveFile, isAppError } from "./ipc/commands";
 import { detectFormat, serializeScene } from "./lib/fileFormat";
 
@@ -29,9 +31,16 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<string | null>(null);
 
+  const recentPaths = useRecentFilesStore((s) => s.paths);
+  const loadRecent = useRecentFilesStore((s) => s.load);
+  const addRecent = useRecentFilesStore((s) => s.add);
+  const removeRecent = useRecentFilesStore((s) => s.remove);
+  const clearRecent = useRecentFilesStore((s) => s.clear);
+
   useEffect(() => {
     ensureActiveTab();
-  }, []);
+    void loadRecent();
+  }, [loadRecent]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
@@ -40,6 +49,35 @@ export function App() {
   const handleApi = useCallback((id: string, api: ExcalidrawImperativeAPI) => {
     apisRef.current.set(id, api);
   }, []);
+
+  const openPath = useCallback(
+    async (path: string) => {
+      setError(null);
+      try {
+        const opened = await openFile(path);
+        const detected = detectFormat(opened.contents);
+        if (detected.kind !== "excalidraw-json" || !detected.parsed) {
+          setError(`Not a valid Excalidraw file: ${detected.reason ?? "unknown format"}`);
+          return;
+        }
+        const initial: ExcalidrawInitialDataState = {
+          elements: detected.parsed.elements as ExcalidrawInitialDataState["elements"],
+          appState: detected.parsed.appState as ExcalidrawInitialDataState["appState"],
+          files: detected.parsed.files as ExcalidrawInitialDataState["files"],
+        };
+        openTabAction(opened.path, initial);
+        void addRecent(opened.path);
+      } catch (e) {
+        // If the file no longer exists, drop it from the recent list so the
+        // menu doesn't keep showing a broken entry.
+        if (isAppError(e) && e.kind === "io") {
+          void removeRecent(path);
+        }
+        setError(formatError(e));
+      }
+    },
+    [openTabAction, addRecent, removeRecent],
+  );
 
   const handleOpen = useCallback(async () => {
     setError(null);
@@ -50,22 +88,11 @@ export function App() {
         filters: EXCALIDRAW_FILTERS,
       });
       if (typeof selected !== "string") return;
-      const opened = await openFile(selected);
-      const detected = detectFormat(opened.contents);
-      if (detected.kind !== "excalidraw-json" || !detected.parsed) {
-        setError(`Not a valid Excalidraw file: ${detected.reason ?? "unknown format"}`);
-        return;
-      }
-      const initial: ExcalidrawInitialDataState = {
-        elements: detected.parsed.elements as ExcalidrawInitialDataState["elements"],
-        appState: detected.parsed.appState as ExcalidrawInitialDataState["appState"],
-        files: detected.parsed.files as ExcalidrawInitialDataState["files"],
-      };
-      openTabAction(opened.path, initial);
+      await openPath(selected);
     } catch (e) {
       setError(formatError(e));
     }
-  }, [openTabAction]);
+  }, [openPath]);
 
   const writeActiveTabTo = useCallback(async (id: string, path: string) => {
     const api = apisRef.current.get(id);
@@ -87,8 +114,9 @@ export function App() {
     if (typeof chosen !== "string") return false;
     await writeActiveTabTo(activeTab.id, chosen);
     markSavedAction(activeTab.id, chosen);
+    void addRecent(chosen);
     return true;
-  }, [activeTab, writeActiveTabTo, markSavedAction]);
+  }, [activeTab, writeActiveTabTo, markSavedAction, addRecent]);
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     setError(null);
@@ -97,6 +125,7 @@ export function App() {
       if (activeTab.path) {
         await writeActiveTabTo(activeTab.id, activeTab.path);
         markSavedAction(activeTab.id, activeTab.path);
+        void addRecent(activeTab.path);
         return true;
       }
       return await handleSaveAsInternal();
@@ -104,7 +133,7 @@ export function App() {
       setError(formatError(e));
       return false;
     }
-  }, [activeTab, writeActiveTabTo, markSavedAction, handleSaveAsInternal]);
+  }, [activeTab, writeActiveTabTo, markSavedAction, addRecent, handleSaveAsInternal]);
 
   const handleSaveAs = useCallback(async () => {
     setError(null);
@@ -169,7 +198,13 @@ export function App() {
         onOpen={handleOpen}
         onSave={() => void handleSave()}
         onSaveAs={handleSaveAs}
-      />
+      >
+        <RecentMenu
+          paths={recentPaths}
+          onOpen={(path) => void openPath(path)}
+          onClear={() => void clearRecent()}
+        />
+      </Toolbar>
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}
