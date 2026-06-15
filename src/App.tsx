@@ -33,6 +33,7 @@ import {
 import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
+import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
 
 const OPEN_FILTERS = [
   { name: "Excalidraw", extensions: ["excalidraw", "png"] },
@@ -114,11 +115,15 @@ export function App() {
   // Ref to the latest openPath so the file-open subscription doesn't have
   // to re-subscribe whenever the callback identity changes.
   const openPathRef = useRef<(path: string) => Promise<void> | void>(() => {});
+  // Same pattern for menu events: subscribe once at mount, always call
+  // the freshest handler closure via this ref.
+  const menuActionRef = useRef<(id: MenuItemId) => void>(() => {});
 
   useEffect(() => {
     let cancelled = false;
     let unlistenFileOpen: (() => void) | null = null;
     let unlistenDrop: (() => void) | null = null;
+    let unlistenMenu: (() => void) | null = null;
     (async () => {
       // Try to restore the previous session first; only seed a blank tab
       // if there was nothing to restore (or every entry was missing).
@@ -135,11 +140,17 @@ export function App() {
       unlistenDrop = await onWindowFileDrop((path) => {
         void openPathRef.current(path);
       });
+      // Native menu bar items.
+      unlistenMenu = await onMenuEvent((id) => {
+        menuActionRef.current(id);
+      });
       if (cancelled) {
         unlistenFileOpen?.();
         unlistenDrop?.();
+        unlistenMenu?.();
         unlistenFileOpen = null;
         unlistenDrop = null;
+        unlistenMenu = null;
       }
     })();
     // Persist session on every tabs-store change.
@@ -151,6 +162,7 @@ export function App() {
       unsubscribe();
       unlistenFileOpen?.();
       unlistenDrop?.();
+      unlistenMenu?.();
       autosaver.cancelAll();
     };
   }, [loadRecent, autosaver]);
@@ -354,6 +366,73 @@ export function App() {
   }, [pendingClose, closeTabAction, autosaver]);
 
   const handleConfirmCancel = useCallback(() => setPendingClose(null), []);
+
+  const handleMenuAction = useCallback(
+    (id: MenuItemId) => {
+      switch (id) {
+        case "excalidraw:file:new":
+          handleNew();
+          return;
+        case "excalidraw:file:open":
+          void handleOpen();
+          return;
+        case "excalidraw:file:save":
+          void handleSave();
+          return;
+        case "excalidraw:file:saveAs":
+          void handleSaveAs();
+          return;
+        case "excalidraw:file:exportPng":
+          void handleExportPng();
+          return;
+        case "excalidraw:file:closeTab":
+          if (activeTabId) requestCloseTab(activeTabId);
+          return;
+        case "excalidraw:edit:undo":
+          // Excalidraw owns its history stack — replay the keyboard
+          // shortcut so its internal handler runs.
+          dispatchShortcut({ key: "z" });
+          return;
+        case "excalidraw:edit:redo":
+          dispatchShortcut({ key: "z", shift: true });
+          return;
+        case "excalidraw:view:zoomIn":
+          dispatchShortcut({ key: "=" });
+          return;
+        case "excalidraw:view:zoomOut":
+          dispatchShortcut({ key: "-" });
+          return;
+        case "excalidraw:view:zoomReset":
+          dispatchShortcut({ key: "0" });
+          return;
+        case "excalidraw:help:about":
+          setError(
+            "Excalidraw Desktop — a local-first wrapper around the official Excalidraw editor.",
+          );
+          return;
+        case "excalidraw:help:docs":
+          // The plugin-opener is registered in lib.rs; loading lazily keeps
+          // it out of the test mock surface.
+          void import("@tauri-apps/plugin-opener")
+            .then(({ openUrl }) => openUrl("https://docs.excalidraw.com/"))
+            .catch(() => {});
+          return;
+      }
+    },
+    [
+      activeTabId,
+      handleNew,
+      handleOpen,
+      handleSave,
+      handleSaveAs,
+      handleExportPng,
+      requestCloseTab,
+    ],
+  );
+
+  useEffect(() => {
+    menuActionRef.current = handleMenuAction;
+  }, [handleMenuAction]);
 
   useEffect(() => {
     if (!error) return;

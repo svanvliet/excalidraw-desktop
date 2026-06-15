@@ -59,6 +59,7 @@ export default [
         KeyboardEvent: "readonly",
         MouseEvent: "readonly",
         Node: "readonly",
+        Document: "readonly",
         Event: "readonly",
         atob: "readonly",
         btoa: "readonly",

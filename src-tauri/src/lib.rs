@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod menu;
 
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
@@ -59,6 +60,16 @@ pub fn run() {
                         let _ = app.emit(FILE_OPEN_EVENT, arg);
                     }
                 }
+            }
+
+            // Install the native menu bar and route custom item clicks
+            // through to the frontend.
+            #[cfg(desktop)]
+            {
+                let handle = app.handle();
+                let menu = menu::build_menu(handle)?;
+                app.set_menu(menu)?;
+                app.on_menu_event(menu::forward_menu_event);
             }
             let _ = app;
             Ok(())
