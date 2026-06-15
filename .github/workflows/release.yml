@@ -1,0 +1,96 @@
+name: release
+
+# Build platform installers on every push of a v*.*.* tag and attach
+# them to a GitHub Release. The release is created in draft mode so a
+# human can write notes before publishing.
+#
+# To cut a release:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v0.1.0). Created if it doesn't exist."
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Universal macOS binary (Intel + Apple Silicon in one .dmg).
+          - platform: macos-latest
+            target: universal-apple-darwin
+            args: "--target universal-apple-darwin"
+          # Standard MSVC x64 Windows installer (.msi + .exe).
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # universal-apple-darwin needs both arches present so cargo can
+          # lipo them together into a fat binary.
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NOTE: code signing is intentionally omitted for v0.1.0. See
+          # docs/signing-macos.md and docs/signing-windows.md for the
+          # full runbook when we're ready to publish a signed build.
+        with:
+          tagName: ${{ github.ref_name || github.event.inputs.tag }}
+          releaseName: "Excalidraw Desktop ${{ github.ref_name || github.event.inputs.tag }}"
+          releaseBody: |
+            First public build of Excalidraw Desktop.
+
+            **Note:** these binaries are **unsigned**. macOS will quarantine
+            the .dmg (Right-click → Open the first time) and Windows
+            SmartScreen will warn ("More info" → "Run anyway"). Signed
+            release pipeline is tracked as post-v1 work; see
+            `docs/signing-macos.md` / `docs/signing-windows.md`.
+
+            ### Install
+            - **macOS:** download the `.dmg`, drag to Applications.
+            - **Windows:** download the `.msi` or `.exe` installer.
+
+            ### Logs
+            App writes a rolling log file at
+            `~/.excalidraw-desktop/excalidraw-desktop.log` (macOS / Linux)
+            or `%USERPROFILE%\.excalidraw-desktop\excalidraw-desktop.log`
+            (Windows). Attach the tail when reporting issues.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
