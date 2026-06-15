@@ -14,6 +14,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useThemeStore } from "./stores/themeStore";
 import { persistSession, restoreSession } from "./stores/sessionStore";
 import {
   openFile,
@@ -61,6 +62,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadSettings = useSettingsStore((s) => s.load);
+  const loadTheme = useThemeStore((s) => s.load);
+  const resolvedTheme = useThemeStore((s) => s.resolved);
 
   const recentPaths = useRecentFilesStore((s) => s.paths);
   const loadRecent = useRecentFilesStore((s) => s.load);
@@ -146,6 +149,7 @@ export function App() {
       if (restored === 0) ensureActiveTab();
       void loadRecent();
       void loadSettings();
+      void loadTheme();
       // Subscribe to OS file-open events (double-click, drag-onto-icon,
       // single-instance reroute) and route them through the latest openPath.
       // Each subscription is wrapped so a missing Tauri runtime (web preview
@@ -192,7 +196,7 @@ export function App() {
       unlistenMenu?.();
       autosaver.cancelAll();
     };
-  }, [loadRecent, loadSettings, autosaver]);
+  }, [loadRecent, loadSettings, loadTheme, autosaver]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
@@ -517,6 +521,7 @@ export function App() {
               aiEnabled={aiEnabled}
               isCollaborating={collabEnabled}
               libraryReturnUrl={libraryReturnUrl}
+              theme={resolvedTheme}
             />
           </div>
         ))}

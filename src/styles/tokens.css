@@ -1,0 +1,173 @@
+/*
+ * Design tokens.
+ *
+ * Two layers:
+ *   1. Brand-neutral primitive scales (--gray-50…900, --accent-…).
+ *      Define each twice: once in :root (light) and once in
+ *      :root[data-theme="dark"] (dark).
+ *   2. Semantic vars (--bg-app, --fg-default, --border-subtle, …) that
+ *      the rest of the stylesheet consumes. These resolve to the right
+ *      primitive depending on the active theme.
+ *
+ * Theme resolution:
+ *   - The themeStore sets data-theme on <html> to "light" or "dark"
+ *     (system mode is resolved to one of those before being applied).
+ *   - If data-theme is missing for any reason, we fall back to
+ *     prefers-color-scheme via the media query at the bottom.
+ */
+
+:root {
+  /* Primitive scales (light values are the defaults) */
+  --gray-0: #ffffff;
+  --gray-50: #f8f9fb;
+  --gray-100: #f1f3f5;
+  --gray-150: #e9ecef;
+  --gray-200: #dee2e6;
+  --gray-300: #ced4da;
+  --gray-400: #adb5bd;
+  --gray-500: #868e96;
+  --gray-600: #495057;
+  --gray-700: #343a40;
+  --gray-800: #212529;
+  --gray-900: #0f1115;
+
+  --accent-500: #6965db;
+  --accent-600: #5b56cf;
+  --accent-700: #4844b3;
+  --accent-100: #ecebfc;
+
+  --danger-500: #e03131;
+  --danger-100: #ffe3e3;
+
+  --warning-100: #fff3bf;
+  --warning-700: #8a6500;
+
+  /* Semantic — light */
+  --bg-app: var(--gray-50);
+  --bg-elevated: var(--gray-0);
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --bg-overlay: rgba(15, 17, 21, 0.45);
+
+  --fg-default: var(--gray-800);
+  --fg-muted: var(--gray-600);
+  --fg-subtle: var(--gray-500);
+  --fg-on-accent: #ffffff;
+
+  --border-subtle: var(--gray-200);
+  --border-default: var(--gray-300);
+  --border-strong: var(--gray-400);
+
+  --accent: var(--accent-500);
+  --accent-hover: var(--accent-600);
+  --accent-active: var(--accent-700);
+  --accent-tint: var(--accent-100);
+
+  --danger: var(--danger-500);
+  --danger-tint: var(--danger-100);
+  --warning-tint: var(--warning-100);
+  --warning-fg: var(--warning-700);
+
+  /* Geometry */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 17, 21, 0.18);
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+
+  /* Typography */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 15px;
+  --font-size-xl: 17px;
+  --line-tight: 1.25;
+  --line-default: 1.45;
+
+  /* Heights — keep the toolbar compact */
+  --toolbar-height: 40px;
+  --tabbar-height: 32px;
+  --control-height-sm: 26px;
+  --control-height-md: 30px;
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 2px var(--accent-tint), 0 0 0 4px var(--accent);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg-app: #1b1c20;
+  --bg-elevated: #25272d;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
+  --bg-overlay: rgba(0, 0, 0, 0.55);
+
+  --fg-default: #e8eaed;
+  --fg-muted: #adb1ba;
+  --fg-subtle: #7e828c;
+  --fg-on-accent: #ffffff;
+
+  --border-subtle: #2f3137;
+  --border-default: #3a3d44;
+  --border-strong: #4a4e57;
+
+  --accent: #8783ec;
+  --accent-hover: #9a96ef;
+  --accent-active: #a8a5f1;
+  --accent-tint: rgba(135, 131, 236, 0.18);
+
+  --danger: #ff6b6b;
+  --danger-tint: rgba(255, 107, 107, 0.16);
+  --warning-tint: rgba(255, 224, 102, 0.14);
+  --warning-fg: #ffd43b;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
+}
+
+/* Fallback when data-theme isn't set (e.g. JS hasn't booted yet) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg-app: #1b1c20;
+    --bg-elevated: #25272d;
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --bg-active: rgba(255, 255, 255, 0.1);
+    --bg-overlay: rgba(0, 0, 0, 0.55);
+
+    --fg-default: #e8eaed;
+    --fg-muted: #adb1ba;
+    --fg-subtle: #7e828c;
+
+    --border-subtle: #2f3137;
+    --border-default: #3a3d44;
+    --border-strong: #4a4e57;
+
+    --accent: #8783ec;
+    --accent-hover: #9a96ef;
+    --accent-active: #a8a5f1;
+    --accent-tint: rgba(135, 131, 236, 0.18);
+
+    color-scheme: dark;
+  }
+}

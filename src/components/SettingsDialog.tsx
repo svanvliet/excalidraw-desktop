@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
+import { CloseIcon } from "./icons";
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -57,96 +58,114 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         className="modal modal--wide"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="settings-title" className="modal__title">
-          Settings
-        </h2>
+        <header className="modal__header">
+          <div>
+            <h2 id="settings-title" className="modal__title">
+              Settings
+            </h2>
+            <p className="modal__subtitle">
+              Excalidraw Desktop is fully offline by default. Toggle features below to opt in. No
+              data leaves your machine until you turn one on.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="icon-btn icon-btn--icon-only"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close"
+          >
+            <CloseIcon />
+          </button>
+        </header>
 
-        <p className="modal__body">
-          Excalidraw Desktop is fully offline by default. Toggle features below to opt in. No data
-          leaves your machine until you turn one on.
-        </p>
+        <div className="modal__body">
+          <section className="settings__section">
+            <h3>Online features</h3>
 
-        <section className="settings__section">
-          <h3>Online features</h3>
-
-          <label className="settings__row">
-            <input
-              type="checkbox"
-              checked={collab}
-              onChange={(e) => void setFlag("collab", e.target.checked)}
-              data-testid="toggle-collab"
-            />
-            <span>
-              <strong>Live collaboration</strong>
-              <span className="settings__hint">
-                Connects to a Firebase backend. Requires the Firebase config below.
+            <label className="settings__row">
+              <input
+                type="checkbox"
+                className="switch"
+                checked={collab}
+                onChange={(e) => void setFlag("collab", e.target.checked)}
+                data-testid="toggle-collab"
+              />
+              <span className="settings__row-text">
+                <strong>Live collaboration</strong>
+                <span className="settings__hint">
+                  Connects to a Firebase backend. Requires the Firebase config below.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
 
-          <label className="settings__row">
-            <input
-              type="checkbox"
-              checked={library}
-              onChange={(e) => void setFlag("library", e.target.checked)}
-              data-testid="toggle-library"
-            />
-            <span>
-              <strong>Library browser</strong>
-              <span className="settings__hint">
-                Opens libraries.excalidraw.com in your system browser. No in-app webview is loaded.
+            <label className="settings__row">
+              <input
+                type="checkbox"
+                className="switch"
+                checked={library}
+                onChange={(e) => void setFlag("library", e.target.checked)}
+                data-testid="toggle-library"
+              />
+              <span className="settings__row-text">
+                <strong>Library browser</strong>
+                <span className="settings__hint">
+                  Opens libraries.excalidraw.com in your system browser. No in-app webview is
+                  loaded.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
 
-          <label className="settings__row">
-            <input
-              type="checkbox"
-              checked={ai}
-              onChange={(e) => void setFlag("ai", e.target.checked)}
-              data-testid="toggle-ai"
-            />
-            <span>
-              <strong>AI text-to-diagram</strong>
-              <span className="settings__hint">
-                Sends prompts you type to OpenAI. Requires your own API key below.
+            <label className="settings__row">
+              <input
+                type="checkbox"
+                className="switch"
+                checked={ai}
+                onChange={(e) => void setFlag("ai", e.target.checked)}
+                data-testid="toggle-ai"
+              />
+              <span className="settings__row-text">
+                <strong>AI text-to-diagram</strong>
+                <span className="settings__hint">
+                  Sends prompts you type to OpenAI. Requires your own API key below.
+                </span>
               </span>
-            </span>
-          </label>
-        </section>
+            </label>
+          </section>
 
-        <section className="settings__section">
-          <h3>Secrets</h3>
-          <p className="settings__warning" role="note">
-            Values below are stored unencrypted in <code>settings.json</code>. Treat this file like
-            a credentials file on your machine.
-          </p>
+          <section className="settings__section">
+            <h3>Secrets</h3>
+            <p className="settings__warning" role="note">
+              Values below are stored unencrypted in <code>settings.json</code>. Treat this file
+              like a credentials file on your machine.
+            </p>
 
-          <label className="settings__field">
-            <span>OpenAI API key</span>
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={openAiKey}
-              onChange={(e) => void setSecret("openAiKey", e.target.value)}
-              data-testid="secret-openai"
-              placeholder="sk-…"
-            />
-          </label>
+            <label className="settings__field">
+              <span>OpenAI API key</span>
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={openAiKey}
+                onChange={(e) => void setSecret("openAiKey", e.target.value)}
+                data-testid="secret-openai"
+                placeholder="sk-…"
+              />
+            </label>
 
-          <label className="settings__field">
-            <span>Firebase config (JSON)</span>
-            <textarea
-              spellCheck={false}
-              value={firebaseConfig}
-              onChange={(e) => void setSecret("firebaseConfig", e.target.value)}
-              data-testid="secret-firebase"
-              rows={4}
-              placeholder='{"apiKey":"…","authDomain":"…"}'
-            />
-          </label>
-        </section>
+            <label className="settings__field">
+              <span>Firebase config (JSON)</span>
+              <textarea
+                spellCheck={false}
+                value={firebaseConfig}
+                onChange={(e) => void setSecret("firebaseConfig", e.target.value)}
+                data-testid="secret-firebase"
+                rows={4}
+                placeholder='{"apiKey":"…","authDomain":"…"}'
+              />
+            </label>
+          </section>
+        </div>
 
         <div className="modal__actions">
           <button
@@ -157,6 +176,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           >
             Reset all
           </button>
+          <span className="spacer" />
           <button
             type="button"
             onClick={onClose}

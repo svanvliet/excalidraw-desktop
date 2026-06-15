@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDownIcon, ClockIcon } from "./icons";
 
 export interface RecentMenuProps {
   paths: readonly string[];
@@ -7,8 +8,12 @@ export interface RecentMenuProps {
 }
 
 /**
- * Lightweight dropdown for Open Recent. The native menu in M5 will surface
- * the same list — this in-window control is the toolbar-side affordance.
+ * Lightweight popover for Open Recent. Visually mirrors the toolbar's
+ * icon-first buttons but expands into a vertical list of recent file
+ * basenames + paths.
+ *
+ * Behavior preserved from M3: click-outside closes, Escape closes,
+ * Clear Recent appears as a separator-divided menuitem.
  */
 export function RecentMenu({ paths, onOpen, onClear }: RecentMenuProps) {
   const [open, setOpen] = useState(false);
@@ -47,42 +52,40 @@ export function RecentMenu({ paths, onOpen, onClear }: RecentMenuProps) {
   }, [onClear]);
 
   return (
-    <div className="recent-menu" ref={containerRef}>
+    <div className="popover" ref={containerRef}>
       <button
         type="button"
-        className="recent-menu__trigger"
+        className="icon-btn"
         onClick={() => setOpen((prev) => !prev)}
         disabled={paths.length === 0}
         aria-haspopup="menu"
         aria-expanded={open}
+        title="Open recent file"
       >
-        Recent ▾
+        <ClockIcon />
+        <span>Recent</span>
+        <ChevronDownIcon className="icon icon--sm" />
       </button>
       {open ? (
-        <ul className="recent-menu__list" role="menu" data-testid="recent-menu-list">
+        <ul className="popover__panel" role="menu" data-testid="recent-menu-list">
           {paths.map((path) => (
             <li key={path} role="none">
               <button
                 type="button"
                 role="menuitem"
-                className="recent-menu__item"
+                className="popover__item"
                 onClick={() => handleSelect(path)}
                 title={path}
               >
-                <span className="recent-menu__name">{basename(path)}</span>
-                <span className="recent-menu__path">{path}</span>
+                <span className="popover__item-name">{basename(path)}</span>
+                <span className="popover__item-path">{path}</span>
               </button>
             </li>
           ))}
-          <li role="separator" className="recent-menu__separator" />
+          <li role="separator" className="popover__separator" />
           <li role="none">
-            <button
-              type="button"
-              role="menuitem"
-              className="recent-menu__clear"
-              onClick={handleClear}
-            >
-              Clear Recent
+            <button type="button" role="menuitem" className="popover__item" onClick={handleClear}>
+              <span className="popover__item-name">Clear Recent</span>
             </button>
           </li>
         </ul>

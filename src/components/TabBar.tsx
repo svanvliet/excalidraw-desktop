@@ -1,4 +1,5 @@
 import type { Tab } from "../stores/tabsStore";
+import { CloseIcon, PlusIcon } from "./icons";
 
 export interface TabBarProps {
   tabs: Tab[];
@@ -29,7 +30,7 @@ export function TabBar({ tabs, activeTabId, onSelect, onClose, onNew }: TabBarPr
         title="New tab"
         aria-label="New tab"
       >
-        +
+        <PlusIcon className="icon icon--sm" />
       </button>
     </div>
   );
@@ -64,11 +65,7 @@ function TabEntry({
       title={tab.path ?? "Untitled"}
     >
       <span className="tabbar__label">{label}</span>
-      {tab.dirty ? (
-        <span className="tabbar__dirty" aria-label="unsaved changes">
-          •
-        </span>
-      ) : null}
+      {tab.dirty ? <span className="tabbar__dirty" aria-label="unsaved changes" /> : null}
       <button
         type="button"
         className="tabbar__close"
@@ -78,7 +75,7 @@ function TabEntry({
           onClose();
         }}
       >
-        ×
+        <CloseIcon className="icon icon--sm" />
       </button>
     </div>
   );

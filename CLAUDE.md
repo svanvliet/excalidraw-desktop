@@ -44,8 +44,16 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
 
 - React function components only.
 - Zustand for app-level state. No Redux.
-- No inline `style={{...}}` for non-trivial styles — use CSS modules or styled-components consistently with what's already in the file you're editing.
+- No inline `style={{...}}` for non-trivial styles — use the existing CSS classes / design tokens consistently with what's already in the file you're editing.
 - All `invoke()` calls go through typed wrappers in `src/ipc/commands.ts` — never call `invoke('foo')` directly from a component.
+
+### UI / styling
+
+- **Design tokens are the source of truth.** Colors, spacing, radii, shadows, and typography live in `src/styles/tokens.css`. Use semantic vars (`--bg-elevated`, `--fg-muted`, `--border-subtle`, `--accent`, …) instead of hardcoded hex codes or pixel values.
+- **Theme.** `src/stores/themeStore.ts` owns user preference (`system | light | dark`) and the resolved theme. It applies `data-theme` on `<html>` — never read `prefers-color-scheme` directly from a component; consume `useThemeStore((s) => s.resolved)` instead. When passing theme to upstream components (e.g. `<Excalidraw>`), forward the _resolved_ value, not the user preference.
+- **Icons.** Use inline SVG components from `src/components/icons.tsx`. They inherit `currentColor` so they tint with the button text color. Don't introduce icon fonts, sprite sheets, or third-party icon libraries.
+- **Buttons.** The base class is `.icon-btn`. Add `--icon-only` when the button shows only an icon (and always pair with `aria-label` + `title` in that case). Use `--primary` for the dialog's affirmative action, `--danger` for destructive verbs (Reset / Clear / Delete).
+- **Modals.** Use `.modal-backdrop` + `.modal` with `.modal__header`, `.modal__body`, `.modal__actions`. Body scrolls; header and footer stick. Always wire Escape → close and backdrop-click → close.
 
 ### Rust
 

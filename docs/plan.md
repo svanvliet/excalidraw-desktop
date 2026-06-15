@@ -216,6 +216,51 @@ excalidraw-app/
 
 **Deferred to M9:** the actual signed-release pipeline (the docs are copy-pasteable so a future developer or CI workflow can follow them verbatim).
 
+### UX polish (post-M8, pre-v1) ✅
+
+A visual pass over the in-window chrome. The native menu bar (M5) was
+already polished by the OS; the React-side toolbar / tabs / dialog
+were boilerplate from earlier milestones and needed work before we
+called v1 shippable.
+
+- **Design tokens** in `src/styles/tokens.css`: two-layer system
+  (primitive grayscale + accent scales → semantic vars like
+  `--bg-elevated`, `--fg-muted`, `--border-subtle`). Dark mode is a
+  data-attribute override (`:root[data-theme="dark"]`), not a media
+  query, so the user pref always wins. A `prefers-color-scheme`
+  fallback kicks in only when `data-theme` is unset (i.e. before JS
+  boots).
+- **Icon set** in `src/components/icons.tsx`: lucide-style 24×24
+  stroke SVG components rendered at 16px, tinted with `currentColor`
+  so they inherit button color. No icon font, no PNG sprite.
+- **Theme store + toggle**: `src/stores/themeStore.ts` is a
+  Zustand store with `mode: system | light | dark` and
+  `resolved: light | dark`. Persisted via `tauri-plugin-store`
+  (`settings.json`, key `theme`) using the same pattern as
+  `settingsStore`. A live `matchMedia('(prefers-color-scheme: dark)')`
+  listener keeps `resolved` in sync when the OS appearance changes,
+  but only while `mode === "system"`. The store applies
+  `data-theme` to `<html>` so all CSS tokens flip atomically.
+  `<ThemeToggle>` cycles `system → light → dark → system` and lives
+  in the toolbar with a Monitor/Sun/Moon icon.
+- **Excalidraw theme prop**: `ExcalidrawCanvas` accepts an optional
+  `theme: "light" | "dark"` prop and forwards it. `App.tsx` reads
+  `resolvedTheme` from the store and passes it to every canvas
+  instance so the editor chrome matches the host theme.
+- **Toolbar / tabs / popover / modal**: rebuilt against the tokens.
+  Toolbar buttons are icon-first with text for primary actions
+  (Open, Save, Save As) and icon-only with `aria-label` + `title`
+  for secondary actions (Export PNG, Settings, Theme). Settings
+  modal now has a real header / scrollable body / sticky footer,
+  styled toggle switches (custom `appearance: none` checkbox), and
+  a soft entry animation.
+
+**Tests:** `themeStore.test.ts` (7 cases including system-pref
+detection, persistence, cycle order, live OS-change reaction, and
+malformed-persisted-value fallback) + `ThemeToggle.test.tsx` (3
+cases). Existing 110 Vitest + 15 cargo + 3 Playwright suites
+continue to pass.
+
 ### M9 — Deferred for post-v1
 
 - CI release pipeline that actually signs and publishes.

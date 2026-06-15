@@ -32,6 +32,12 @@ export interface ExcalidrawCanvasProps {
   aiEnabled?: boolean;
   isCollaborating?: boolean;
   libraryReturnUrl?: string;
+  /**
+   * Resolved theme to apply to the editor chrome. The host app already
+   * resolved "system" to a concrete light/dark value before passing it
+   * in — Excalidraw only understands the two terminal values.
+   */
+  theme?: "light" | "dark";
 }
 
 /**
@@ -46,6 +52,7 @@ export function ExcalidrawCanvas({
   aiEnabled,
   isCollaborating,
   libraryReturnUrl,
+  theme,
 }: ExcalidrawCanvasProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
@@ -82,6 +89,7 @@ export function ExcalidrawCanvas({
         aiEnabled={aiEnabled ?? false}
         isCollaborating={isCollaborating ?? false}
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
+        {...(theme ? { theme } : {})}
       />
     </div>
   );
