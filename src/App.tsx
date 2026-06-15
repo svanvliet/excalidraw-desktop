@@ -7,23 +7,38 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 
 import { ExcalidrawCanvas } from "./components/ExcalidrawCanvas";
 import { Toolbar } from "./components/Toolbar";
-import { useDocumentState } from "./stores/documentStore";
+import { TabBar } from "./components/TabBar";
+import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
+import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { openFile, saveFile, isAppError } from "./ipc/commands";
 import { detectFormat, serializeScene } from "./lib/fileFormat";
 
 const EXCALIDRAW_FILTERS = [{ name: "Excalidraw", extensions: ["excalidraw"] }];
 
 export function App() {
-  const { state, markOpened, markSaved, markDirty } = useDocumentState();
-  const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
-  // `sceneKey` is bumped whenever we load a new file, which forces Excalidraw
-  // to remount with the new initialData rather than ignoring the prop change.
-  const [sceneKey, setSceneKey] = useState(0);
-  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const tabs = useTabsStore((s) => s.tabs);
+  const activeTabId = useTabsStore((s) => s.activeTabId);
+  const selectTab = useTabsStore((s) => s.selectTab);
+  const newTab = useTabsStore((s) => s.newTab);
+  const openTabAction = useTabsStore((s) => s.openTab);
+  const markDirtyAction = useTabsStore((s) => s.markDirty);
+  const markSavedAction = useTabsStore((s) => s.markSaved);
+  const closeTabAction = useTabsStore((s) => s.closeTab);
 
-  const handleApi = useCallback((api: ExcalidrawImperativeAPI) => {
-    apiRef.current = api;
+  const apisRef = useRef<Map<string, ExcalidrawImperativeAPI>>(new Map());
+  const [error, setError] = useState<string | null>(null);
+  const [pendingClose, setPendingClose] = useState<string | null>(null);
+
+  useEffect(() => {
+    ensureActiveTab();
+  }, []);
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
+  const activePath = activeTab?.path ?? null;
+  const activeDirty = activeTab?.dirty ?? false;
+
+  const handleApi = useCallback((id: string, api: ExcalidrawImperativeAPI) => {
+    apisRef.current.set(id, api);
   }, []);
 
   const handleOpen = useCallback(async () => {
@@ -41,20 +56,19 @@ export function App() {
         setError(`Not a valid Excalidraw file: ${detected.reason ?? "unknown format"}`);
         return;
       }
-      setInitialData({
+      const initial: ExcalidrawInitialDataState = {
         elements: detected.parsed.elements as ExcalidrawInitialDataState["elements"],
         appState: detected.parsed.appState as ExcalidrawInitialDataState["appState"],
         files: detected.parsed.files as ExcalidrawInitialDataState["files"],
-      });
-      setSceneKey((k) => k + 1);
-      markOpened(opened.path);
+      };
+      openTabAction(opened.path, initial);
     } catch (e) {
       setError(formatError(e));
     }
-  }, [markOpened]);
+  }, [openTabAction]);
 
-  const writeSceneTo = useCallback(async (path: string) => {
-    const api = apiRef.current;
+  const writeActiveTabTo = useCallback(async (id: string, path: string) => {
+    const api = apisRef.current.get(id);
     if (!api) throw new Error("editor is not ready yet");
     const contents = serializeScene(
       api.getSceneElements(),
@@ -64,32 +78,33 @@ export function App() {
     await saveFile(path, contents);
   }, []);
 
-  const handleSave = useCallback(async () => {
-    setError(null);
-    try {
-      if (state.path) {
-        await writeSceneTo(state.path);
-        markSaved(state.path);
-      } else {
-        await handleSaveAsInternal();
-      }
-    } catch (e) {
-      setError(formatError(e));
-    }
-    // handleSaveAsInternal is declared below; including it in deps would create
-    // a TDZ-style ordering issue. Safe because both are stable callbacks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.path, writeSceneTo, markSaved]);
-
-  const handleSaveAsInternal = useCallback(async () => {
+  const handleSaveAsInternal = useCallback(async (): Promise<boolean> => {
+    if (!activeTab) return false;
     const chosen = await saveDialog({
-      defaultPath: state.path ?? "untitled.excalidraw",
+      defaultPath: activeTab.path ?? "untitled.excalidraw",
       filters: EXCALIDRAW_FILTERS,
     });
-    if (typeof chosen !== "string") return;
-    await writeSceneTo(chosen);
-    markSaved(chosen);
-  }, [state.path, writeSceneTo, markSaved]);
+    if (typeof chosen !== "string") return false;
+    await writeActiveTabTo(activeTab.id, chosen);
+    markSavedAction(activeTab.id, chosen);
+    return true;
+  }, [activeTab, writeActiveTabTo, markSavedAction]);
+
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    setError(null);
+    try {
+      if (!activeTab) return false;
+      if (activeTab.path) {
+        await writeActiveTabTo(activeTab.id, activeTab.path);
+        markSavedAction(activeTab.id, activeTab.path);
+        return true;
+      }
+      return await handleSaveAsInternal();
+    } catch (e) {
+      setError(formatError(e));
+      return false;
+    }
+  }, [activeTab, writeActiveTabTo, markSavedAction, handleSaveAsInternal]);
 
   const handleSaveAs = useCallback(async () => {
     setError(null);
@@ -100,8 +115,46 @@ export function App() {
     }
   }, [handleSaveAsInternal]);
 
-  // Auto-dismiss errors after a short window so a transient hiccup doesn't
-  // leave a stale banner up forever.
+  const handleNew = useCallback(() => newTab(), [newTab]);
+
+  const requestCloseTab = useCallback(
+    (id: string) => {
+      const tab = tabs.find((t) => t.id === id);
+      if (!tab) return;
+      if (tab.dirty) {
+        setPendingClose(id);
+      } else {
+        apisRef.current.delete(id);
+        closeTabAction(id);
+      }
+    },
+    [tabs, closeTabAction],
+  );
+
+  const pendingTab = pendingClose ? (tabs.find((t) => t.id === pendingClose) ?? null) : null;
+  const pendingLabel = pendingTab ? (pendingTab.path ? basename(pendingTab.path) : "Untitled") : "";
+
+  const handleConfirmSave = useCallback(async () => {
+    if (!pendingClose) return;
+    // Ensure the tab being closed is the one we save from.
+    selectTab(pendingClose);
+    const saved = await handleSave();
+    if (saved) {
+      apisRef.current.delete(pendingClose);
+      closeTabAction(pendingClose);
+      setPendingClose(null);
+    }
+  }, [pendingClose, selectTab, handleSave, closeTabAction]);
+
+  const handleConfirmDiscard = useCallback(() => {
+    if (!pendingClose) return;
+    apisRef.current.delete(pendingClose);
+    closeTabAction(pendingClose);
+    setPendingClose(null);
+  }, [pendingClose, closeTabAction]);
+
+  const handleConfirmCancel = useCallback(() => setPendingClose(null), []);
+
   useEffect(() => {
     if (!error) return;
     const id = window.setTimeout(() => setError(null), 6000);
@@ -111,11 +164,18 @@ export function App() {
   return (
     <main className="app-shell">
       <Toolbar
-        documentPath={state.path}
-        dirty={state.dirty}
+        documentPath={activePath}
+        dirty={activeDirty}
         onOpen={handleOpen}
-        onSave={handleSave}
+        onSave={() => void handleSave()}
         onSaveAs={handleSaveAs}
+      />
+      <TabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelect={selectTab}
+        onClose={requestCloseTab}
+        onNew={handleNew}
       />
       {error ? (
         <div className="app-shell__error" role="alert">
@@ -123,15 +183,35 @@ export function App() {
         </div>
       ) : null}
       <div className="app-shell__canvas">
-        <ExcalidrawCanvas
-          key={sceneKey}
-          initialData={initialData}
-          onApi={handleApi}
-          onSceneChange={markDirty}
-        />
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className="canvas-slot"
+            data-active={tab.id === activeTabId || undefined}
+            aria-hidden={tab.id === activeTabId ? undefined : true}
+          >
+            <ExcalidrawCanvas
+              initialData={tab.initialData}
+              onApi={(api) => handleApi(tab.id, api)}
+              onSceneChange={() => markDirtyAction(tab.id)}
+            />
+          </div>
+        ))}
       </div>
+      <ConfirmCloseDialog
+        open={pendingClose !== null}
+        tabLabel={pendingLabel}
+        onSave={handleConfirmSave}
+        onDiscard={handleConfirmDiscard}
+        onCancel={handleConfirmCancel}
+      />
     </main>
   );
+}
+
+function basename(path: string): string {
+  const parts = path.split(/[/\\]/);
+  return parts[parts.length - 1] || path;
 }
 
 function formatError(e: unknown): string {

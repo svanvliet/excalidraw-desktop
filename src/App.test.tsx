@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 vi.mock("@excalidraw/excalidraw", () => ({
@@ -19,16 +19,27 @@ vi.mock("./ipc/commands", () => ({
 }));
 
 import { App } from "./App";
+import { useTabsStore, __resetIdCounter } from "./stores/tabsStore";
+
+beforeEach(() => {
+  __resetIdCounter();
+  useTabsStore.setState({
+    tabs: [{ id: "boot", path: null, initialData: null, dirty: false }],
+    activeTabId: null,
+  });
+});
 
 describe("App", () => {
-  it("renders the toolbar and the Excalidraw canvas placeholder", () => {
+  it("renders the toolbar, tab bar, and a canvas slot for the only tab", () => {
     render(<App />);
     expect(screen.getByTestId("toolbar")).toBeInTheDocument();
-    expect(screen.getByTestId("excalidraw-mock")).toBeInTheDocument();
+    expect(screen.getByTestId("tabbar")).toBeInTheDocument();
+    // One Excalidraw per tab; with a single boot tab there's one mount.
+    expect(screen.getAllByTestId("excalidraw-mock")).toHaveLength(1);
   });
 
-  it("shows 'Untitled' before any file has been opened", () => {
+  it("shows 'Untitled' in both the toolbar and the only tab before any file opens", () => {
     render(<App />);
-    expect(screen.getByText("Untitled")).toBeInTheDocument();
+    expect(screen.getAllByText("Untitled").length).toBeGreaterThanOrEqual(2);
   });
 });
