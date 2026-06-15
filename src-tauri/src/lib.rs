@@ -6,7 +6,9 @@ use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
 
 use std::path::PathBuf;
-use tauri::{Emitter, Manager, RunEvent};
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
+use tauri::{Emitter, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
 /// Event name shared with the frontend (`src/ipc/openEvents.ts`). Whenever
@@ -171,10 +173,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
+    app.run(|_app_handle, _event| {
         // macOS Finder double-click while running, and "Open With" on launch,
-        // both arrive here.
-        if let RunEvent::Opened { urls } = event {
+        // both arrive here. `RunEvent::Opened` is only emitted on macOS; on
+        // Windows the same flow is handled by the single-instance plugin
+        // forwarding argv from the second instance.
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = _event {
             log::info!("RunEvent::Opened urls={:?}", urls);
             for url in urls {
                 let path = url.to_file_path().ok();
@@ -183,7 +188,7 @@ pub fn run() {
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|| url.to_string());
                 if looks_like_openable(&display) {
-                    let _ = app_handle.emit(FILE_OPEN_EVENT, display);
+                    let _ = _app_handle.emit(FILE_OPEN_EVENT, display);
                 }
             }
         }
