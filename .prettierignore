@@ -1,0 +1,10 @@
+dist
+coverage
+src-tauri/target
+src-tauri/gen
+node_modules
+*.lock
+package-lock.json
+public/tauri.svg
+public/vite.svg
+src/assets
