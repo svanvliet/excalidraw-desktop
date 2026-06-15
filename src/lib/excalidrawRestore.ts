@@ -8,20 +8,61 @@
  * `appState.collaborators.forEach(...)` and throws synchronously,
  * unmounting the canvas (blank-screen bug).
  *
- * `restore()` from `@excalidraw/excalidraw` is the canonical way to
- * normalize imported scene data: it re-instantiates `collaborators` as
- * a fresh `Map`, drops transient/forbidden fields, and repairs missing
- * defaults on elements. Use it on every code path that loads a scene
- * from disk, autosave, or the persisted session store.
+ * `restore()` from `@excalidraw/excalidraw` re-instantiates fields from
+ * the default appState **only when the supplied value is `undefined`** —
+ * a corrupted `collaborators: {}` would pass straight through. So we
+ * pre-strip the known runtime-only keys before delegating to `restore()`,
+ * which then falls back to the default `new Map()`.
  */
 import { restore } from "@excalidraw/excalidraw";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
+
+/**
+ * Keys in `appState` that are either runtime-only or known to hold types
+ * that don't survive a JSON round-trip (Map, Set, class instances). We
+ * strip them on import so Excalidraw's `restore()` rebuilds the defaults.
+ *
+ * If you add a feature that depends on persisting one of these, you'll
+ * need a custom (de)serializer for it — `JSON.stringify` alone is wrong.
+ */
+const RUNTIME_ONLY_APPSTATE_KEYS = [
+  "collaborators", // Map<string, Collaborator>
+  "selectedElementsAreBeingDragged",
+  "isResizing",
+  "isRotating",
+  "isLoading",
+  "errorMessage",
+  "draggingElement",
+  "editingElement",
+  "resizingElement",
+  "multiElement",
+  "selectionElement",
+  "newElement",
+  "editingTextElement",
+  "snapLines",
+  "originSnapOffset",
+  "contextMenu",
+  "showWelcomeScreen",
+  "toast",
+  "pasteDialog",
+  "pendingImageElementId",
+] as const;
 
 /** Parsed shape of an `.excalidraw` JSON file (only the keys we care about). */
 export interface ImportedSceneLike {
   elements?: unknown;
   appState?: unknown;
   files?: unknown;
+}
+
+/** Drop any runtime-only keys from the supplied appState (immutable). */
+export function sanitizeImportedAppState(appState: unknown): Record<string, unknown> {
+  if (!appState || typeof appState !== "object") return {};
+  const out: Record<string, unknown> = { ...(appState as Record<string, unknown>) };
+  for (const key of RUNTIME_ONLY_APPSTATE_KEYS) {
+    delete out[key];
+  }
+  return out;
 }
 
 /**
@@ -34,16 +75,11 @@ export interface ImportedSceneLike {
 export function restoreInitialData(
   imported: ImportedSceneLike | null | undefined,
 ): ExcalidrawInitialDataState {
-  // `restore` is tolerant of partial data; if `imported` is null it returns
-  // a fully-defaulted state.
   const safe = imported ?? {};
   const restored = restore(
     {
-      // Cast through unknown — `ImportedDataState` is permissive about the
-      // exact element/appState shape so our JSON validator's narrower types
-      // are fine as inputs.
       elements: safe.elements as never,
-      appState: safe.appState as never,
+      appState: sanitizeImportedAppState(safe.appState) as never,
       files: safe.files as never,
     },
     null,

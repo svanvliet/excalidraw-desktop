@@ -66,6 +66,11 @@ export function isExcalidrawFile(value: unknown): value is ExcalidrawFile {
  * Serialize an Excalidraw scene to the canonical `.excalidraw` JSON shape.
  * Mirrors what `serializeAsJSON` in `@excalidraw/excalidraw` produces, but keeps us
  * decoupled from its export surface for things like dirty-tracking and tests.
+ *
+ * Strips runtime-only keys from `appState` (see `excalidrawRestore.ts`) so
+ * we don't write a `collaborators: {}` (Map-flattened-by-JSON) into the
+ * saved file — which would only be recovered on read via `restore()`.
+ * Save-side sanitization keeps the on-disk format clean too.
  */
 export function serializeScene(
   elements: readonly unknown[],
@@ -77,10 +82,48 @@ export function serializeScene(
     version: 2,
     source: "excalidraw-desktop",
     elements: [...elements],
-    appState,
+    appState: sanitizeAppStateForExport(appState),
     files,
   };
   return JSON.stringify(document, null, 2);
+}
+
+/**
+ * Same key list as `sanitizeImportedAppState` (kept in `excalidrawRestore.ts`
+ * for centralization) — duplicated here as a small private constant to
+ * avoid a circular import between fileFormat (used by everything) and
+ * excalidrawRestore (which depends on Excalidraw). If you add a runtime
+ * key, update both.
+ */
+const RUNTIME_ONLY_APPSTATE_KEYS = new Set([
+  "collaborators",
+  "selectedElementsAreBeingDragged",
+  "isResizing",
+  "isRotating",
+  "isLoading",
+  "errorMessage",
+  "draggingElement",
+  "editingElement",
+  "resizingElement",
+  "multiElement",
+  "selectionElement",
+  "newElement",
+  "editingTextElement",
+  "snapLines",
+  "originSnapOffset",
+  "contextMenu",
+  "showWelcomeScreen",
+  "toast",
+  "pasteDialog",
+  "pendingImageElementId",
+]);
+
+function sanitizeAppStateForExport(appState: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(appState)) {
+    if (!RUNTIME_ONLY_APPSTATE_KEYS.has(k)) out[k] = v;
+  }
+  return out;
 }
 
 /** PNG magic bytes — first 8 bytes of every PNG file. */
