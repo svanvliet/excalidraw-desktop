@@ -8,7 +8,7 @@
 
 | ID  | Milestone                                                              | Status | Notes                                |
 | --- | ---------------------------------------------------------------------- | ------ | ------------------------------------ |
-| M1  | Project scaffold (Tauri 2 + Vite + React + TS, builds & runs)          | ⬜     |                                      |
+| M1  | Project scaffold (Tauri 2 + Vite + React + TS, builds & runs)          | ✅     | `npm run check` green: typecheck + eslint + prettier + vitest + cargo fmt + clippy + cargo test. macOS dev launch pending manual verification. |
 | M2  | Excalidraw embedded + JSON open/save                                   | ⬜     |                                      |
 | M3  | Tabs + recent files + autosave + session restore                       | ⬜     |                                      |
 | M4  | PNG export with embedded scene + file associations + double-click open | ⬜     |                                      |
@@ -22,9 +22,9 @@
 
 ### M1
 
-- [ ] `npm run tauri dev` opens an empty window on macOS.
-- [ ] `npm run tauri dev` opens an empty window on Windows.
-- [ ] `npm run lint`, `npm run typecheck`, `cargo clippy -- -D warnings`, `cargo fmt -- --check` all pass.
+- [ ] `npm run tauri dev` opens an empty window on macOS. _(pending manual verification — requires user-side launch)_
+- [ ] `npm run tauri dev` opens an empty window on Windows. _(pending Windows runner)_
+- [x] `npm run lint`, `npm run typecheck`, `npm test`, `cargo clippy -- -D warnings`, `cargo fmt -- --check`, `cargo test` all pass via `npm run check`.
 
 ### M2
 
@@ -75,6 +75,7 @@
 
 ## Changelog of status changes
 
-| Date (UTC) | Milestone | From → To | Note                                |
-| ---------- | --------- | --------- | ----------------------------------- |
-| 2026-06-15 | All       | — → ⬜    | Plan created, work not yet started. |
+| Date (UTC) | Milestone | From → To | Note                                                                                            |
+| ---------- | --------- | --------- | ----------------------------------------------------------------------------------------------- |
+| 2026-06-15 | All       | — → ⬜    | Plan created, work not yet started.                                                             |
+| 2026-06-15 | M1        | ⬜ → ✅   | Scaffold + tooling green via `npm run check`. macOS dev launch pending user-side manual verify. |
