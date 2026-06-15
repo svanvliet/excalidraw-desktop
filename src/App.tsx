@@ -10,8 +10,10 @@ import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
+import { useSettingsStore } from "./stores/settingsStore";
 import { persistSession, restoreSession } from "./stores/sessionStore";
 import {
   openFile,
@@ -56,12 +58,24 @@ export function App() {
   const apisRef = useRef<Map<string, ExcalidrawImperativeAPI>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const loadSettings = useSettingsStore((s) => s.load);
 
   const recentPaths = useRecentFilesStore((s) => s.paths);
   const loadRecent = useRecentFilesStore((s) => s.load);
   const addRecent = useRecentFilesStore((s) => s.add);
   const removeRecent = useRecentFilesStore((s) => s.remove);
   const clearRecent = useRecentFilesStore((s) => s.clear);
+
+  const collabEnabled = useSettingsStore((s) => s.collab);
+  const libraryEnabled = useSettingsStore((s) => s.library);
+  const aiEnabled = useSettingsStore((s) => s.ai);
+  // The official Excalidraw web app uses its own URL as the library return
+  // target. For our desktop wrapper there's no callback URL — we just need
+  // a non-empty value to let Excalidraw render the library UI. Keep it
+  // pointing at the public docs as a benign placeholder.
+  const libraryReturnUrl = libraryEnabled ? "https://libraries.excalidraw.com" : undefined;
 
   // Build the autosaver once; deps are stable references to IPC + store
   // helpers, and the per-tab snapshot fn is supplied at schedule time.
@@ -131,6 +145,7 @@ export function App() {
       if (cancelled) return;
       if (restored === 0) ensureActiveTab();
       void loadRecent();
+      void loadSettings();
       // Subscribe to OS file-open events (double-click, drag-onto-icon,
       // single-instance reroute) and route them through the latest openPath.
       unlistenFileOpen = await onFileOpenRequest((path) => {
@@ -165,7 +180,7 @@ export function App() {
       unlistenMenu?.();
       autosaver.cancelAll();
     };
-  }, [loadRecent, autosaver]);
+  }, [loadRecent, loadSettings, autosaver]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
@@ -388,6 +403,9 @@ export function App() {
         case "excalidraw:file:closeTab":
           if (activeTabId) requestCloseTab(activeTabId);
           return;
+        case "excalidraw:file:settings":
+          setSettingsOpen(true);
+          return;
         case "excalidraw:edit:undo":
           // Excalidraw owns its history stack — replay the keyboard
           // shortcut so its internal handler runs.
@@ -449,6 +467,7 @@ export function App() {
         onSave={() => void handleSave()}
         onSaveAs={handleSaveAs}
         onExportPng={handleExportPng}
+        onOpenSettings={() => setSettingsOpen(true)}
       >
         <RecentMenu
           paths={recentPaths}
@@ -483,6 +502,9 @@ export function App() {
                 markDirtyAction(tab.id);
                 scheduleAutosave(tab.id);
               }}
+              aiEnabled={aiEnabled}
+              isCollaborating={collabEnabled}
+              libraryReturnUrl={libraryReturnUrl}
             />
           </div>
         ))}
@@ -494,6 +516,7 @@ export function App() {
         onDiscard={handleConfirmDiscard}
         onCancel={handleConfirmCancel}
       />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </main>
   );
 }

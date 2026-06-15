@@ -24,6 +24,14 @@ export interface ExcalidrawCanvasProps {
    * Used to flip the document's dirty flag.
    */
   onSceneChange: () => void;
+  /**
+   * Online-feature toggles. Default to off (omit = off). Passing these
+   * unconditionally is the privacy boundary — the parent should never
+   * read settings inside this component.
+   */
+  aiEnabled?: boolean;
+  isCollaborating?: boolean;
+  libraryReturnUrl?: string;
 }
 
 /**
@@ -31,7 +39,14 @@ export interface ExcalidrawCanvasProps {
  * Intentionally minimal — we let the component manage its own state and only
  * surface the two hooks the rest of the app needs.
  */
-export function ExcalidrawCanvas({ initialData, onApi, onSceneChange }: ExcalidrawCanvasProps) {
+export function ExcalidrawCanvas({
+  initialData,
+  onApi,
+  onSceneChange,
+  aiEnabled,
+  isCollaborating,
+  libraryReturnUrl,
+}: ExcalidrawCanvasProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
   const handleApi = useCallback(
@@ -64,6 +79,9 @@ export function ExcalidrawCanvas({ initialData, onApi, onSceneChange }: Excalidr
         initialData={initialData ?? undefined}
         excalidrawAPI={handleApi}
         onChange={handleChange}
+        aiEnabled={aiEnabled ?? false}
+        isCollaborating={isCollaborating ?? false}
+        {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
       />
     </div>
   );

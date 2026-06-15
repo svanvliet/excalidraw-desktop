@@ -7,6 +7,7 @@ export interface ToolbarProps {
   onSave: () => void;
   onSaveAs: () => void;
   onExportPng?: () => void;
+  onOpenSettings?: () => void;
   children?: ReactNode;
 }
 
@@ -22,6 +23,7 @@ export function Toolbar({
   onSave,
   onSaveAs,
   onExportPng,
+  onOpenSettings,
   children,
 }: ToolbarProps) {
   const titleLabel = documentPath ?? "Untitled";
@@ -31,6 +33,7 @@ export function Toolbar({
   const handleSave = useCallback(() => onSave(), [onSave]);
   const handleSaveAs = useCallback(() => onSaveAs(), [onSaveAs]);
   const handleExportPng = useCallback(() => onExportPng?.(), [onExportPng]);
+  const handleOpenSettings = useCallback(() => onOpenSettings?.(), [onOpenSettings]);
 
   return (
     <header className="toolbar" data-testid="toolbar">
@@ -52,6 +55,16 @@ export function Toolbar({
         {onExportPng ? (
           <button type="button" onClick={handleExportPng}>
             Export PNG…
+          </button>
+        ) : null}
+        {onOpenSettings ? (
+          <button
+            type="button"
+            onClick={handleOpenSettings}
+            data-testid="toolbar-settings"
+            aria-label="Settings"
+          >
+            Settings
           </button>
         ) : null}
       </div>

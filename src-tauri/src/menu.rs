@@ -30,6 +30,7 @@ pub mod ids {
     pub const FILE_SAVE_AS: &str = "excalidraw:file:saveAs";
     pub const FILE_EXPORT_PNG: &str = "excalidraw:file:exportPng";
     pub const FILE_CLOSE_TAB: &str = "excalidraw:file:closeTab";
+    pub const FILE_SETTINGS: &str = "excalidraw:file:settings";
 
     pub const EDIT_UNDO: &str = "excalidraw:edit:undo";
     pub const EDIT_REDO: &str = "excalidraw:edit:redo";
@@ -66,6 +67,14 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             .unwrap_or_else(|| "Excalidraw".to_string());
         let app_menu = SubmenuBuilder::new(app, &app_name)
             .about(None)
+            .separator()
+            .item(&MenuItem::with_id(
+                app,
+                ids::FILE_SETTINGS,
+                "Settings…",
+                true,
+                Some(&accel("$Mod+,")),
+            )?)
             .separator()
             .services()
             .separator()
@@ -127,7 +136,17 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     // On non-macOS, the File menu owns Quit (macOS owns it in the App menu).
     #[cfg(not(target_os = "macos"))]
-    let file = file.separator().quit();
+    let file = file
+        .separator()
+        .item(&MenuItem::with_id(
+            app,
+            ids::FILE_SETTINGS,
+            "Settings…",
+            true,
+            Some(&accel("$Mod+,")),
+        )?)
+        .separator()
+        .quit();
 
     menu = menu.item(&file.build()?);
 
@@ -263,6 +282,7 @@ mod tests {
         assert_eq!(ids::FILE_SAVE_AS, "excalidraw:file:saveAs");
         assert_eq!(ids::FILE_EXPORT_PNG, "excalidraw:file:exportPng");
         assert_eq!(ids::FILE_CLOSE_TAB, "excalidraw:file:closeTab");
+        assert_eq!(ids::FILE_SETTINGS, "excalidraw:file:settings");
         assert_eq!(ids::EDIT_UNDO, "excalidraw:edit:undo");
         assert_eq!(ids::EDIT_REDO, "excalidraw:edit:redo");
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");
