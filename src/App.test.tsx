@@ -29,6 +29,10 @@ vi.mock("@tauri-apps/plugin-store", () => {
 vi.mock("./ipc/commands", () => ({
   openFile: vi.fn(),
   saveFile: vi.fn(),
+  writeScratch: vi.fn(),
+  readScratch: vi.fn(),
+  deleteScratch: vi.fn(),
+  listScratch: vi.fn(async () => []),
   isAppError: () => false,
 }));
 

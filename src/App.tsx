@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
@@ -12,8 +12,9 @@ import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
-import { openFile, saveFile, isAppError } from "./ipc/commands";
+import { openFile, saveFile, writeScratch, deleteScratch, isAppError } from "./ipc/commands";
 import { detectFormat, serializeScene } from "./lib/fileFormat";
+import { createAutosaver } from "./lib/autosave";
 
 const EXCALIDRAW_FILTERS = [{ name: "Excalidraw", extensions: ["excalidraw"] }];
 
@@ -37,10 +38,62 @@ export function App() {
   const removeRecent = useRecentFilesStore((s) => s.remove);
   const clearRecent = useRecentFilesStore((s) => s.clear);
 
+  // Build the autosaver once; deps are stable references to IPC + store
+  // helpers, and the per-tab snapshot fn is supplied at schedule time.
+  const autosaver = useMemo(
+    () =>
+      createAutosaver(
+        {
+          writeFile: (path, contents) => saveFile(path, contents),
+          writeScratch: (key, contents) => writeScratch(key, contents),
+          onSaved: (target) => {
+            // Only file-backed autosaves clear the dirty flag. Scratch-saves
+            // for untitled tabs keep dirty=true so the tab still nags the
+            // user to do a real Save.
+            if (target.path) {
+              useTabsStore.getState().markSaved(target.tabId, target.path);
+            }
+          },
+          onError: (_target, err) => {
+            // Surface but don't block the UI — autosave is best-effort.
+            console.warn("autosave failed", err);
+          },
+        },
+        2000,
+      ),
+    [],
+  );
+
+  const captureSnapshot = useCallback((tabId: string): string | null => {
+    const api = apisRef.current.get(tabId);
+    if (!api) return null;
+    return serializeScene(
+      api.getSceneElements(),
+      api.getAppState() as unknown as Record<string, unknown>,
+      api.getFiles() as unknown as Record<string, unknown>,
+    );
+  }, []);
+
+  const scheduleAutosave = useCallback(
+    (tabId: string) => {
+      const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      autosaver.schedule({
+        tabId,
+        path: tab.path,
+        snapshot: () => captureSnapshot(tabId),
+      });
+    },
+    [autosaver, captureSnapshot],
+  );
+
   useEffect(() => {
     ensureActiveTab();
     void loadRecent();
-  }, [loadRecent]);
+    return () => {
+      autosaver.cancelAll();
+    };
+  }, [loadRecent, autosaver]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
@@ -113,10 +166,14 @@ export function App() {
     });
     if (typeof chosen !== "string") return false;
     await writeActiveTabTo(activeTab.id, chosen);
+    // A successful Save As means any scratch entry for this (previously
+    // untitled) tab is now obsolete.
+    autosaver.cancel(activeTab.id);
+    void deleteScratch(activeTab.id).catch(() => {});
     markSavedAction(activeTab.id, chosen);
     void addRecent(chosen);
     return true;
-  }, [activeTab, writeActiveTabTo, markSavedAction, addRecent]);
+  }, [activeTab, writeActiveTabTo, markSavedAction, addRecent, autosaver]);
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     setError(null);
@@ -124,6 +181,7 @@ export function App() {
       if (!activeTab) return false;
       if (activeTab.path) {
         await writeActiveTabTo(activeTab.id, activeTab.path);
+        autosaver.cancel(activeTab.id);
         markSavedAction(activeTab.id, activeTab.path);
         void addRecent(activeTab.path);
         return true;
@@ -133,7 +191,7 @@ export function App() {
       setError(formatError(e));
       return false;
     }
-  }, [activeTab, writeActiveTabTo, markSavedAction, addRecent, handleSaveAsInternal]);
+  }, [activeTab, writeActiveTabTo, markSavedAction, addRecent, handleSaveAsInternal, autosaver]);
 
   const handleSaveAs = useCallback(async () => {
     setError(null);
@@ -153,11 +211,13 @@ export function App() {
       if (tab.dirty) {
         setPendingClose(id);
       } else {
+        autosaver.cancel(id);
+        if (!tab.path) void deleteScratch(id).catch(() => {});
         apisRef.current.delete(id);
         closeTabAction(id);
       }
     },
-    [tabs, closeTabAction],
+    [tabs, closeTabAction, autosaver],
   );
 
   const pendingTab = pendingClose ? (tabs.find((t) => t.id === pendingClose) ?? null) : null;
@@ -169,18 +229,22 @@ export function App() {
     selectTab(pendingClose);
     const saved = await handleSave();
     if (saved) {
+      autosaver.cancel(pendingClose);
       apisRef.current.delete(pendingClose);
       closeTabAction(pendingClose);
       setPendingClose(null);
     }
-  }, [pendingClose, selectTab, handleSave, closeTabAction]);
+  }, [pendingClose, selectTab, handleSave, closeTabAction, autosaver]);
 
   const handleConfirmDiscard = useCallback(() => {
     if (!pendingClose) return;
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === pendingClose);
+    autosaver.cancel(pendingClose);
+    if (tab && !tab.path) void deleteScratch(pendingClose).catch(() => {});
     apisRef.current.delete(pendingClose);
     closeTabAction(pendingClose);
     setPendingClose(null);
-  }, [pendingClose, closeTabAction]);
+  }, [pendingClose, closeTabAction, autosaver]);
 
   const handleConfirmCancel = useCallback(() => setPendingClose(null), []);
 
@@ -228,7 +292,10 @@ export function App() {
             <ExcalidrawCanvas
               initialData={tab.initialData}
               onApi={(api) => handleApi(tab.id, api)}
-              onSceneChange={() => markDirtyAction(tab.id)}
+              onSceneChange={() => {
+                markDirtyAction(tab.id);
+                scheduleAutosave(tab.id);
+              }}
             />
           </div>
         ))}
