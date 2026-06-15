@@ -13,45 +13,52 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
 
 ## 2. Source of truth (read these before changing things)
 
-| File                    | Purpose                                                       |
-| ----------------------- | ------------------------------------------------------------- |
-| `docs/requirements.md`  | What the app must do. Treat as a contract.                    |
+| File                    | Purpose                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `docs/requirements.md`  | What the app must do. Treat as a contract.                             |
 | `docs/plan.md`          | How we're building it. Architecture, stack, milestones, decisions log. |
-| `docs/status.md`        | Where we are. Update when a milestone moves.                  |
-| `CLAUDE.md` (this file) | How to work in this repo. Conventions, commands, skills.      |
+| `docs/status.md`        | Where we are. Update when a milestone moves.                           |
+| `CLAUDE.md` (this file) | How to work in this repo. Conventions, commands, skills.               |
 
 **If you change scope, behavior, or stack:** update `docs/requirements.md` and/or `docs/plan.md` in the same change. **If you complete a milestone or acceptance check:** update `docs/status.md`.
 
 ## 3. Core conventions
 
 ### Privacy & networking
+
 - The app's promise to users is that **no diagram data leaves the device unless they opt in**. Any code that adds a network call MUST:
   1. Be gated behind an explicit setting toggle (default off).
   2. Be covered by a Playwright smoke test under a network-blocked profile that verifies the toggle works.
   3. Be reflected in the runtime CSP (see `docs/plan.md` § "CSP").
 
 ### Tauri capabilities
+
 - Keep `src-tauri/capabilities/default.json` **minimal**. Adding a new capability needs a justification comment in the diff and a line in `docs/plan.md` § "Tauri capabilities".
 - Filesystem access is **dialog-scoped** — never grant blanket `$HOME` read.
 
 ### Secrets
+
 - Never write API keys or Firebase config to JSON on disk. Use `tauri-plugin-keyring` (Keychain on macOS, Credential Manager on Windows).
 
 ### Frontend
+
 - React function components only.
 - Zustand for app-level state. No Redux.
 - No inline `style={{...}}` for non-trivial styles — use CSS modules or styled-components consistently with what's already in the file you're editing.
 - All `invoke()` calls go through typed wrappers in `src/ipc/commands.ts` — never call `invoke('foo')` directly from a component.
 
 ### Rust
+
 - Every public command in `src-tauri/src/commands/` returns `Result<T, AppError>` where `AppError` is the project's error enum.
 - `cargo clippy -- -D warnings` must pass.
 
 ### Tests
+
 - New behavior ships with a test. New Tauri command → cargo test. New React component with logic → Vitest. New user-visible flow → Playwright smoke if feasible.
 - Tests live next to source when possible (`foo.ts` + `foo.test.ts`), or in `e2e/` for Playwright specs.
 
 ### Commits
+
 - **Commit early and commit often.** Make small, focused commits at every meaningful checkpoint — a passing scaffold, a green test, a new module wired in. Do not batch a day's work into one large commit.
 - Conventional Commits style: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`.
 - One logical change per commit. If a single change touches multiple concerns, split it.
@@ -61,20 +68,20 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
 
 > All commands run from the repo root unless noted.
 
-| Goal                          | Command                                |
-| ----------------------------- | -------------------------------------- |
-| Install deps                  | `npm install`                          |
-| Run app in dev                | `npm run tauri dev`                    |
-| Frontend-only dev (no Rust)   | `npm run dev`                          |
-| Build distributable           | `npm run tauri build`                  |
-| Frontend lint                 | `npm run lint`                         |
-| Frontend type-check           | `npm run typecheck`                    |
-| Frontend unit tests           | `npm test` (or `npm run test:watch`)   |
-| Rust format check             | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` |
-| Rust lint                     | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` |
-| Rust tests                    | `cargo test --manifest-path src-tauri/Cargo.toml` |
-| End-to-end (Playwright)       | `npm run e2e`                          |
-| All checks (pre-PR)           | `npm run check`                        |
+| Goal                        | Command                                                            |
+| --------------------------- | ------------------------------------------------------------------ |
+| Install deps                | `npm install`                                                      |
+| Run app in dev              | `npm run tauri dev`                                                |
+| Frontend-only dev (no Rust) | `npm run dev`                                                      |
+| Build distributable         | `npm run tauri build`                                              |
+| Frontend lint               | `npm run lint`                                                     |
+| Frontend type-check         | `npm run typecheck`                                                |
+| Frontend unit tests         | `npm test` (or `npm run test:watch`)                               |
+| Rust format check           | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`        |
+| Rust lint                   | `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` |
+| Rust tests                  | `cargo test --manifest-path src-tauri/Cargo.toml`                  |
+| End-to-end (Playwright)     | `npm run e2e`                                                      |
+| All checks (pre-PR)         | `npm run check`                                                    |
 
 If a command above is missing in `package.json`, add it — don't invent ad-hoc invocations.
 
@@ -107,18 +114,18 @@ Custom helpers live under `.claude/`. Track every one here so contributors can f
 
 ### Slash commands (`.claude/commands/`)
 
-| Command                       | What it does                                                                 |
-| ----------------------------- | ---------------------------------------------------------------------------- |
-| `/new-tauri-command <name>`   | Scaffolds a Rust command (`src-tauri/src/commands/`), registers it in `lib.rs`, generates the typed TS wrapper in `src/ipc/commands.ts`, and creates Vitest + cargo test stubs. |
-| `/bump-excalidraw`            | Updates `@excalidraw/excalidraw`, reads its changelog, runs `npm test` and the Playwright smoke suite, and reports any breaking changes the bump introduces. |
-| `/release-checklist`          | Walks pre-release validation: bump version, regenerate changelog, run lint + all tests on both platforms, verify status.md milestones, tag. |
+| Command                     | What it does                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/new-tauri-command <name>` | Scaffolds a Rust command (`src-tauri/src/commands/`), registers it in `lib.rs`, generates the typed TS wrapper in `src/ipc/commands.ts`, and creates Vitest + cargo test stubs. |
+| `/bump-excalidraw`          | Updates `@excalidraw/excalidraw`, reads its changelog, runs `npm test` and the Playwright smoke suite, and reports any breaking changes the bump introduces.                    |
+| `/release-checklist`        | Walks pre-release validation: bump version, regenerate changelog, run lint + all tests on both platforms, verify status.md milestones, tag.                                     |
 
 ### Subagents (`.claude/agents/`)
 
-| Agent                  | Use when…                                                                |
-| ---------------------- | ------------------------------------------------------------------------ |
-| `tauri-architect`      | Designing a new Tauri command, IPC flow, or capability/CSP change. Calls out impact on `default.json` and on networking promises. |
-| `excalidraw-integrator`| Mapping a desired UX onto the `@excalidraw/excalidraw` API surface (props, refs, imperative API, theme, fonts, libraries). |
+| Agent                   | Use when…                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `tauri-architect`       | Designing a new Tauri command, IPC flow, or capability/CSP change. Calls out impact on `default.json` and on networking promises. |
+| `excalidraw-integrator` | Mapping a desired UX onto the `@excalidraw/excalidraw` API surface (props, refs, imperative API, theme, fonts, libraries).        |
 
 > When you add a skill or agent, **add a row to the table above** in the same change.
 

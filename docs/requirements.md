@@ -20,19 +20,21 @@
 
 ## 3. Platforms
 
-| Platform | Minimum version | Bundles                |
-| -------- | --------------- | ---------------------- |
+| Platform | Minimum version | Bundles                  |
+| -------- | --------------- | ------------------------ |
 | macOS    | 11 Big Sur      | Universal `.app`, `.dmg` |
 | Windows  | 10 64-bit       | `.msi` and `.exe` (NSIS) |
 
 ## 4. Functional Requirements
 
 ### 4.1 Excalidraw integration
+
 - **FR-1** The editor canvas MUST be the official `@excalidraw/excalidraw` React component, embedded in our Vite/React frontend and loaded by the Tauri webview.
 - **FR-2** The app MUST run with no network access required at any point in normal use (open / edit / save / export).
 - **FR-3** Upstream Excalidraw bumps MUST be possible with a single dependency update + smoke test pass.
 
 ### 4.2 File handling
+
 - **FR-4** Supported file formats:
   - `.excalidraw` (JSON, Excalidraw's native format) — read + write.
   - `.png` with embedded Excalidraw scene — write (export) and read (re-open as editable).
@@ -41,11 +43,13 @@
 - **FR-7** A second invocation of the app (e.g., double-clicking a file while the app is running) MUST route the file to the already-running instance and open it in a new tab — not spawn a second process.
 
 ### 4.3 Multi-document UI
+
 - **FR-8** A single window MUST support multiple open documents as **tabs**.
 - **FR-9** Each tab tracks its own file path, dirty state, and undo history.
 - **FR-10** Closing a tab with unsaved changes MUST prompt to save / discard / cancel.
 
 ### 4.4 Persistence
+
 - **FR-11** The app MUST maintain a **Recent Files** list (last 20), persisted across launches, exposed under `File → Open Recent`.
 - **FR-12** The app MUST **autosave** dirty tabs:
   - Before first explicit save: to a scratch location under the app's data dir, restored on next launch.
@@ -53,6 +57,7 @@
 - **FR-13** On launch, the app MUST **restore the previous session**: re-open the tabs that were open at quit, and select the previously active tab.
 
 ### 4.5 Native menus & shortcuts
+
 - **FR-14** macOS and Windows MUST have a standard menu bar:
   - **File**: New Tab, Open…, Open Recent ▶, Save, Save As…, Export as PNG…, Close Tab, Quit
   - **Edit**: Undo, Redo, Cut, Copy, Paste, Select All (forwarded to Excalidraw)
@@ -62,6 +67,7 @@
 - **FR-15** Platform-standard shortcuts MUST work: `⌘/Ctrl+N`, `⌘/Ctrl+O`, `⌘/Ctrl+S`, `⌘/Ctrl+Shift+S`, `⌘/Ctrl+W`, `⌘/Ctrl+Q` (mac), `⌘/Ctrl+T`, `⌘/Ctrl+Shift+T`.
 
 ### 4.6 Settings & opt-in online features
+
 - **FR-16** A Settings window/dialog MUST expose toggles for:
   - **Real-time collaboration** (Firebase) — default **off**. When enabled, the user must supply their own Firebase config.
   - **Library browser** (`libraries.excalidraw.com`) — default **off**. When enabled, the app opens the library page in the system browser.
@@ -70,6 +76,7 @@
 - **FR-18** With all toggles off, the app MUST make zero outbound network requests during normal use (verified by Playwright + a network blocker in CI smoke tests).
 
 ### 4.7 Updates & telemetry
+
 - **FR-19** No telemetry. No analytics. No crash-reporter that phones home in v1.
 - **FR-20** Auto-update is **out of scope for v1** (manually download new releases). Wired-up update plumbing is fine if disabled.
 

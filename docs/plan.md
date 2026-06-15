@@ -36,24 +36,24 @@
 
 ## 2. Tech stack (locked-in decisions)
 
-| Concern              | Choice                                                   |
-| -------------------- | -------------------------------------------------------- |
-| Shell                | **Tauri 2.x** (Rust core + WebView2/WKWebView)           |
-| Frontend bundler     | **Vite**                                                 |
-| Frontend framework   | **React 18 + TypeScript** (required by `@excalidraw/excalidraw`) |
-| Package manager      | **npm**                                                  |
-| Editor               | **`@excalidraw/excalidraw`** npm package, embedded React component |
-| State (frontend)     | **Zustand** for tab/session state (light, no boilerplate)|
-| Persisted store      | `tauri-plugin-store` (JSON on disk, in app data dir)     |
-| Secrets              | `tauri-plugin-keyring` (Keychain on macOS, Credential Manager on Windows) |
-| Single instance      | `tauri-plugin-single-instance`                           |
-| File associations    | Tauri 2 `bundle.fileAssociations` + `tauri-plugin-deep-link` (Windows) + macOS `LSHandlerRank` (auto-emitted) |
-| Frontend tests       | **Vitest** + React Testing Library                       |
-| Rust tests           | `cargo test`                                             |
-| End-to-end tests     | **Playwright** driving **tauri-driver** (WebDriver)      |
-| Lint                 | `eslint` (TS) + `cargo clippy -- -D warnings` (Rust)     |
-| Format               | `prettier` (TS) + `cargo fmt` (Rust)                     |
-| CI                   | GitHub Actions (build/test matrix on macOS + Windows runners) |
+| Concern            | Choice                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Shell              | **Tauri 2.x** (Rust core + WebView2/WKWebView)                                                                |
+| Frontend bundler   | **Vite**                                                                                                      |
+| Frontend framework | **React 18 + TypeScript** (required by `@excalidraw/excalidraw`)                                              |
+| Package manager    | **npm**                                                                                                       |
+| Editor             | **`@excalidraw/excalidraw`** npm package, embedded React component                                            |
+| State (frontend)   | **Zustand** for tab/session state (light, no boilerplate)                                                     |
+| Persisted store    | `tauri-plugin-store` (JSON on disk, in app data dir)                                                          |
+| Secrets            | `tauri-plugin-keyring` (Keychain on macOS, Credential Manager on Windows)                                     |
+| Single instance    | `tauri-plugin-single-instance`                                                                                |
+| File associations  | Tauri 2 `bundle.fileAssociations` + `tauri-plugin-deep-link` (Windows) + macOS `LSHandlerRank` (auto-emitted) |
+| Frontend tests     | **Vitest** + React Testing Library                                                                            |
+| Rust tests         | `cargo test`                                                                                                  |
+| End-to-end tests   | **Playwright** driving **tauri-driver** (WebDriver)                                                           |
+| Lint               | `eslint` (TS) + `cargo clippy -- -D warnings` (Rust)                                                          |
+| Format             | `prettier` (TS) + `cargo fmt` (Rust)                                                                          |
+| CI                 | GitHub Actions (build/test matrix on macOS + Windows runners)                                                 |
 
 ## 3. Repository layout
 
@@ -126,12 +126,14 @@ excalidraw-app/
 > Status of each is tracked in `docs/status.md`. Order is roughly sequential but small reshuffles are fine.
 
 ### M1 — Project scaffold
+
 - `npm create tauri-app@latest` with `react-ts` template; switch to npm; pin Tauri 2.
 - Replace default content with a "Hello Excalidraw" placeholder.
 - Wire `eslint`, `prettier`, `tsc --noEmit`, `cargo fmt`, `cargo clippy`.
 - Verify `npm run tauri dev` launches on macOS and Windows.
 
 ### M2 — Excalidraw embedded + basic open/save
+
 - Install `@excalidraw/excalidraw`. Render full editor in `ExcalidrawCanvas.tsx`.
 - Rust commands: `open_file(path) -> FileContents`, `save_file(path, json) -> ()`.
 - Typed TS wrappers in `src/ipc/commands.ts`.
@@ -139,6 +141,7 @@ excalidraw-app/
 - Manual test: open a `.excalidraw` from a chosen path, edit, save back.
 
 ### M3 — Tabs, recent files, autosave, session restore
+
 - Zustand `tabsStore`: array of `{ id, filePath?, contents, dirty, scratchPath? }`.
 - `TabBar.tsx`: middle-click to close, prompt-on-dirty.
 - Rust `recent.rs`: read/write `recent.json` via `tauri-plugin-store`, capped at 20.
@@ -146,6 +149,7 @@ excalidraw-app/
 - On launch: read `session.json`, restore tabs (skip missing files, surface a warning).
 
 ### M4 — PNG export with embedded scene + file associations
+
 - Use `@excalidraw/excalidraw`'s `exportToBlob` to produce PNG with `appState` and `elements` embedded in metadata.
 - Rust command `export_png(path, bytes)`; FE chooses path via `tauri-plugin-dialog`.
 - Re-open of PNG: detect Excalidraw metadata via `lib/fileFormat.ts`, parse, restore scene.
@@ -154,12 +158,14 @@ excalidraw-app/
 - Drag-drop onto window: Tauri's `FileDrop` event → open as new tab.
 
 ### M5 — Native menus & keyboard shortcuts
+
 - Build menu via `tauri::menu::MenuBuilder` in `menu.rs`.
 - Menu events → emit FE event → tab/store action.
 - Edit menu items forward to Excalidraw via its imperative API (`excalidrawAPI.undo()`, etc.).
 - Platform-correct accelerators (`Cmd` vs `Ctrl`).
 
 ### M6 — Settings dialog + opt-in online features
+
 - `SettingsDialog.tsx`: three toggles (Collab, Library browser, AI) + key/config fields.
 - `settingsStore`: persisted via `tauri-plugin-store`; secrets via `tauri-plugin-keyring`.
 - Wire toggles into the props passed to `@excalidraw/excalidraw`:
@@ -169,6 +175,7 @@ excalidraw-app/
 - CSP: default forbids remote scripts; relax per-toggle at runtime via dynamic header injection (or by enabling specific domains in capabilities).
 
 ### M7 — Tests
+
 - Vitest:
   - `fileFormat.test.ts`: detect JSON vs PNG-with-scene.
   - `tabsStore.test.ts`: open / dirty / close-with-prompt logic.
@@ -181,11 +188,13 @@ excalidraw-app/
 - Playwright + tauri-driver: smoke test that launches the app, opens a fixture `.excalidraw`, makes an edit, saves, and asserts the file changed. Also runs with network blocked to verify FR-18.
 
 ### M8 — Docs polish + signing/notarization documentation (deferred impl)
+
 - `docs/signing-macos.md`: Developer ID prerequisites, `codesign` flags, `notarytool submit --wait`, stapling, troubleshooting.
 - `docs/signing-windows.md`: cert acquisition options (EV, OV, Azure Trusted Signing), `signtool` invocation, timestamp servers, MSI vs NSIS trade-offs.
 - README quickstart: install, dev, build, test.
 
 ### M9 — Deferred for post-v1
+
 - CI release pipeline that actually signs and publishes.
 - Auto-update via `tauri-plugin-updater`.
 - Linux builds.
@@ -193,6 +202,7 @@ excalidraw-app/
 ## 5. Tauri capabilities (minimal allowlist)
 
 `src-tauri/capabilities/default.json` will grant only:
+
 - `fs:default` scoped to user-selected paths (via `tauri-plugin-fs` dialog-driven scopes).
 - `dialog:default` (open/save/message).
 - `path:default`, `os:default`.
@@ -204,45 +214,49 @@ excalidraw-app/
 ## 6. CSP
 
 Default `Content-Security-Policy`:
+
 ```
 default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: https://ipc.localhost
 ```
+
 When AI is enabled at runtime, append `https://api.openai.com` to `connect-src`. When collab is enabled, append the user's Firebase region domain.
 
 ## 7. Decisions log
 
-| #  | Decision                                          | Why                                                                 |
-| -- | ------------------------------------------------- | ------------------------------------------------------------------- |
-| D1 | Embed `@excalidraw/excalidraw` React component    | Self-contained npm package, no server needed, easy upstream bumps.  |
-| D2 | Tauri 2.x                                         | Current stable; better plugin ecosystem; first-class file associations. |
-| D3 | JSON + PNG-with-scene formats                     | Covers the common roundtrip; PNG shareable while still editable.    |
-| D4 | Single window with tabs                           | Matches user expectation; simpler state than multi-window.          |
-| D5 | Recent files + autosave + session restore        | Standard native-app expectation.                                    |
-| D6 | npm + Vite + React + TS                           | User preference; React is required by Excalidraw.                   |
-| D7 | Vitest + cargo test + Playwright via tauri-driver | Layered coverage from units to full app smoke.                      |
-| D8 | Online features opt-in via settings, off by default | User wants the capability but no data leaving the box by default. |
-| D9 | Signing/notarization documented, deferred         | User asked for docs without implementation in v1.                   |
+| #   | Decision                                            | Why                                                                     |
+| --- | --------------------------------------------------- | ----------------------------------------------------------------------- |
+| D1  | Embed `@excalidraw/excalidraw` React component      | Self-contained npm package, no server needed, easy upstream bumps.      |
+| D2  | Tauri 2.x                                           | Current stable; better plugin ecosystem; first-class file associations. |
+| D3  | JSON + PNG-with-scene formats                       | Covers the common roundtrip; PNG shareable while still editable.        |
+| D4  | Single window with tabs                             | Matches user expectation; simpler state than multi-window.              |
+| D5  | Recent files + autosave + session restore           | Standard native-app expectation.                                        |
+| D6  | npm + Vite + React + TS                             | User preference; React is required by Excalidraw.                       |
+| D7  | Vitest + cargo test + Playwright via tauri-driver   | Layered coverage from units to full app smoke.                          |
+| D8  | Online features opt-in via settings, off by default | User wants the capability but no data leaving the box by default.       |
+| D9  | Signing/notarization documented, deferred           | User asked for docs without implementation in v1.                       |
 
 ## 8. Risks & mitigations
 
-| Risk                                                                                | Mitigation                                                                       |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `@excalidraw/excalidraw` API changes between minor versions                         | Pin exact version; bump via `/bump-excalidraw` skill which runs smoke tests.     |
-| Windows file association requires deep-link plumbing + single-instance              | Use both plugins together; covered by Playwright smoke test for double-click.    |
-| PNG-with-scene metadata fragile (stripped by some tools)                            | Keep `.excalidraw` JSON as authoritative; PNG is a sharing convenience only.     |
-| Tauri webview differences (WKWebView vs WebView2) cause Excalidraw rendering bugs   | Run vitest + playwright on both runners in CI before tagging a release.          |
-| User enables collab/AI then leaks data unintentionally                              | Toggles default off; warning copy in settings; CSP only widened when enabled.    |
+| Risk                                                                              | Mitigation                                                                    |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `@excalidraw/excalidraw` API changes between minor versions                       | Pin exact version; bump via `/bump-excalidraw` skill which runs smoke tests.  |
+| Windows file association requires deep-link plumbing + single-instance            | Use both plugins together; covered by Playwright smoke test for double-click. |
+| PNG-with-scene metadata fragile (stripped by some tools)                          | Keep `.excalidraw` JSON as authoritative; PNG is a sharing convenience only.  |
+| Tauri webview differences (WKWebView vs WebView2) cause Excalidraw rendering bugs | Run vitest + playwright on both runners in CI before tagging a release.       |
+| User enables collab/AI then leaks data unintentionally                            | Toggles default off; warning copy in settings; CSP only widened when enabled. |
 
 ## 9. Skills & agents (Claude Code)
 
 Definitions live under `.claude/`. Tracked in `CLAUDE.md` § "Skills & Agents".
 
 **Slash commands** (`.claude/commands/*.md`):
+
 - `/new-tauri-command <name>` — scaffold a Rust command in `src-tauri/src/commands/`, register it, generate a typed TS wrapper, and create a Vitest + cargo test stub.
 - `/bump-excalidraw` — update `@excalidraw/excalidraw`, run `npm test`, run Playwright smoke, report breaking changes.
 - `/release-checklist` — walk through pre-release validation (lint, tests, version bump, changelog).
 
 **Subagents** (`.claude/agents/*.md`):
+
 - `tauri-architect` — designs new Tauri commands/IPC flows with capability/CSP impact called out.
 - `excalidraw-integrator` — knows the `@excalidraw/excalidraw` API surface; pairs it with our React shell.
 
