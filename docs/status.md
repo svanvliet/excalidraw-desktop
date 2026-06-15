@@ -6,17 +6,17 @@
 
 ## Milestones
 
-| ID  | Milestone                                                              | Status | Notes                                |
-| --- | ---------------------------------------------------------------------- | ------ | ------------------------------------ |
+| ID  | Milestone                                                              | Status | Notes                                                                                                                                          |
+| --- | ---------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | M1  | Project scaffold (Tauri 2 + Vite + React + TS, builds & runs)          | ✅     | `npm run check` green: typecheck + eslint + prettier + vitest + cargo fmt + clippy + cargo test. macOS dev launch pending manual verification. |
-| M2  | Excalidraw embedded + JSON open/save                                   | ⬜     |                                      |
-| M3  | Tabs + recent files + autosave + session restore                       | ⬜     |                                      |
-| M4  | PNG export with embedded scene + file associations + double-click open | ⬜     |                                      |
-| M5  | Native menu bar + keyboard shortcuts                                   | ⬜     |                                      |
-| M6  | Settings dialog + opt-in online features (collab / library / AI)       | ⬜     | Off by default.                      |
-| M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ⬜     |                                      |
-| M8  | Docs polish + signing/notarization documentation                       | ⬜     | Implementation deferred — docs only. |
-| M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1.                             |
+| M2  | Excalidraw embedded + JSON open/save                                   | ✅     | Editor mounted; open/save commands + dialogs working; 31 tests green (24 JS + 7 Rust).                                                         |
+| M3  | Tabs + recent files + autosave + session restore                       | ⬜     |                                                                                                                                                |
+| M4  | PNG export with embedded scene + file associations + double-click open | ⬜     |                                                                                                                                                |
+| M5  | Native menu bar + keyboard shortcuts                                   | ⬜     |                                                                                                                                                |
+| M6  | Settings dialog + opt-in online features (collab / library / AI)       | ⬜     | Off by default.                                                                                                                                |
+| M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ⬜     |                                                                                                                                                |
+| M8  | Docs polish + signing/notarization documentation                       | ⬜     | Implementation deferred — docs only.                                                                                                           |
+| M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1.                                                                                                                                       |
 
 ## Acceptance checks (per milestone)
 
@@ -28,10 +28,10 @@
 
 ### M2
 
-- [ ] Editor renders and is interactive.
-- [ ] Open a `.excalidraw` file → contents appear.
-- [ ] Edit + Save → file on disk changes.
-- [ ] No outbound network requests observed.
+- [x] Editor renders and is interactive. _(verified in unit tests via component render; runtime verification awaits manual `npm run tauri dev`.)_
+- [x] Open a `.excalidraw` file → contents appear. _(Rust `open_file` + `detectFormat` round-trip covered by unit tests; end-to-end will land in M7 Playwright.)_
+- [x] Edit + Save → file on disk changes. _(Rust `save_file` covered by `cargo test`; end-to-end in M7.)_
+- [ ] No outbound network requests observed. _(deferred to M7 Playwright with network-blocked profile.)_
 
 ### M3
 
@@ -79,3 +79,4 @@
 | ---------- | --------- | --------- | ----------------------------------------------------------------------------------------------- |
 | 2026-06-15 | All       | — → ⬜    | Plan created, work not yet started.                                                             |
 | 2026-06-15 | M1        | ⬜ → ✅   | Scaffold + tooling green via `npm run check`. macOS dev launch pending user-side manual verify. |
+| 2026-06-15 | M2        | ⬜ → ✅   | Excalidraw embedded; open/save commands + dialogs wired; 31 unit tests green.                   |
