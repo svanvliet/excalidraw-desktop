@@ -5,6 +5,17 @@ vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: () => <div data-testid="excalidraw-mock" />,
   exportToBlob: vi.fn(async () => new Blob()),
   loadFromBlob: vi.fn(async () => ({ elements: [], appState: {}, files: {} })),
+  // Used by `src/lib/excalidrawRestore.ts`. Real Excalidraw rebuilds the
+  // collaborators Map and normalizes appState here; the stub is enough
+  // for App-level smoke testing.
+  restore: (data: { elements?: unknown; appState?: unknown; files?: unknown } | null) => ({
+    elements: Array.isArray(data?.elements) ? (data?.elements as unknown[]) : [],
+    appState: {
+      ...((data?.appState as Record<string, unknown>) ?? {}),
+      collaborators: new Map(),
+    },
+    files: (data?.files as Record<string, unknown>) ?? {},
+  }),
 }));
 
 vi.mock("@excalidraw/excalidraw/index.css", () => ({}));

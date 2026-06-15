@@ -1,4 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// `sessionStore` transitively imports `@excalidraw/excalidraw` via the
+// `restoreInitialData` helper. The package's top-level deep-loads
+// `open-color.json` which Node's ESM loader can't read without an
+// `assert { type: "json" }` attribute, so we stub it here.
+vi.mock("@excalidraw/excalidraw", () => ({
+  restore: (data: { elements?: unknown; appState?: unknown; files?: unknown } | null) => ({
+    elements: Array.isArray(data?.elements) ? (data?.elements as unknown[]) : [],
+    appState: {
+      ...((data?.appState as Record<string, unknown>) ?? {}),
+      collaborators: new Map(),
+    },
+    files: (data?.files as Record<string, unknown>) ?? {},
+  }),
+}));
+
 import {
   snapshotSession,
   persistSession,

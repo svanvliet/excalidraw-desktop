@@ -14,6 +14,7 @@ import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { useTabsStore, type Tab } from "./tabsStore";
 import { openFile, listScratch, isAppError } from "../ipc/commands";
 import { detectFormat } from "../lib/fileFormat";
+import { restoreInitialData } from "../lib/excalidrawRestore";
 import { log } from "../lib/logger";
 
 const STORE_FILE = "session.json";
@@ -204,9 +205,9 @@ function toInitial(parsed: {
   appState?: unknown;
   files?: unknown;
 }): ExcalidrawInitialDataState {
-  return {
-    elements: parsed.elements as ExcalidrawInitialDataState["elements"],
-    appState: parsed.appState as ExcalidrawInitialDataState["appState"],
-    files: parsed.files as ExcalidrawInitialDataState["files"],
-  };
+  // Funnel everything through Excalidraw's restore() so `collaborators`
+  // and other Map-typed fields are reconstructed correctly. Skipping
+  // this step crashes <Excalidraw> with
+  // `props.appState.collaborators.forEach is not a function`.
+  return restoreInitialData(parsed);
 }

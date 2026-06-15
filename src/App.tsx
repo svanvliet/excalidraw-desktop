@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ExcalidrawImperativeAPI,
-  ExcalidrawInitialDataState,
-} from "@excalidraw/excalidraw/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 
 import { ExcalidrawCanvas } from "./components/ExcalidrawCanvas";
@@ -35,6 +32,7 @@ import {
 } from "./lib/fileFormat";
 import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
+import { restoreInitialData } from "./lib/excalidrawRestore";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
 import { log } from "./lib/logger";
@@ -239,7 +237,7 @@ export function App() {
             setError("No Excalidraw scene found in this PNG.");
             return;
           }
-          openTabAction(opened.path, initial);
+          openTabAction(opened.path, restoreInitialData(initial));
           void addRecent(opened.path);
           return;
         }
@@ -250,11 +248,10 @@ export function App() {
           setError(`Not a valid Excalidraw file: ${detected.reason ?? "unknown format"}`);
           return;
         }
-        const initial: ExcalidrawInitialDataState = {
-          elements: detected.parsed.elements as ExcalidrawInitialDataState["elements"],
-          appState: detected.parsed.appState as ExcalidrawInitialDataState["appState"],
-          files: detected.parsed.files as ExcalidrawInitialDataState["files"],
-        };
+        // Funnel through Excalidraw's restore() — keeps `collaborators`
+        // a Map and prevents the InteractiveCanvas crash that would
+        // otherwise unmount the editor.
+        const initial = restoreInitialData(detected.parsed);
         openTabAction(opened.path, initial);
         void addRecent(opened.path);
       } catch (e) {
