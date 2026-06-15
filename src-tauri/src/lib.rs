@@ -20,6 +20,11 @@ const FILE_OPEN_EVENT: &str = "excalidraw://file-open";
 const LOG_DIR_NAME: &str = ".excalidraw-desktop";
 const LOG_FILE_NAME: &str = "excalidraw-desktop";
 
+/// PNG bytes for the app icon, embedded at compile time. Used to update
+/// the window/Dock icon at runtime so `tauri dev` actually shows the
+/// brand icon instead of the default executable badge.
+const ICON_PNG_BYTES: &[u8] = include_bytes!("../icons/icon.png");
+
 /// Resolve the absolute path for our log directory: `$HOME/.excalidraw-desktop`.
 /// Returns `None` when there's no home (sandboxed envs, CI) — the log
 /// plugin then falls back to its default appdata location, which is still
@@ -143,6 +148,22 @@ pub fn run() {
                     Err(e) => log::error!("setup: build_menu failed: {e}"),
                 }
                 app.on_menu_event(menu::forward_menu_event);
+            }
+
+            // During `tauri dev` there is no .app bundle, so macOS shows the
+            // default executable icon in the Dock. Set the window icon at
+            // runtime so the Dock picks it up (on macOS, tao forwards the
+            // first window's icon to NSApplication::setApplicationIconImage).
+            // In a release build this is harmless: the bundled .icns wins
+            // visually and this just keeps the in-window icon consistent.
+            if let Some(window) = app.get_webview_window("main") {
+                match tauri::image::Image::from_bytes(ICON_PNG_BYTES) {
+                    Ok(image) => match window.set_icon(image) {
+                        Ok(_) => log::info!("setup: window icon applied at runtime"),
+                        Err(e) => log::warn!("setup: set_icon failed: {e}"),
+                    },
+                    Err(e) => log::warn!("setup: decode icon.png failed: {e}"),
+                }
             }
             let _ = app;
             Ok(())
