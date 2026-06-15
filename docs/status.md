@@ -12,7 +12,7 @@
 | M2  | Excalidraw embedded + JSON open/save                                   | ✅     | Editor mounted; open/save commands + dialogs working; 31 tests green (24 JS + 7 Rust).                                                                                                                                                                                                                                                       |
 | M3  | Tabs + recent files + autosave + session restore                       | ✅     | Zustand tabs store, dirty-close prompt, persistent recent files (cap 20), 2s debounced autosave with app-data scratch fallback for untitled tabs, session restore on launch. 77 JS + 10 Rust = 87 tests green.                                                                                                                               |
 | M4  | PNG export with embedded scene + file associations + double-click open | ✅     | PNG round-trip via `exportToBlob({exportEmbedScene})` + `loadFromBlob`; `.excalidraw` registered via `bundle.fileAssociations`; `tauri-plugin-single-instance` reroutes 2nd double-click; `RunEvent::Opened` (macOS) + CLI argv (Win/Linux) forward via `excalidraw://file-open`; window drag-drop wired. 103 tests green (90 JS + 13 Rust). |
-| M5  | Native menu bar + keyboard shortcuts                                   | ⬜     |                                                                                                                                                                                                                                                                                                                                              |
+| M5  | Native menu bar + keyboard shortcuts                                   | ✅     | Tauri MenuBuilder with File/Edit/View/Window/Help. Custom items route via `excalidraw://menu` to existing App handlers; Undo/Redo/Zoom replay synthetic keydown for Excalidraw's internal handler. Platform-correct `$Mod` → Cmd/Ctrl mapping. 111 tests green (96 JS + 15 Rust).                                                            |
 | M6  | Settings dialog + opt-in online features (collab / library / AI)       | ⬜     | Off by default.                                                                                                                                                                                                                                                                                                                              |
 | M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ⬜     |                                                                                                                                                                                                                                                                                                                                              |
 | M8  | Docs polish + signing/notarization documentation                       | ⬜     | Implementation deferred — docs only.                                                                                                                                                                                                                                                                                                         |
@@ -52,9 +52,10 @@
 
 ### M5
 
-- [ ] All File/Edit/View/Window/Help items present on macOS and Windows.
-- [ ] Platform-correct accelerators (`Cmd` mac, `Ctrl` win).
-- [ ] Edit-menu items route to Excalidraw's undo/redo/cut/copy/paste/select-all.
+- [x] All File/Edit/View/Window/Help items present on macOS and Windows. _(SubmenuBuilder per section; macOS gets the conventional app menu prepended.)_
+- [x] Platform-correct accelerators (`Cmd` mac, `Ctrl` win). _(Resolved via the `$Mod` placeholder + a cfg-gated CMD const.)_
+- [x] Edit-menu items route to Excalidraw's undo/redo/cut/copy/paste/select-all. _(Cut/Copy/Paste/Select All are predefined; Undo/Redo dispatch synthetic keydown to the document so Excalidraw's history handler runs.)_
+- [ ] Runtime verification of menu rendering + accelerator firing pending user-side `npm run tauri dev` on a packaged build.
 
 ### M6
 
@@ -84,3 +85,4 @@
 | 2026-06-15 | M2        | ⬜ → ✅   | Excalidraw embedded; open/save commands + dialogs wired; 31 unit tests green.                   |
 | 2026-06-15 | M3        | ⬜ → ✅   | Tabs + recent files + autosave + session restore. 87 tests green (77 JS + 10 Rust).             |
 | 2026-06-15 | M4        | ⬜ → ✅   | PNG round-trip + .excalidraw file association + double-click + drag-drop. 103 tests green.      |
+| 2026-06-15 | M5        | ⬜ → ✅   | Native menu bar + Cmd/Ctrl accelerators + dispatched undo/redo/zoom. 111 tests green.           |

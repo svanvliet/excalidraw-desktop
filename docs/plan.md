@@ -167,12 +167,16 @@ excalidraw-app/
 - `openPathRef` so the long-lived event subscription always calls the freshest `openPath` closure without re-subscribing.
 - 90 JS + 13 Rust = 103 tests green.
 
-### M5 — Native menus & keyboard shortcuts
+### M5 — Native menus & keyboard shortcuts ✅
 
-- Build menu via `tauri::menu::MenuBuilder` in `menu.rs`.
-- Menu events → emit FE event → tab/store action.
-- Edit menu items forward to Excalidraw via its imperative API (`excalidrawAPI.undo()`, etc.).
-- Platform-correct accelerators (`Cmd` vs `Ctrl`).
+**Done. Final design:**
+
+- `src-tauri/src/menu.rs`: builds the menu with `MenuBuilder` + `SubmenuBuilder`. macOS gets the standard app menu (About, Services, Hide/Show, Quit) prepended; other platforms put Quit under File. Five custom-item submenus: File (New/Open/Save/Save As/Export PNG/Close Tab), Edit (custom Undo/Redo + predefined Cut/Copy/Paste/Select All), View (Zoom In/Out/Reset, Fullscreen), Window (Minimize/Maximize/Bring All To Front on mac), Help (About/Documentation).
+- Stable IDs under `excalidraw:*` namespace, listed in `menu::ids`. Cargo test enforces ID stability; the frontend `MENU_ITEM_IDS` array mirrors them.
+- Accelerators are written with `$Mod` and resolved to `Cmd` (macOS) or `Ctrl` (everywhere else) by a `cfg`-gated constant.
+- `app.on_menu_event(menu::forward_menu_event)` re-emits custom items to the frontend on `excalidraw://menu`. Predefined items (Cut/Copy/Paste/Select All/Quit/Minimize/Maximize/Fullscreen) are handled by the OS directly.
+- Frontend: `src/ipc/menuEvents.ts` exposes the typed `MenuItemId`, an `onMenuEvent` subscriber, and a `dispatchShortcut` helper. App.tsx subscribes once at mount via a `menuActionRef` so its `handleMenuAction` closure is always called fresh. Undo/Redo/Zoom dispatch a synthetic keydown into the document because Excalidraw owns its history stack and does not respond to the OS "undo:" responder.
+- 96 JS + 15 Rust = 111 tests green.
 
 ### M6 — Settings dialog + opt-in online features
 
