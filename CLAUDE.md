@@ -63,6 +63,10 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
 - Conventional Commits style: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`.
 - One logical change per commit. If a single change touches multiple concerns, split it.
 - After every commit, the repo MUST be in a working state — lint, typecheck, and tests should pass (or the commit message explicitly flags a known-broken WIP that the next commit will fix).
+- Every commit produced by an AI assistant must end with the trailer:
+  ```
+  Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+  ```
 
 ## 4. Commands cheat-sheet
 
@@ -110,24 +114,26 @@ Detection logic lives in `src/lib/fileFormat.ts` and is unit-tested.
 
 ## 7. Skills & Agents
 
-Custom helpers live under `.claude/`. Track every one here so contributors can find them.
+Custom helpers live under `.claude/` and are checked into the repo so
+every contributor (and every AI assistant) gets them automatically.
+Track every one here so they're discoverable.
 
 ### Slash commands (`.claude/commands/`)
 
-| Command                     | What it does                                                                                                                                                                    |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/new-tauri-command <name>` | Scaffolds a Rust command (`src-tauri/src/commands/`), registers it in `lib.rs`, generates the typed TS wrapper in `src/ipc/commands.ts`, and creates Vitest + cargo test stubs. |
-| `/bump-excalidraw`          | Updates `@excalidraw/excalidraw`, reads its changelog, runs `npm test` and the Playwright smoke suite, and reports any breaking changes the bump introduces.                    |
-| `/release-checklist`        | Walks pre-release validation: bump version, regenerate changelog, run lint + all tests on both platforms, verify status.md milestones, tag.                                     |
+| Command                     | File                                    | What it does                                                                                                                                                                    |
+| --------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/new-tauri-command <name>` | `.claude/commands/new-tauri-command.md` | Scaffolds a Rust command (`src-tauri/src/commands/`), registers it in `lib.rs`, generates the typed TS wrapper in `src/ipc/commands.ts`, and creates Vitest + cargo test stubs. |
+| `/bump-excalidraw`          | `.claude/commands/bump-excalidraw.md`   | Updates `@excalidraw/excalidraw`, reads its changelog, runs `npm test` and the Playwright smoke suite, and reports any breaking changes the bump introduces.                    |
+| `/release-checklist`        | `.claude/commands/release-checklist.md` | Walks pre-release validation: bump version, regenerate changelog, run lint + all tests on both platforms, verify status.md milestones, tag.                                     |
 
 ### Subagents (`.claude/agents/`)
 
-| Agent                   | Use when…                                                                                                                         |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `tauri-architect`       | Designing a new Tauri command, IPC flow, or capability/CSP change. Calls out impact on `default.json` and on networking promises. |
-| `excalidraw-integrator` | Mapping a desired UX onto the `@excalidraw/excalidraw` API surface (props, refs, imperative API, theme, fonts, libraries).        |
+| Agent                   | File                                      | Use when…                                                                                                                         |
+| ----------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `tauri-architect`       | `.claude/agents/tauri-architect.md`       | Designing a new Tauri command, IPC flow, or capability/CSP change. Calls out impact on `default.json` and on networking promises. |
+| `excalidraw-integrator` | `.claude/agents/excalidraw-integrator.md` | Mapping a desired UX onto the `@excalidraw/excalidraw` API surface (props, refs, imperative API, theme, fonts, libraries).        |
 
-> When you add a skill or agent, **add a row to the table above** in the same change.
+> When you add a skill or agent, **add a row to the table above** in the same change, and check the file in under `.claude/`.
 
 ## 8. Things to never do
 
