@@ -140,13 +140,18 @@ excalidraw-app/
 - Hook into Excalidraw's `onChange` to detect dirty state.
 - Manual test: open a `.excalidraw` from a chosen path, edit, save back.
 
-### M3 — Tabs, recent files, autosave, session restore
+### M3 — Tabs, recent files, autosave, session restore ✅
 
-- Zustand `tabsStore`: array of `{ id, filePath?, contents, dirty, scratchPath? }`.
-- `TabBar.tsx`: middle-click to close, prompt-on-dirty.
-- Rust `recent.rs`: read/write `recent.json` via `tauri-plugin-store`, capped at 20.
-- Autosave: debounced (2s idle) writes to scratch dir for unsaved tabs, to file path for saved tabs.
-- On launch: read `session.json`, restore tabs (skip missing files, surface a warning).
+**Done. Final design:**
+
+- Zustand `tabsStore` with `{ id, path, dirty, initialData }`. Smart `openTab` reuses an existing tab if the same path is already open and replaces the lone untouched blank tab on cold start so the first open doesn't leave a stray Untitled.
+- `TabBar.tsx`: middle-click close, × button, + new-tab button, dirty marker.
+- `ConfirmCloseDialog.tsx`: in-app 3-way modal (Save / Don't Save / Cancel). Built ourselves because `@tauri-apps/plugin-dialog` only exposes 2-way ask/confirm.
+- `App.tsx` mounts one Excalidraw instance per tab in `.canvas-slot` divs and toggles visibility, so per-tab undo history (FR-9) survives tab switches.
+- `recentFilesStore.ts` via `tauri-plugin-store` (`recent-files.json`): dedupe, cap 20, most-recent first. `RecentMenu.tsx` exposes it in the toolbar; the M5 native menu will share the list.
+- `src/lib/autosave.ts` + Rust scratch commands (`write_scratch` / `read_scratch` / `delete_scratch` / `list_scratch`): 2s debounced per-tab. File-backed tabs overwrite their path (modern macOS document model); untitled tabs go to `<appDataDir>/scratch/<tabId>.excalidraw` and stay dirty so the user is still nudged to Save. Scratch is sanitized server-side to `[A-Za-z0-9_-]{1,128}`.
+- `sessionStore.ts` persists `{ tabs: [{ id, path }], activeTabId }` to `session.json` on every store change. On launch, files are reopened, untitled tabs are matched to scratch entries by tab id, missing files are silently dropped (console warn). If everything is skipped, `ensureActiveTab()` seeds a blank tab as usual.
+- 77 JS + 10 Rust = 87 tests green.
 
 ### M4 — PNG export with embedded scene + file associations
 

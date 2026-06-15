@@ -10,7 +10,7 @@
 | --- | ---------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | M1  | Project scaffold (Tauri 2 + Vite + React + TS, builds & runs)          | ✅     | `npm run check` green: typecheck + eslint + prettier + vitest + cargo fmt + clippy + cargo test. macOS dev launch pending manual verification. |
 | M2  | Excalidraw embedded + JSON open/save                                   | ✅     | Editor mounted; open/save commands + dialogs working; 31 tests green (24 JS + 7 Rust).                                                         |
-| M3  | Tabs + recent files + autosave + session restore                       | ⬜     |                                                                                                                                                |
+| M3  | Tabs + recent files + autosave + session restore                       | ✅     | Zustand tabs store, dirty-close prompt, persistent recent files (cap 20), 2s debounced autosave with app-data scratch fallback for untitled tabs, session restore on launch. 77 JS + 10 Rust = 87 tests green. |
 | M4  | PNG export with embedded scene + file associations + double-click open | ⬜     |                                                                                                                                                |
 | M5  | Native menu bar + keyboard shortcuts                                   | ⬜     |                                                                                                                                                |
 | M6  | Settings dialog + opt-in online features (collab / library / AI)       | ⬜     | Off by default.                                                                                                                                |
@@ -35,11 +35,12 @@
 
 ### M3
 
-- [ ] Two tabs can be open simultaneously with independent state.
-- [ ] Closing a dirty tab prompts.
-- [ ] Recent files appear in menu, capped at 20, most-recent first.
-- [ ] Killing and relaunching restores the previously open tabs.
-- [ ] Autosave fires within 2s of last edit.
+- [x] Two tabs can be open simultaneously with independent state. _(One Excalidraw instance per tab, visibility-toggled; per-tab undo history preserved.)_
+- [x] Closing a dirty tab prompts. _(In-app 3-way Save/Don't Save/Cancel modal; ConfirmCloseDialog covered by tests.)_
+- [x] Recent files appear in menu, capped at 20, most-recent first. _(Toolbar dropdown for M3; native menu in M5 will share the list.)_
+- [x] Killing and relaunching restores the previously open tabs. _(sessionStore persists tabs+activeTabId; missing files are silently skipped.)_
+- [x] Autosave fires within 2s of last edit. _(2s debounced; file-backed tabs overwrite path, untitled tabs go to app-data scratch.)_
+- [ ] User-side manual verification on `npm run tauri dev` for macOS and Windows still pending.
 
 ### M4
 
@@ -80,3 +81,4 @@
 | 2026-06-15 | All       | — → ⬜    | Plan created, work not yet started.                                                             |
 | 2026-06-15 | M1        | ⬜ → ✅   | Scaffold + tooling green via `npm run check`. macOS dev launch pending user-side manual verify. |
 | 2026-06-15 | M2        | ⬜ → ✅   | Excalidraw embedded; open/save commands + dialogs wired; 31 unit tests green.                   |
+| 2026-06-15 | M3        | ⬜ → ✅   | Tabs + recent files + autosave + session restore. 87 tests green (77 JS + 10 Rust).             |
