@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "excalidraw-desktop-scaffold",
+  "productName": "Excalidraw Desktop",
   "version": "0.1.0",
   "identifier": "com.svanvliet.excalidrawdesktop",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "excalidraw-desktop-scaffold",
-        "width": 800,
-        "height": 600
+        "title": "Excalidraw Desktop",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
       }
     ],
     "security": {
