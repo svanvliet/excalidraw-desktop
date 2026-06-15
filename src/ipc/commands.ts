@@ -29,6 +29,23 @@ export function saveFile(path: string, contents: string): Promise<void> {
   return invoke<void>("save_file", { path, contents });
 }
 
+/** Mirror of the Rust `ReadBytesResult` struct in `src-tauri/src/commands/files.rs`. */
+export interface ReadBytesResult {
+  path: string;
+  /** base64-encoded file contents. */
+  base64: string;
+}
+
+/** Read a binary file from disk and return base64-encoded bytes. */
+export function readFileBytes(path: string): Promise<ReadBytesResult> {
+  return invoke<ReadBytesResult>("read_file_bytes", { path });
+}
+
+/** Write base64-encoded bytes to disk, replacing any existing file. */
+export function writeFileBytes(path: string, base64Contents: string): Promise<void> {
+  return invoke<void>("write_file_bytes", { path, base64Contents });
+}
+
 /** Mirror of the Rust `ScratchEntry` struct in `src-tauri/src/commands/scratch.rs`. */
 export interface ScratchEntry {
   key: string;

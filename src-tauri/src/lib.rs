@@ -1,7 +1,7 @@
 mod commands;
 mod error;
 
-use commands::files::{open_file, save_file};
+use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,6 +13,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_file,
             save_file,
+            read_file_bytes,
+            write_file_bytes,
             write_scratch,
             read_scratch,
             delete_scratch,
