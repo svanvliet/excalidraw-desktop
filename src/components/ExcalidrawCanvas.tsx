@@ -6,6 +6,7 @@ import type {
 import { useCallback, useEffect, useRef } from "react";
 
 import "@excalidraw/excalidraw/index.css";
+import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -55,6 +56,7 @@ export function ExcalidrawCanvas({
   theme,
 }: ExcalidrawCanvasProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
@@ -80,8 +82,14 @@ export function ExcalidrawCanvas({
     onSceneChange();
   }, [onSceneChange]);
 
+  useEffect(() => {
+    const root = canvasRef.current;
+    if (!root) return;
+    return enableDraggablePropertiesPanel(root);
+  }, []);
+
   return (
-    <div className="excalidraw-canvas">
+    <div ref={canvasRef} className="excalidraw-canvas">
       <Excalidraw
         initialData={initialData ?? undefined}
         excalidrawAPI={handleApi}
