@@ -49,7 +49,12 @@ export type RelayFrame =
 export type Payload =
   | { type: "HELLO"; username: string; isHost: boolean }
   | { type: "SYNC_REQUEST" }
-  | { type: "SCENE_INIT"; elements: readonly OrderedExcalidrawElement[] }
+  | {
+      type: "SCENE_INIT";
+      elements: readonly OrderedExcalidrawElement[];
+      /** Sender's visible scene bounds [x1, y1, x2, y2]; only on SYNC answers. */
+      viewport?: readonly [number, number, number, number];
+    }
   | { type: "SCENE_UPDATE"; elements: readonly OrderedExcalidrawElement[] }
   | {
       type: "MOUSE_LOCATION";

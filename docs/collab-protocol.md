@@ -104,7 +104,7 @@ Each `broadcast.data` is `AES-GCM(key, iv=12 random bytes, utf8(JSON(payload)))`
 type Payload =
   | { type: "HELLO"; username: string; isHost: boolean } // on join + on rename
   | { type: "SYNC_REQUEST" } // newcomer asks for full scene
-  | { type: "SCENE_INIT"; elements: ExcalidrawElement[] } // full scene (incl. deleted)
+  | { type: "SCENE_INIT"; elements: ExcalidrawElement[]; viewport?: [x1, y1, x2, y2] } // full scene (incl. deleted)
   | { type: "SCENE_UPDATE"; elements: ExcalidrawElement[] } // changed elements only
   | {
       type: "MOUSE_LOCATION";
@@ -127,6 +127,10 @@ Rules:
   arrival) then `SCENE_INIT`. Non-hosts ignore `SYNC_REQUEST` unless no host is
   in the room; then only the **editor** with the lowest `clientId` (excluding
   the requester) answers. Viewers never answer.
+- The SYNC answer's `SCENE_INIT` carries the answerer's visible scene bounds in
+  `viewport`. A non-host fits that rectangle to its own window on its **first**
+  `SCENE_INIT` only, falling back to fit-to-content without one. Anti-entropy
+  rebroadcasts omit it, and later scenes never move the guest's view.
 - Viewers don't send `SCENE_INIT`/`SCENE_UPDATE`/`FILES` and don't answer
   `FILES_REQUEST`. Receivers also drop those payloads when `from` is a viewer,
   so a modified client can't push edits. Cursors, `HELLO`, `IDLE_STATUS` and

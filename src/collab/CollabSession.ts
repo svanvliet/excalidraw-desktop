@@ -7,9 +7,12 @@
  */
 import {
   CaptureUpdateAction,
+  getCommonBounds,
+  getVisibleSceneBounds,
   isInvisiblySmallElement,
   reconcileElements,
   restoreElements,
+  zoomToFitBounds,
 } from "@excalidraw/excalidraw";
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -110,6 +113,7 @@ export class CollabSession {
   private clientId: string | null = null;
   private joinedOnce = false;
   private started = false;
+  private initialViewApplied = false;
   private stopped = false;
   private unsubscribe: (() => void) | null = null;
 
@@ -366,13 +370,14 @@ export class CollabSession {
       case "SYNC_REQUEST":
         if (this.canEdit && this.shouldAnswerSync(from)) {
           this.sendFiles(this.referencedFileIds(this.opts.api.getSceneElementsIncludingDeleted()));
-          this.broadcastFullScene();
+          this.broadcastFullScene(true);
         }
         return;
       case "SCENE_INIT":
       case "SCENE_UPDATE":
         if (!this.mayEdit(from, p.type)) return;
         if (Array.isArray(p.elements)) this.applyRemoteElements(p.elements);
+        if (p.type === "SCENE_INIT") this.applyInitialView(p.viewport);
         return;
       case "MOUSE_LOCATION":
         this.updateCollaborator(from, {
@@ -553,13 +558,64 @@ export class CollabSession {
     this.send({ type: "SCENE_UPDATE", elements: changed });
   }
 
-  private broadcastFullScene(): void {
+  private broadcastFullScene(withViewport = false): void {
     if (this.status !== "connected" || this.peerIds.size === 0 || !this.canEdit) return;
     const elements = this.opts.api
       .getSceneElementsIncludingDeleted()
       .filter((el) => el.isDeleted || !isInvisiblySmallElement(el));
     this.markAllSynced(elements);
-    this.send({ type: "SCENE_INIT", elements });
+    const viewport = withViewport ? this.visibleBounds() : undefined;
+    this.send({ type: "SCENE_INIT", elements, ...(viewport ? { viewport } : {}) });
+  }
+
+  private visibleBounds(): [number, number, number, number] | undefined {
+    const s = this.opts.api.getAppState();
+    if (!s.width || !s.height || !s.zoom) return undefined;
+    const b = getVisibleSceneBounds(s);
+    return b.every(Number.isFinite) ? [b[0], b[1], b[2], b[3]] : undefined;
+  }
+
+  /**
+   * On a guest's first full scene, open on the sharer's view (or fit the
+   * content if the sender didn't include one). Never moves the host, and
+   * never re-runs on anti-entropy or reconnects.
+   */
+  private applyInitialView(viewport?: readonly number[]): void {
+    if (this.initialViewApplied || this.opts.isHost) return;
+    this.initialViewApplied = true;
+    const appState = this.opts.api.getAppState();
+    if (!appState.width || !appState.height) return;
+    let bounds: [number, number, number, number] | null = null;
+    let fitToViewport = false;
+    if (
+      Array.isArray(viewport) &&
+      viewport.length === 4 &&
+      viewport.every(Number.isFinite) &&
+      viewport[2] > viewport[0] &&
+      viewport[3] > viewport[1]
+    ) {
+      bounds = [viewport[0], viewport[1], viewport[2], viewport[3]];
+      fitToViewport = true;
+    } else {
+      const visible = this.opts.api
+        .getSceneElementsIncludingDeleted()
+        .filter((el) => !el.isDeleted);
+      if (visible.length > 0) {
+        const [x1, y1, x2, y2] = getCommonBounds(visible);
+        bounds = [x1, y1, x2, y2];
+      }
+    }
+    if (!bounds) return;
+    const { scrollX, scrollY, zoom } = zoomToFitBounds({
+      bounds,
+      appState,
+      fitToViewport,
+      viewportZoomFactor: fitToViewport ? 1 : 0.9,
+    }).appState;
+    this.opts.api.updateScene({
+      appState: { scrollX, scrollY, zoom },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
   }
 
   private sendFiles(ids: readonly string[], quietIfMissing = false): void {

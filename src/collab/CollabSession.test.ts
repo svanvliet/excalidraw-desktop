@@ -494,6 +494,49 @@ describe("CollabSession", () => {
     intruder.close();
   });
 
+  describe("initial view", () => {
+    const view = (w: number, h: number, scrollX = 0, scrollY = 0) => ({
+      width: w,
+      height: h,
+      scrollX,
+      scrollY,
+      zoom: { value: 1 },
+      offsetLeft: 0,
+      offsetTop: 0,
+    });
+    const viewCalls = (p: Peer) =>
+      (p.api.updateScene as unknown as ReturnType<typeof vi.fn>).mock.calls
+        .map(
+          (c) => (c[0] as { appState?: { scrollX?: number; zoom?: { value: number } } }).appState,
+        )
+        .filter((st) => st && st.scrollX !== undefined);
+
+    it("a joining guest opens on the host's visible area, once", async () => {
+      const relay = new MemoryRelay();
+      const host = makePeer(relay, { username: "H", isHost: true, elements: [rect("a", "a0")] });
+      Object.assign(host.api.appState, view(1000, 500, -200, -100));
+      await settle(relay);
+      const g = makePeer(relay, { username: "G", start: false });
+      Object.assign(g.api.appState, view(500, 250));
+      g.session.start();
+      await settle(relay);
+
+      const calls = viewCalls(g);
+      expect(calls).toHaveLength(1);
+      // Host sees scene x∈[200,1200], y∈[100,600]; a half-size guest window frames it at 0.5×.
+      expect(calls[0]?.zoom?.value).toBe(0.5);
+      expect(calls[0]?.scrollX).toBeCloseTo(-200);
+      expect(viewCalls(host)).toHaveLength(0);
+
+      // A later full scene (anti-entropy / reconnect) never moves the guest again.
+      (host.session as unknown as { broadcastFullScene: (v?: boolean) => void }).broadcastFullScene(
+        true,
+      );
+      await settle(relay);
+      expect(viewCalls(g)).toHaveLength(1);
+    });
+  });
+
   describe("roles", () => {
     const forge = (p: Peer, payload: Payload) =>
       (p.session as unknown as { send: (x: Payload) => void }).send(payload);
