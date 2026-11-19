@@ -129,7 +129,18 @@ export async function restoreSession(): Promise<RestoreResult> {
 
   for (const entry of persisted.tabs) {
     try {
-      if (entry.path) {
+      // A file-backed tab with a scratch entry has unsaved edits that were
+      // backed up because autosave was off: restore those, still unsaved.
+      const backup = entry.path ? scratchByKey.get(entry.id) : undefined;
+      const backupParsed = backup ? detectFormat(backup) : null;
+      if (entry.path && backupParsed?.kind === "excalidraw-json" && backupParsed.parsed) {
+        restored.push({
+          id: entry.id,
+          path: entry.path,
+          dirty: true,
+          initialData: toInitial(backupParsed.parsed),
+        });
+      } else if (entry.path) {
         try {
           const opened = await openFile(entry.path);
           const detected = detectFormat(opened.contents);

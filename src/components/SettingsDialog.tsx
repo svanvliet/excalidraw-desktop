@@ -54,6 +54,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const setFlag = useSettingsStore((s) => s.setFlag);
   const setSecret = useSettingsStore((s) => s.setSecret);
   const setCollab = useSettingsStore((s) => s.setCollab);
+  const autosave = useSettingsStore((s) => s.autosave);
+  const setAutosave = useSettingsStore((s) => s.setAutosave);
 
   // Port is edited as text so the user can clear/retype it; only valid
   // values are committed to the store.
@@ -117,6 +119,28 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         </header>
 
         <div className="modal__body">
+          <section className="settings__section">
+            <h3>Saving</h3>
+
+            <label className="settings__row">
+              <input
+                type="checkbox"
+                className="switch"
+                checked={autosave}
+                onChange={(e) => void setAutosave(e.target.checked)}
+                data-testid="toggle-autosave"
+              />
+              <span className="settings__row-text">
+                <strong>Autosave</strong>
+                <span className="settings__hint">
+                  Saves changes to the open file a couple of seconds after you stop editing. When
+                  off, files change only when you Save. Untitled drawings are always backed up so
+                  they survive a restart.
+                </span>
+              </span>
+            </label>
+          </section>
+
           <section className="settings__section">
             <h3>Online features</h3>
 

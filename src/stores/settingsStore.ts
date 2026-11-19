@@ -49,6 +49,11 @@ export interface CollabSettings {
   collabPort: number;
 }
 
+export interface EditorSettings {
+  /** Write file-backed tabs to disk automatically after edits. */
+  autosave: boolean;
+}
+
 export interface UpdateSettings {
   /** Automatic update checks. `null` = the user hasn't been asked yet. */
   autoUpdate: boolean | null;
@@ -57,6 +62,7 @@ export interface UpdateSettings {
 export type AllSettings = OnlineFeaturesSettings &
   SecretsSettings &
   CollabSettings &
+  EditorSettings &
   UpdateSettings;
 
 export interface SettingsState extends AllSettings {
@@ -74,6 +80,8 @@ export interface SettingsState extends AllSettings {
   setCollab: <K extends keyof CollabSettings>(key: K, value: CollabSettings[K]) => Promise<void>;
   /** Record the automatic-update consent. */
   setAutoUpdate: (value: boolean) => Promise<void>;
+  /** Turn automatic saving of file-backed tabs on or off. */
+  setAutosave: (value: boolean) => Promise<void>;
   /** Reset every toggle/secret to its default. Useful for tests + "Reset" UI. */
   resetAll: () => Promise<void>;
 }
@@ -92,6 +100,7 @@ export const SETTINGS_DEFAULTS = {
   collabTunnelMode: "auto",
   collabManualUrl: "",
   collabPort: DEFAULT_COLLAB_PORT,
+  autosave: true,
   autoUpdate: null,
 } as const satisfies AllSettings;
 const DEFAULTS: AllSettings = SETTINGS_DEFAULTS;
@@ -141,6 +150,7 @@ export function sanitize(raw: unknown): AllSettings {
       : DEFAULTS.collabTunnelMode,
     collabManualUrl: isHttpUrl(r.collabManualUrl) ? r.collabManualUrl : DEFAULTS.collabManualUrl,
     collabPort: isValidPort(r.collabPort) ? r.collabPort : DEFAULTS.collabPort,
+    autosave: typeof r.autosave === "boolean" ? r.autosave : DEFAULTS.autosave,
     autoUpdate: typeof r.autoUpdate === "boolean" ? r.autoUpdate : DEFAULTS.autoUpdate,
   };
 }
@@ -155,6 +165,7 @@ function snapshot(s: AllSettings): AllSettings {
     collabTunnelMode: s.collabTunnelMode,
     collabManualUrl: s.collabManualUrl,
     collabPort: s.collabPort,
+    autosave: s.autosave,
     autoUpdate: s.autoUpdate,
   };
 }
@@ -203,6 +214,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   async setAutoUpdate(value) {
     set({ autoUpdate: value });
+    await persist(snapshot(get()));
+  },
+
+  async setAutosave(value) {
+    set({ autosave: value });
     await persist(snapshot(get()));
   },
 

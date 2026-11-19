@@ -114,6 +114,8 @@ export function App() {
             // user to do a real Save.
             if (target.path) {
               useTabsStore.getState().markSaved(target.tabId, target.path);
+              // Drop any backup taken while autosave was off.
+              void deleteScratch(target.tabId).catch(() => {});
             }
           },
           onError: (_target, err) => {
@@ -140,9 +142,12 @@ export function App() {
     (tabId: string) => {
       const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
       if (!tab) return;
+      // With autosave off, file-backed tabs are backed up to scratch (like
+      // untitled ones) and the file itself only changes on an explicit Save.
+      const writeToFile = useSettingsStore.getState().autosave;
       autosaver.schedule({
         tabId,
-        path: tab.path,
+        path: writeToFile ? tab.path : null,
         snapshot: () => captureSnapshot(tabId),
       });
     },
@@ -454,6 +459,7 @@ export function App() {
       if (activeTab.path) {
         await writeActiveTabTo(activeTab.id, activeTab.path);
         autosaver.cancel(activeTab.id);
+        void deleteScratch(activeTab.id).catch(() => {});
         markSavedAction(activeTab.id, activeTab.path);
         void addRecent(activeTab.path);
         return true;
@@ -527,7 +533,7 @@ export function App() {
         setPendingClose(id);
       } else {
         autosaver.cancel(id);
-        if (!tab.path) void deleteScratch(id).catch(() => {});
+        void deleteScratch(id).catch(() => {});
         apisRef.current.delete(id);
         closeTab(id);
       }
@@ -559,7 +565,7 @@ export function App() {
     if (!pendingClose) return;
     const tab = useTabsStore.getState().tabs.find((t) => t.id === pendingClose);
     autosaver.cancel(pendingClose);
-    if (tab && !tab.path) void deleteScratch(pendingClose).catch(() => {});
+    if (tab) void deleteScratch(pendingClose).catch(() => {});
     apisRef.current.delete(pendingClose);
     closeTab(pendingClose);
     setPendingClose(null);

@@ -63,6 +63,8 @@ describe("settingsStore", () => {
     expect(useSettingsStore.getState().autoUpdate).toBe(false);
     expect(sanitize({ autoUpdate: "yes" }).autoUpdate).toBeNull();
     expect(sanitize({ autoUpdate: true }).autoUpdate).toBe(true);
+    expect(sanitize({}).autosave).toBe(true);
+    expect(sanitize({ autosave: false }).autosave).toBe(false);
   });
 
   it("load() marks loaded=true even when the store has no prior data", async () => {

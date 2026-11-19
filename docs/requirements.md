@@ -54,6 +54,7 @@
 - **FR-12** The app MUST **autosave** dirty tabs:
   - Before first explicit save: to a scratch location under the app's data dir, restored on next launch.
   - After first save: debounced (default 2s of idle) writes to the user's chosen file path.
+  - Writing to the file path is controlled by the **Autosave** setting (Settings → Saving, default on). When it is off, file-backed tabs are backed up to scratch instead, stay dirty, and the file only changes on an explicit Save; the backup is restored (still unsaved) on next launch and discarded on Save or Close.
 - **FR-13** On launch, the app MUST **restore the previous session**: re-open the tabs that were open at quit, and select the previously active tab.
 
 ### 4.5 Native menus & shortcuts

@@ -175,6 +175,26 @@ describe("session persistence + restore", () => {
     expect(tabs[0].dirty).toBe(true);
   });
 
+  it("restoreSession prefers an unsaved backup over the file for file-backed tabs", async () => {
+    fakeStore.storage["v1"] = {
+      tabs: [{ id: "f1", path: "/tmp/a.excalidraw" }],
+      activeTabId: "f1",
+    };
+    vi.mocked(listScratch).mockResolvedValue([
+      {
+        key: "f1",
+        contents: JSON.stringify({ type: "excalidraw", version: 2, elements: [] }),
+      },
+    ]);
+
+    const result = await restoreSession();
+    expect(result).toEqual({ restored: 1, skipped: 0 });
+    expect(openFile).not.toHaveBeenCalled();
+    const [tab] = useTabsStore.getState().tabs;
+    expect(tab.path).toBe("/tmp/a.excalidraw");
+    expect(tab.dirty).toBe(true);
+  });
+
   it("falls back to the first restored tab when the saved active id is missing", async () => {
     fakeStore.storage["v1"] = {
       tabs: [{ id: "a", path: "/a.excalidraw" }],
