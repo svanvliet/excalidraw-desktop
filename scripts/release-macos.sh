@@ -107,6 +107,42 @@ done
 
 [[ -z "$(git status --porcelain)" ]] || die "working tree is not clean; commit or stash first"
 
+security find-identity -p codesigning -v | grep -Fq "\"$APPLE_SIGNING_IDENTITY\"" ||
+  die "signing identity not found in keychain: $APPLE_SIGNING_IDENTITY"
+log "Signing identity: $APPLE_SIGNING_IDENTITY"
+
+installed_targets="$(rustup target list --installed)"
+for t in aarch64-apple-darwin x86_64-apple-darwin; do
+  grep -qx "$t" <<<"$installed_targets" || die "rust target missing: rustup target add $t"
+done
+
+if [[ $SKIP_NOTARIZE -eq 0 ]]; then
+  log "Checking notarytool profile '$NOTARY_PROFILE'"
+  if ! notary_out="$(xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" 2>&1)"; then
+    if grep -q "required agreement is missing or has expired" <<<"$notary_out"; then
+      die "Apple notary service returned HTTP 403: a required agreement is missing or has expired.
+  Fix: the Apple Developer Account Holder must sign in at https://developer.apple.com/account
+  and accept the updated Apple Developer Program License Agreement (and any pending
+  agreements under https://appstoreconnect.apple.com → Business). It can take a few
+  minutes to propagate. Then re-run this script.
+  Meanwhile, use --skip-notarize for a signed local smoke build."
+    fi
+    if grep -qi "no keychain password item found\|could not find" <<<"$notary_out"; then
+      die "notarytool profile '$NOTARY_PROFILE' not found in the keychain. Create it once with:
+  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <apple-id> --team-id <TEAMID>"
+    fi
+    die "notarytool auth check failed:
+$notary_out"
+  fi
+fi
+
+if [[ $PUBLISH -eq 1 ]]; then
+  log "Checking gh auth for '$GH_RELEASE_USER'"
+  can_push="$(gh_release api "repos/$GH_REPO" --jq '.permissions.push')" ||
+    die "gh as '$GH_RELEASE_USER' cannot read $GH_REPO"
+  [[ "$can_push" == "true" ]] || die "'$GH_RELEASE_USER' has no push access to $GH_REPO"
+fi
+
 if [[ $BUMP -eq 1 ]]; then
   log "Bumping version to $VERSION"
   npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
@@ -146,42 +182,6 @@ remote_tag_sha="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
 if [[ -n "$remote_tag_sha" && "$remote_tag_sha" != "$HEAD_SHA" ]]; then
   msg="tag $TAG already exists on origin at ${remote_tag_sha:0:12} (HEAD is ${HEAD_SHA:0:12}). Pick a new version with --bump."
   if [[ $PUBLISH -eq 1 ]]; then die "$msg"; else warn "$msg"; fi
-fi
-
-security find-identity -p codesigning -v | grep -Fq "\"$APPLE_SIGNING_IDENTITY\"" ||
-  die "signing identity not found in keychain: $APPLE_SIGNING_IDENTITY"
-log "Signing identity: $APPLE_SIGNING_IDENTITY"
-
-installed_targets="$(rustup target list --installed)"
-for t in aarch64-apple-darwin x86_64-apple-darwin; do
-  grep -qx "$t" <<<"$installed_targets" || die "rust target missing: rustup target add $t"
-done
-
-if [[ $SKIP_NOTARIZE -eq 0 ]]; then
-  log "Checking notarytool profile '$NOTARY_PROFILE'"
-  if ! notary_out="$(xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" 2>&1)"; then
-    if grep -q "required agreement is missing or has expired" <<<"$notary_out"; then
-      die "Apple notary service returned HTTP 403: a required agreement is missing or has expired.
-  Fix: the Apple Developer Account Holder must sign in at https://developer.apple.com/account
-  and accept the updated Apple Developer Program License Agreement (and any pending
-  agreements under https://appstoreconnect.apple.com → Business). It can take a few
-  minutes to propagate. Then re-run this script.
-  Meanwhile, use --skip-notarize for a signed local smoke build."
-    fi
-    if grep -qi "no keychain password item found\|could not find" <<<"$notary_out"; then
-      die "notarytool profile '$NOTARY_PROFILE' not found in the keychain. Create it once with:
-  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <apple-id> --team-id <TEAMID>"
-    fi
-    die "notarytool auth check failed:
-$notary_out"
-  fi
-fi
-
-if [[ $PUBLISH -eq 1 ]]; then
-  log "Checking gh auth for '$GH_RELEASE_USER'"
-  can_push="$(gh_release api "repos/$GH_REPO" --jq '.permissions.push')" ||
-    die "gh as '$GH_RELEASE_USER' cannot read $GH_REPO"
-  [[ "$can_push" == "true" ]] || die "'$GH_RELEASE_USER' has no push access to $GH_REPO"
 fi
 
 # ---------------------------------------------------------------------------
