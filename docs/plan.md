@@ -281,13 +281,17 @@ continue to pass.
 
 ## 6. CSP
 
-Default `Content-Security-Policy`:
+Static allow-list in `src-tauri/tauri.conf.json` (decision D-C3 — chosen over runtime widening because Tauri 2 can't change CSP per-toggle without a reload; the collab origins stay unused unless a session is started, which is itself gated by the `collab` setting):
 
 ```
-default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: https://ipc.localhost
+default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:;
+connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:* https://*.devtunnels.ms
+  wss://*.devtunnels.ms https://libraries.excalidraw.com;
+frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'
 ```
 
-When AI is enabled at runtime, append `https://api.openai.com` to `connect-src`. When collab is enabled, append `ws://127.0.0.1:*`, `https://*.devtunnels.ms`, `wss://*.devtunnels.ms`, and the manual-override origin (if any). The relay-served guest page uses its own CSP header (`connect-src 'self'`).
+Excalidraw fonts are self-hosted (copied to `dist/fonts`, `window.EXCALIDRAW_ASSET_PATH = "/"`) so text never fetches from esm.sh. Tradeoffs: no `'unsafe-eval'` (peers send untrusted scene data), so SVG export embeds full fonts instead of subsets; a desktop guest can only join hosts on `*.devtunnels.ms` or loopback (browser guests are unaffected). `e2e/csp-privacy.spec.ts` guards both. The relay-served guest page sends its own self-only CSP header.
 
 ### M10 — Live collaboration (embedded relay + DevTunnels)
 
@@ -295,7 +299,8 @@ Contract: `docs/collab-protocol.md`. Firebase dropped: on excalidraw.com Firebas
 
 - `src-tauri/src/collab/` — axum WebSocket relay bound to 127.0.0.1 (room fan-out of opaque encrypted frames, host-registered rooms only, size/peer limits) that also serves the embedded app assets for browser guests; `devtunnel` CLI orchestration (auto) or manual public URL; commands `collab_start/stop/status`, event `collab://status`.
 - `src/collab/` — AES-GCM crypto, link encode/decode, WebSocket transport, `CollabSession` sync engine (reconcile, throttled diffs, cursors, files), browser `GuestApp`.
-- Share / Join dialogs, settings (display name, tunnel mode, manual URL, port), CSP widening only when enabled.
+- Share / Join dialogs, settings (display name, tunnel mode, manual URL, port); static CSP (§6).
+- `npm run e2e:rust-relay` runs the browser-guest spec against the production Rust relay (`src-tauri/examples/relay_standalone.rs`).
 - Test profiles (`--profile`) let two desktop instances run on one machine.
 - **Validation gate before any release:** (A) desktop build ↔ local browser, (B) desktop build ↔ remote browser over DevTunnel, (C) desktop ↔ second desktop instance. Checklist: `docs/collab-testing.md`.
 - Future: same wire protocol on a Cloudflare Worker + Durable Object for always-on links.
@@ -316,6 +321,7 @@ Contract: `docs/collab-protocol.md`. Firebase dropped: on excalidraw.com Firebas
 | D-C1 | Collab via embedded Rust relay + DevTunnels, not Firebase | Firebase is persistence only; relay needed anyway. No third-party account, E2E encrypted, data stays on host. |
 | D-C2 | Own tiny JSON relay protocol (not socket.io)              | Trivial to implement in Rust and on Cloudflare DO later; no socket.io client dep.                             |
 | D-R1 | Notarize locally, Windows in CI                           | Apple credentials stay in the local keychain; no secrets in GitHub.                                           |
+| D-C3 | Static CSP allow-list incl. loopback + `*.devtunnels.ms`  | Runtime CSP widening needs a reload in Tauri 2; origins are inert unless a session starts (gated by setting). |
 | D6   | npm + Vite + React + TS                                   | User preference; React is required by Excalidraw.                                                             |
 | D7   | Vitest + cargo test + Playwright via tauri-driver         | Layered coverage from units to full app smoke.                                                                |
 | D8   | Online features opt-in via settings, off by default       | User wants the capability but no data leaving the box by default.                                             |
