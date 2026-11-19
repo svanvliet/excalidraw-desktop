@@ -65,6 +65,14 @@ dropped under backpressure; non-volatile must be delivered in order.
 When the host calls `collab_stop`, the relay closes all sockets in the room with
 close code **4000** ("session ended").
 
+Other close codes: **1008** after a fatal `error` frame (`unknown_room`,
+`room_full`, `protocol`), **1003** malformed JSON, **1013** peer too slow to
+drain its non-volatile backlog, **1001** relay shutting down (sockets not yet
+in a room). A frame over 8 MiB gets `too_large` (connection kept); binary
+frames get `bad_frame`. A `room` that isn't 20 lowercase hex chars is
+`unknown_room`. `peerCount` in `CollabStatus` counts every socket in the room,
+including the host's own webview.
+
 ## 4. Encrypted payloads
 
 Each `broadcast.data` is `AES-GCM(key, iv=12 random bytes, utf8(JSON(payload)))`.
@@ -121,7 +129,12 @@ collab_status() -> CollabStatus
 event "collab://status" (payload CollabStatus) on every change
 ```
 
-Errors are `AppError` with `kind: "other"`; tunnel failures are reported in
+`collab_start` returns immediately; in auto mode `tunnel.state` is
+`"starting"` and `publicBase` is `null` until a later `collab://status` event
+reports `"ready"` (or `"error"`, in which case `publicBase` stays `null`).
+
+Errors are `AppError` with `kind: "other"` (e.g. invalid `roomId`/`manualUrl`,
+`relay_bind_failed: <io error>`); tunnel failures are reported in
 `status.tunnel.error` (relay keeps running so local sessions still work).
 Known tunnel error messages: `devtunnel_not_installed`, `devtunnel_not_logged_in`,
 `devtunnel_failed: <detail>`.
@@ -129,18 +142,23 @@ Known tunnel error messages: `devtunnel_not_installed`, `devtunnel_not_logged_in
 ### DevTunnels (auto mode)
 
 Persistent tunnel ID `excalidraw-desktop` (+ `-<profile>` for test profiles):
-`devtunnel show` → create if missing (`devtunnel create <id>`) → ensure port
+`devtunnel user show` (login check) → `devtunnel show <id> -j` → create if
+missing (`devtunnel create <id>`) → delete stale ports, ensure port
 (`devtunnel port create <id> -p <port> --protocol http`) → anonymous access
 (`devtunnel access create <id> --anonymous`) → `devtunnel host <id>` (child
-process; killed on stop/app exit). Public base parsed from the host output
-(`https://<id>-<port>.<region>.devtunnels.ms`).
+process; killed on stop/app exit). Public base parsed from the host's
+`Connect via browser: <url>` line once it prints `Ready to accept connections`.
+The hostname is a service-assigned token, **not** the tunnel ID
+(`https://<token>-<port>.<region>.devtunnels.ms`).
 
 ## 6. Test profiles (second instance on one machine)
 
 `EXCALIDRAW_DESKTOP_PROFILE=<name>` or `--profile <name>`:
 skips the single-instance plugin, appends `-<name>` to the store files
 (`settings-<name>.json`, `recent-files-<name>.json`), log file and window title,
-and uses default relay port `4780 + 1 + hash(name) % 100`. Exposed to the
+and uses default relay port `4780 + 1 + hash(name) % 100`, where `hash` is
+32-bit FNV-1a over the UTF-8 name. Names must match `[A-Za-z0-9_-]{1,32}`
+(invalid names are ignored); `--profile` wins over the env var. Exposed to the
 frontend via `app_profile() -> string | null`.
 
 ## 7. Browser guest mode
