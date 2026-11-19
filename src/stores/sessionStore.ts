@@ -16,6 +16,7 @@ import { openFile, listScratch, isAppError } from "../ipc/commands";
 import { detectFormat } from "../lib/fileFormat";
 import { restoreInitialData } from "../lib/excalidrawRestore";
 import { log } from "../lib/logger";
+import { storeFile } from "../lib/storeFile";
 
 const STORE_FILE = "session.json";
 const STORE_KEY = "v1";
@@ -39,7 +40,7 @@ interface PersistedKV {
 let storeSingleton: PersistedKV | null = null;
 async function getStore(): Promise<PersistedKV> {
   if (!storeSingleton) {
-    storeSingleton = new LazyStore(STORE_FILE) as unknown as PersistedKV;
+    storeSingleton = new LazyStore(await storeFile(STORE_FILE)) as unknown as PersistedKV;
   }
   return storeSingleton;
 }

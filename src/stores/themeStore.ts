@@ -14,6 +14,7 @@
 import { create } from "zustand";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { log } from "../lib/logger";
+import { storeFile } from "../lib/storeFile";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -35,8 +36,8 @@ const STORE_KEY = "theme";
 const DEFAULT_MODE: ThemeMode = "system";
 
 let lazyStore: LazyStore | null = null;
-function store(): LazyStore {
-  if (!lazyStore) lazyStore = new LazyStore(STORE_FILE);
+async function store(): Promise<LazyStore> {
+  if (!lazyStore) lazyStore = new LazyStore(await storeFile(STORE_FILE));
   return lazyStore;
 }
 
@@ -88,8 +89,8 @@ function attachSystemListener(): void {
 
 async function persist(mode: ThemeMode): Promise<void> {
   try {
-    await store().set(STORE_KEY, mode);
-    await store().save();
+    await (await store()).set(STORE_KEY, mode);
+    await (await store()).save();
   } catch (e) {
     log.warn("themeStore: failed to persist", e);
   }
@@ -103,7 +104,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   async load() {
     attachSystemListener();
     try {
-      const raw = await store().get<unknown>(STORE_KEY);
+      const raw = await (await store()).get<unknown>(STORE_KEY);
       const mode: ThemeMode = isThemeMode(raw) ? raw : DEFAULT_MODE;
       const resolved = resolve(mode);
       set({ mode, resolved, loaded: true });

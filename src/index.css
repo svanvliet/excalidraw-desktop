@@ -623,6 +623,36 @@ button {
   border-radius: 3px;
 }
 
+.settings__radio-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings__radio-group legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--fg-default);
+}
+
+.settings__radio-group .settings__row {
+  padding: var(--space-2) 0;
+}
+
+.settings__field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.settings__error {
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-default);
+}
+
 /* ----------------------------- Switch (toggle) ----------------------------- */
 
 .switch {
