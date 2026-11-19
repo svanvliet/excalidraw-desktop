@@ -8,6 +8,11 @@ import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { ShareDialog } from "./components/ShareDialog";
+import { JoinDialog } from "./components/JoinDialog";
+import { useCollabStore } from "./stores/collabStore";
+import { collabStop } from "./ipc/commands";
+import type { RoomLink } from "./collab/protocol";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -59,6 +64,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const loadSettings = useSettingsStore((s) => s.load);
   const loadTheme = useThemeStore((s) => s.load);
@@ -70,7 +77,11 @@ export function App() {
   const removeRecent = useRecentFilesStore((s) => s.remove);
   const clearRecent = useRecentFilesStore((s) => s.clear);
 
-  const collabEnabled = useSettingsStore((s) => s.collab);
+  const collabSession = useCollabStore((s) => s.session);
+  const collabPeerCount = useCollabStore((s) => s.status.peerCount);
+  const initCollab = useCollabStore((s) => s.init);
+  const joinCollab = useCollabStore((s) => s.joinSession);
+  const endCollabForTab = useCollabStore((s) => s.endSessionForTab);
   const libraryEnabled = useSettingsStore((s) => s.library);
   const aiEnabled = useSettingsStore((s) => s.ai);
   // The official Excalidraw web app uses its own URL as the library return
@@ -159,7 +170,8 @@ export function App() {
       void loadRecent();
       void loadSettings();
       void loadTheme();
-      log.info("App: stores loaded (recent, settings, theme)");
+      void initCollab();
+      log.info("App: stores loaded (recent, settings, theme, collab)");
       // Subscribe to OS file-open events (double-click, drag-onto-icon,
       // single-instance reroute) and route them through the latest openPath.
       // Each subscription is wrapped so a missing Tauri runtime (web preview
@@ -199,19 +211,26 @@ export function App() {
         log.info("App: mount effect ready");
       }
     })();
+    // Best-effort: tear down a hosted collab session when the window goes
+    // away. The Rust side also kills the relay/tunnel on exit.
+    const handleUnload = () => {
+      if (useCollabStore.getState().session?.role === "host") void collabStop().catch(() => {});
+    };
+    window.addEventListener("beforeunload", handleUnload);
     // Persist session on every tabs-store change.
     const unsubscribe = useTabsStore.subscribe(() => {
       void persistSession();
     });
     return () => {
       cancelled = true;
+      window.removeEventListener("beforeunload", handleUnload);
       unsubscribe();
       unlistenFileOpen?.();
       unlistenDrop?.();
       unlistenMenu?.();
       autosaver.cancelAll();
     };
-  }, [loadRecent, loadSettings, loadTheme, autosaver]);
+  }, [loadRecent, loadSettings, loadTheme, initCollab, autosaver]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
@@ -368,6 +387,25 @@ export function App() {
 
   const handleNew = useCallback(() => newTab(), [newTab]);
 
+  // Closing a tab ends any live session bound to it.
+  const closeTab = useCallback(
+    (id: string) => {
+      void endCollabForTab(id);
+      closeTabAction(id);
+    },
+    [endCollabForTab, closeTabAction],
+  );
+
+  const handleJoin = useCallback(
+    (link: RoomLink) => {
+      const tabId = newTab();
+      if (!joinCollab(link, tabId)) {
+        setError("Couldn't join: live collaboration is off or a session is already active.");
+      }
+    },
+    [newTab, joinCollab],
+  );
+
   const requestCloseTab = useCallback(
     (id: string) => {
       const tab = tabs.find((t) => t.id === id);
@@ -378,10 +416,10 @@ export function App() {
         autosaver.cancel(id);
         if (!tab.path) void deleteScratch(id).catch(() => {});
         apisRef.current.delete(id);
-        closeTabAction(id);
+        closeTab(id);
       }
     },
-    [tabs, closeTabAction, autosaver],
+    [tabs, closeTab, autosaver],
   );
 
   const pendingTab = pendingClose ? (tabs.find((t) => t.id === pendingClose) ?? null) : null;
@@ -395,10 +433,10 @@ export function App() {
     if (saved) {
       autosaver.cancel(pendingClose);
       apisRef.current.delete(pendingClose);
-      closeTabAction(pendingClose);
+      closeTab(pendingClose);
       setPendingClose(null);
     }
-  }, [pendingClose, selectTab, handleSave, closeTabAction, autosaver]);
+  }, [pendingClose, selectTab, handleSave, closeTab, autosaver]);
 
   const handleConfirmDiscard = useCallback(() => {
     if (!pendingClose) return;
@@ -406,9 +444,9 @@ export function App() {
     autosaver.cancel(pendingClose);
     if (tab && !tab.path) void deleteScratch(pendingClose).catch(() => {});
     apisRef.current.delete(pendingClose);
-    closeTabAction(pendingClose);
+    closeTab(pendingClose);
     setPendingClose(null);
-  }, [pendingClose, closeTabAction, autosaver]);
+  }, [pendingClose, closeTab, autosaver]);
 
   const handleConfirmCancel = useCallback(() => setPendingClose(null), []);
 
@@ -498,6 +536,9 @@ export function App() {
         onSaveAs={handleSaveAs}
         onExportPng={handleExportPng}
         onOpenSettings={() => setSettingsOpen(true)}
+        onShare={() => setShareOpen(true)}
+        onJoin={() => setJoinOpen(true)}
+        livePeerCount={collabSession ? collabPeerCount : null}
       >
         <RecentMenu
           paths={recentPaths}
@@ -533,7 +574,9 @@ export function App() {
                 scheduleAutosave(tab.id);
               }}
               aiEnabled={aiEnabled}
-              isCollaborating={collabEnabled}
+              isCollaborating={collabSession?.tabId === tab.id}
+              // TODO(collab-hook): pass onCollabChange / onPointerUpdate from
+              // useCollabSession when collabSession?.tabId === tab.id.
               libraryReturnUrl={libraryReturnUrl}
               theme={resolvedTheme}
             />
@@ -548,6 +591,18 @@ export function App() {
         onCancel={handleConfirmCancel}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ShareDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        tabId={activeTabId}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+      <JoinDialog
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        onJoin={handleJoin}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
     </main>
   );
 }
