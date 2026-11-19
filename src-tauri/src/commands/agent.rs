@@ -204,3 +204,147 @@ pub async fn agent_tool_result(result: ToolCallResult) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+/// Live end-to-end smoke tests against the engines installed on this machine: the real adapter
+/// factory and manager, the loopback MCP server, and a fake canvas that answers tool calls.
+/// Each runs one small model turn:
+/// `cargo test --lib commands::agent::live_tests -- --ignored --nocapture --test-threads=1`.
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+    use crate::agent::events::{AgentEvent, StopReason, ToolCallRequest, ToolCallResult};
+    use crate::agent::mcp::{McpServerOptions, ToolCallSink};
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    struct FakeCanvas(Mutex<Option<Arc<McpServer>>>, Mutex<Vec<String>>);
+
+    impl ToolCallSink for FakeCanvas {
+        fn emit(&self, req: &ToolCallRequest) -> Result<(), String> {
+            self.1.lock().unwrap().push(req.tool.clone());
+            let text = match req.tool.as_str() {
+                "list_tabs" => {
+                    r#"[{"tabId":"tab-1","title":"Untitled","active":true}]"#.to_string()
+                }
+                _ => r#"{"ok":true,"revision":"r2","ids":["el-1"]}"#.to_string(),
+            };
+            let server = self.0.lock().unwrap().clone().expect("server");
+            server.complete_tool_call(ToolCallResult {
+                call_id: req.call_id.clone(),
+                is_error: false,
+                content: vec![serde_json::json!({"type":"text","text":text})],
+            });
+            Ok(())
+        }
+    }
+
+    /// Hands out HTTP endpoints only: the stdio shim needs the app binary, not the test binary.
+    struct HttpOnly(Arc<McpServer>);
+
+    impl manager::McpEndpointProvider for HttpOnly {
+        fn register(&self, session_id: &str, tab_id: &str) -> McpEndpoint {
+            McpEndpoint {
+                shim_command: vec![],
+                ..self.0.register_session(session_id, tab_id)
+            }
+        }
+        fn unregister(&self, session_id: &str) {
+            self.0.unregister_session(session_id);
+        }
+    }
+
+    async fn smoke(engine: EngineKind) {
+        let probe = ProbeEnv::system().await;
+        let Some(binary) = detect::resolve_binary(engine, None, &probe).await else {
+            eprintln!("{engine:?} not installed; skipping");
+            return;
+        };
+        let canvas = Arc::new(FakeCanvas(Mutex::new(None), Mutex::new(vec![])));
+        let server = McpServer::bind(canvas.clone(), McpServerOptions::default())
+            .await
+            .unwrap();
+        *canvas.0.lock().unwrap() = Some(server.clone());
+
+        let events = Arc::new(Mutex::new(Vec::<AgentEvent>::new()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
+        let root = tempfile::tempdir().unwrap();
+        let mgr = AgentManager::new(ManagerConfig {
+            agent_root: root.path().to_path_buf(),
+            adapters: adapter_factory(),
+            mcp: Arc::new(HttpOnly(server.clone())),
+            sink: {
+                let events = events.clone();
+                Arc::new(move |env| {
+                    eprintln!("{:?}", env.event);
+                    events.lock().unwrap().push(env.event.clone());
+                    let _ = tx.send(env.event);
+                })
+            },
+            system_prompt: manager::DEFAULT_SYSTEM_PROMPT.to_string(),
+            stop_grace: manager::STOP_GRACE,
+        });
+        let session = mgr
+            .start(StartRequest {
+                tab_id: "tab-1".into(),
+                engine,
+                binary: binary.clone(),
+                attached_folder: None,
+                use_host_config: false,
+                model: None,
+                resume_id: None,
+                spawn_env: probe.shell.for_binary(&binary),
+            })
+            .await
+            .unwrap();
+        mgr.prompt(
+            &session,
+            "Add one rectangle labelled Hello to the canvas using the excalidraw add_elements \
+             tool, then reply with the single word done.",
+        )
+        .unwrap();
+        let ended = tokio::time::timeout(Duration::from_secs(180), async {
+            while let Some(e) = rx.recv().await {
+                match e {
+                    AgentEvent::TurnEnded { stop_reason, .. } => return Some(stop_reason),
+                    AgentEvent::Error { fatal: true, .. } => return None,
+                    _ => {}
+                }
+            }
+            None
+        })
+        .await
+        .expect("turn timed out");
+        mgr.stop(&session).await.unwrap();
+        server.shutdown();
+
+        assert_eq!(ended, Some(StopReason::EndTurn));
+        let tools = canvas.1.lock().unwrap().clone();
+        assert!(
+            tools.iter().any(|t| t == "add_elements"),
+            "canvas tools called: {tools:?}"
+        );
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(|e| matches!(e, AgentEvent::Ready { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::PermissionRequest { .. })));
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_claude() {
+        smoke(EngineKind::Claude).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_codex() {
+        smoke(EngineKind::Codex).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_copilot() {
+        smoke(EngineKind::Copilot).await;
+    }
+}
