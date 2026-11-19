@@ -45,6 +45,13 @@ import { restoreInitialData } from "./lib/excalidrawRestore";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
 import { log } from "./lib/logger";
+import {
+  registerSceneTab,
+  listSceneTabs,
+  setActiveSceneTab,
+  unregisterSceneTab,
+} from "./agent/sceneBridge";
+import { resetTurns } from "./agent/scene/turns";
 
 const OPEN_FILTERS = [
   { name: "Excalidraw", extensions: ["excalidraw", "png"] },
@@ -242,11 +249,40 @@ export function App() {
   // Bumped when a tab's Excalidraw API (re)mounts so the collab binding can
   // pick it up — apisRef alone doesn't trigger a render.
   const [apiTick, setApiTick] = useState(0);
+  // Agent scene bridge (docs/ai-integration.md): refs keep the registered
+  // callbacks current without re-registering on every render.
+  const agentViewerTabRef = useRef<string | null>(null);
+  const agentMarkDirtyRef = useRef<(id: string) => void>(() => {});
   const handleApi = useCallback((id: string, api: ExcalidrawImperativeAPI) => {
     if (apisRef.current.get(id) === api) return;
     apisRef.current.set(id, api);
+    registerSceneTab(id, {
+      api,
+      title: () => {
+        const tab = useTabsStore.getState().tabs.find((t) => t.id === id);
+        return tab?.path ? displayName(tab.path) : "Untitled";
+      },
+      isViewer: () => agentViewerTabRef.current === id,
+      markDirty: () => agentMarkDirtyRef.current(id),
+    });
     setApiTick((t) => t + 1);
   }, []);
+  useEffect(() => {
+    agentMarkDirtyRef.current = (id) => {
+      markDirtyAction(id);
+      scheduleAutosave(id);
+    };
+  }, [markDirtyAction, scheduleAutosave]);
+  useEffect(() => setActiveSceneTab(activeTabId), [activeTabId]);
+  useEffect(() => {
+    const open = new Set(tabs.map((t) => t.id));
+    for (const { tabId } of listSceneTabs()) {
+      if (!open.has(tabId)) {
+        unregisterSceneTab(tabId);
+        resetTurns(tabId);
+      }
+    }
+  }, [tabs]);
 
   // --- Live collaboration binding (docs/collab-protocol.md) -----------------
   // The host's own webview always talks to the loopback relay; guests use the
@@ -294,6 +330,10 @@ export function App() {
       scheduleAutosave(collabTabId);
     },
   });
+  useEffect(() => {
+    agentViewerTabRef.current =
+      collabSession?.role === "guest" && collab.role === "viewer" ? collabTabId : null;
+  }, [collabSession?.role, collab.role, collabTabId]);
   // A guest never keeps the shared drawing: when its session goes away (Leave,
   // host ended, removed), wipe that tab. The engine is already stopped by then,
   // so the reset can't reach the room.
