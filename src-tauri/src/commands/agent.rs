@@ -77,9 +77,15 @@ pub async fn agent_stop(session_id: String) -> Result<(), AppError> {
     Err(todo("agent_stop"))
 }
 
-/// Webview executor → MCP server: result of an `agent://tool-call`. Implemented by the MCP lane.
+/// Webview executor → MCP server: result of an `agent://tool-call`.
 #[tauri::command]
 pub async fn agent_tool_result(result: ToolCallResult) -> Result<(), AppError> {
-    let _ = result;
-    Err(todo("agent_tool_result"))
+    let server = crate::agent::mcp::McpServer::global()
+        .ok_or_else(|| AppError::Other("agent MCP server is not running".into()))?;
+    let call_id = result.call_id.clone();
+    if !server.complete_tool_call(result) {
+        // Late result after a timeout/cancel: the engine already got an error; drop it.
+        log::warn!("agent_tool_result: no pending tool call {call_id}");
+    }
+    Ok(())
 }
