@@ -163,3 +163,11 @@ export function formatFromExtension(path: string): "png" | "json" {
   const lower = path.toLowerCase();
   return lower.endsWith(".png") ? "png" : "json";
 }
+
+/** File name shown in tabs, title and menus: no directory, no `.excalidraw` suffix. */
+export function displayName(path: string): string {
+  const parts = path.split(/[/\\]/);
+  const name = parts[parts.length - 1] || path;
+  const stem = name.replace(/\.excalidraw$/i, "");
+  return stem || name;
+}

@@ -36,6 +36,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   formatFromExtension,
+  displayName,
 } from "./lib/fileFormat";
 import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
@@ -257,7 +258,7 @@ export function App() {
   const collabDisplayName = useSettingsStore((s) => s.collabDisplayName);
   const collabTabId = collabSession?.tabId ?? null;
   const collabTab = collabTabId ? tabs.find((t) => t.id === collabTabId) : undefined;
-  const collabTabLabel = collabTab?.path ? basename(collabTab.path) : "Untitled";
+  const collabTabLabel = collabTab?.path ? displayName(collabTab.path) : "Untitled";
   const collabLink = useMemo<RoomLink | null>(() => {
     if (!collabSession) return null;
     if (collabSession.role === "guest") {
@@ -500,7 +501,11 @@ export function App() {
   );
 
   const pendingTab = pendingClose ? (tabs.find((t) => t.id === pendingClose) ?? null) : null;
-  const pendingLabel = pendingTab ? (pendingTab.path ? basename(pendingTab.path) : "Untitled") : "";
+  const pendingLabel = pendingTab
+    ? pendingTab.path
+      ? displayName(pendingTab.path)
+      : "Untitled"
+    : "";
 
   const handleConfirmSave = useCallback(async () => {
     if (!pendingClose) return;
@@ -705,11 +710,6 @@ export function App() {
       />
     </main>
   );
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }
 
 function formatError(e: unknown): string {

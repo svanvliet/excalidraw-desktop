@@ -1,5 +1,6 @@
 import type { Tab } from "../stores/tabsStore";
 import { CloseIcon, LiveIcon, PlusIcon } from "./icons";
+import { displayName } from "../lib/fileFormat";
 
 export interface TabBarProps {
   tabs: Tab[];
@@ -52,7 +53,7 @@ function TabEntry({
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const label = tab.path ? basename(tab.path) : "Untitled";
+  const label = tab.path ? displayName(tab.path) : "Untitled";
   return (
     <div
       role="tab"
@@ -95,9 +96,4 @@ function TabEntry({
       </button>
     </div>
   );
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }

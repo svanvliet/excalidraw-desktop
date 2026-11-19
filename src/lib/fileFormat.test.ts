@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectFormat,
+  displayName,
   isExcalidrawFile,
   serializeScene,
   looksLikePng,
@@ -121,5 +122,14 @@ describe("formatFromExtension", () => {
   it("defaults to json for everything else", () => {
     expect(formatFromExtension("/tmp/foo.excalidraw")).toBe("json");
     expect(formatFromExtension("/tmp/foo")).toBe("json");
+  });
+});
+
+describe("displayName", () => {
+  it("drops the directory and the .excalidraw suffix only", () => {
+    expect(displayName("/Users/me/Test-File.excalidraw")).toBe("Test-File");
+    expect(displayName("C:\\docs\\Plan.EXCALIDRAW")).toBe("Plan");
+    expect(displayName("/a/shot.excalidraw.png")).toBe("shot.excalidraw.png");
+    expect(displayName("/a/.excalidraw")).toBe(".excalidraw");
   });
 });

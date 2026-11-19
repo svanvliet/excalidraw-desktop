@@ -10,6 +10,7 @@ import {
   UsersIcon,
 } from "./icons";
 import { ThemeToggle } from "./ThemeToggle";
+import { displayName } from "../lib/fileFormat";
 
 export interface ToolbarProps {
   documentPath: string | null;
@@ -70,7 +71,7 @@ export function Toolbar({
   return (
     <header className="toolbar" data-testid="toolbar">
       <div className="toolbar__title" title={titleLabel}>
-        <span className="toolbar__name">{basename(titleLabel)}</span>
+        <span className="toolbar__name">{displayName(titleLabel)}</span>
         {dirty ? (
           <span className="toolbar__dirty" aria-label="Unsaved changes" title="Unsaved changes">
             •
@@ -181,9 +182,4 @@ export function Toolbar({
       </div>
     </header>
   );
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }

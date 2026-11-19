@@ -24,7 +24,7 @@ describe("Toolbar", () => {
 
   it("shows just the basename of the document path", () => {
     setup({ documentPath: "/Users/me/projects/diagram.excalidraw" });
-    expect(screen.getByText("diagram.excalidraw")).toBeInTheDocument();
+    expect(screen.getByText("diagram")).toBeInTheDocument();
   });
 
   it("renders a dirty marker only when dirty is true", () => {

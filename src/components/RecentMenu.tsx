@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDownIcon, ClockIcon } from "./icons";
+import { displayName } from "../lib/fileFormat";
 
 export interface RecentMenuProps {
   paths: readonly string[];
@@ -77,7 +78,7 @@ export function RecentMenu({ paths, onOpen, onClear }: RecentMenuProps) {
                 onClick={() => handleSelect(path)}
                 title={path}
               >
-                <span className="popover__item-name">{basename(path)}</span>
+                <span className="popover__item-name">{displayName(path)}</span>
                 <span className="popover__item-path">{path}</span>
               </button>
             </li>
@@ -92,9 +93,4 @@ export function RecentMenu({ paths, onOpen, onClear }: RecentMenuProps) {
       ) : null}
     </div>
   );
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }

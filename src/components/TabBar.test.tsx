@@ -31,7 +31,7 @@ describe("TabBar", () => {
         onNew={() => {}}
       />,
     );
-    expect(screen.getByText("diagram.excalidraw")).toBeInTheDocument();
+    expect(screen.getByText("diagram")).toBeInTheDocument();
     expect(screen.getByLabelText(/unsaved changes/i)).toBeInTheDocument();
   });
 
@@ -93,7 +93,7 @@ describe("TabBar", () => {
         onNew={() => {}}
       />,
     );
-    fireEvent.click(screen.getByLabelText(/close x.excalidraw/i));
+    fireEvent.click(screen.getByLabelText(/^close x$/i));
     expect(onClose).toHaveBeenCalledWith("a");
     expect(onSelect).not.toHaveBeenCalled();
   });
