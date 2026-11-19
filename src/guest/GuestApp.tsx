@@ -3,15 +3,16 @@
  * outside Tauri and the URL carries `#room=`. Must never touch Tauri IPC or
  * the persisted stores — everything here is in-memory or `localStorage`.
  */
-import { Excalidraw, LiveCollaborationTrigger } from "@excalidraw/excalidraw";
+import { Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import "@excalidraw/excalidraw/index.css";
 import "./GuestApp.css";
-import type { CollabSession, CollabStatus } from "../collab/CollabSession";
+import type { CollabPeer, CollabSession, CollabStatus } from "../collab/CollabSession";
 import type { RoomLink } from "../collab/protocol";
 import { useCollabSession } from "../collab/useCollabSession";
+import { CloseIcon, UsersIcon } from "../components/icons";
 import { log } from "../lib/logger";
 
 export const GUEST_NAME_KEY = "excalidraw-desktop:guest-name";
@@ -68,11 +69,13 @@ export function GuestApp({ link }: GuestAppProps) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [username, setUsername] = useState(readStoredName);
   const [promptOpen, setPromptOpen] = useState(() => username === "");
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [left, setLeft] = useState(false);
 
   const { status, error, peers, handlers, session } = useCollabSession({
     api,
     // Hold off joining until the guest has a name so peers never see a blank one.
-    link: username ? link : null,
+    link: username && !left ? link : null,
     username,
     isHost: false,
   });
@@ -102,46 +105,75 @@ export function GuestApp({ link }: GuestAppProps) {
     setPromptOpen(false);
   }, []);
 
+  const leave = useCallback(() => {
+    setPanelOpen(false);
+    setLeft(true);
+  }, []);
+
   const banner = BANNERS[status];
   const ended = status === "ended" || status === "failed";
+  const offline = ended || left;
   const participants = peers.length + 1;
 
   const renderTopRightUI = useCallback(
-    () => (
-      <LiveCollaborationTrigger
-        isCollaborating={!ended}
-        onSelect={() => setPromptOpen(true)}
-        title={`${participants} in session — click to change your name`}
-      />
-    ),
-    [ended, participants],
+    () =>
+      username ? (
+        <button
+          type="button"
+          className={`icon-btn guest-live${offline ? " guest-live--off" : ""}`}
+          data-testid="guest-session-btn"
+          title={offline ? "Not connected" : `${participants} in session`}
+          onClick={() => setPanelOpen(true)}
+        >
+          <span className="guest-live__dot" aria-hidden="true" />
+          {offline ? "Offline" : `Live · ${participants}`}
+        </button>
+      ) : null,
+    [offline, participants, username],
   );
 
   const initialData = useMemo(() => ({ appState: { name: "Shared drawing" } }), []);
 
   return (
     <div className="guest-app">
-      {banner && (
+      {left ? (
+        <div className="guest-banner guest-banner--info" role="status">
+          You left the session.{" "}
+          <button type="button" className="guest-banner__action" onClick={() => setLeft(false)}>
+            Rejoin
+          </button>
+        </div>
+      ) : banner ? (
         <div className={`guest-banner guest-banner--${banner.tone}`} role="status">
           {status === "failed" && error?.message
             ? `${banner.text} (${error.message})`
             : banner.text}
         </div>
-      )}
+      ) : null}
       <div className="guest-app__canvas">
         <Excalidraw
           excalidrawAPI={setApi}
           initialData={initialData}
           onChange={handlers.onChange}
           onPointerUpdate={handlers.onPointerUpdate}
-          isCollaborating={!ended}
-          viewModeEnabled={ended}
+          isCollaborating={!offline}
+          viewModeEnabled={offline}
           theme={theme}
           renderTopRightUI={renderTopRightUI}
         />
       </div>
       {promptOpen && (
         <NamePrompt initial={username} onSubmit={saveName} onCancel={() => saveName(username)} />
+      )}
+      {panelOpen && (
+        <SessionPanel
+          username={username}
+          peers={offline ? [] : peers}
+          offline={offline}
+          onRename={saveName}
+          onLeave={leave}
+          onClose={() => setPanelOpen(false)}
+        />
       )}
     </div>
   );
@@ -206,6 +238,109 @@ function NamePrompt({ initial, onSubmit, onCancel }: NamePromptProps) {
         <div className="modal__actions">
           <button type="submit" className="modal__primary">
             Join
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+interface SessionPanelProps {
+  username: string;
+  peers: CollabPeer[];
+  offline: boolean;
+  onRename: (name: string) => void;
+  onLeave: () => void;
+  onClose: () => void;
+}
+
+function SessionPanel({ username, peers, offline, onRename, onLeave, onClose }: SessionPanelProps) {
+  const [value, setValue] = useState(username);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    onRename(value);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <form
+        className="modal guest-name"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guest-session-title"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+      >
+        <header className="modal__header">
+          <div>
+            <h2 className="modal__title" id="guest-session-title">
+              Live session
+            </h2>
+            <p className="modal__subtitle">
+              {offline
+                ? "You're not connected. Edits here won't be shared."
+                : "You joined as a guest. Drawings are end-to-end encrypted."}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="icon-btn icon-btn--icon-only"
+            aria-label="Close"
+            title="Close"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+        <div className="modal__body">
+          {!offline && (
+            <>
+              <h3 className="guest-name__label">
+                <UsersIcon /> In this session ({peers.length + 1})
+              </h3>
+              <ul className="guest-people" data-testid="guest-people">
+                <li>
+                  {username} <span className="guest-people__tag">you</span>
+                </li>
+                {peers.map((p) => (
+                  <li key={p.clientId}>
+                    {p.username || "Anonymous"}
+                    {p.isHost ? <span className="guest-people__tag">host</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <label className="guest-name__label" htmlFor="guest-session-name">
+            Your name
+          </label>
+          <input
+            id="guest-session-name"
+            className="guest-name__input"
+            maxLength={MAX_NAME}
+            value={value}
+            placeholder="Guest"
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
+        <div className="modal__actions">
+          {!offline && (
+            <button type="button" className="icon-btn icon-btn--danger" onClick={onLeave}>
+              Leave session
+            </button>
+          )}
+          <span className="spacer" />
+          <button type="submit" className="modal__primary" disabled={value.trim() === username}>
+            Save name
           </button>
         </div>
       </form>

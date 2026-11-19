@@ -7,9 +7,6 @@ vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: (p: { renderTopRightUI?: () => unknown }) => (
     <div data-testid="excalidraw-mock">{p.renderTopRightUI?.() as never}</div>
   ),
-  LiveCollaborationTrigger: (p: { title?: string; onSelect: () => void }) => (
-    <button data-testid="collab-trigger" title={p.title} onClick={p.onSelect} />
-  ),
 }));
 vi.mock("@excalidraw/excalidraw/index.css", () => ({}));
 
@@ -68,7 +65,29 @@ describe("GuestApp", () => {
     render(<GuestApp link={LINK} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(lastCall().link).toEqual(LINK);
-    expect(screen.getByTestId("collab-trigger").title).toMatch(/^2 in session/);
+    expect(screen.getByTestId("guest-session-btn").textContent).toBe("Live · 2");
+  });
+
+  it("session panel lists people, renames, and leaves/rejoins", () => {
+    localStorage.setItem(GUEST_NAME_KEY, "Bob");
+    hook.result = {
+      peers: [{ clientId: "x", username: "Ann", isHost: true, userState: "active" }],
+    };
+    render(<GuestApp link={LINK} />);
+    fireEvent.click(screen.getByTestId("guest-session-btn"));
+    expect(screen.getByTestId("guest-people").textContent).toMatch(/Bob.*you.*Ann.*host/);
+
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Bobby" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    expect(lastCall().username).toBe("Bobby");
+
+    fireEvent.click(screen.getByTestId("guest-session-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "Leave session" }));
+    expect(lastCall().link).toBeNull();
+    expect(screen.getByTestId("guest-session-btn").textContent).toBe("Offline");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rejoin" }));
+    expect(lastCall().link).toEqual(LINK);
   });
 
   it("Escape on the prompt falls back to a default name", () => {
