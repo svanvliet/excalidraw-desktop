@@ -1,0 +1,146 @@
+/**
+ * AI agent contract types. Mirrors `src-tauri/src/agent/events.rs`, `detect.rs`, and
+ * `commands/agent.rs` — keep in sync (shared contract; change only with conductor sign-off).
+ * Design: docs/ai-integration.md.
+ */
+import toolsContract from "./tools.json";
+
+export type EngineKind = "copilot" | "claude" | "codex";
+
+export type ErrorKind =
+  | "notInstalled"
+  | "notLoggedIn"
+  | "orgDisabled"
+  | "unsupportedVersion"
+  | "quotaExceeded"
+  | "crashed"
+  | "protocol"
+  | "timeout"
+  | "other";
+
+export type StopReason = "endTurn" | "cancelled" | "maxTurns" | "refusal" | "error";
+export type ToolCallStatus = "pending" | "running" | "completed" | "failed";
+export type ToolSource = "canvas" | "host" | "builtin";
+export type PermissionDecision = "allowOnce" | "allowForConversation" | "deny";
+
+export interface Usage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  premiumRequests: number | null;
+}
+
+export interface PlanEntry {
+  content: string;
+  status: string;
+}
+
+export type AgentEvent =
+  | {
+      type: "ready";
+      engine: EngineKind;
+      version: string | null;
+      model: string | null;
+      engineSessionId: string | null;
+    }
+  | { type: "turnStarted"; turnId: string }
+  | { type: "textDelta"; turnId: string; text: string }
+  | { type: "thinkingDelta"; turnId: string; text: string }
+  | {
+      type: "toolCall";
+      turnId: string;
+      callId: string;
+      name: string;
+      title: string | null;
+      source: ToolSource;
+      status: ToolCallStatus;
+      input: unknown;
+      output: string | null;
+    }
+  | {
+      type: "permissionRequest";
+      turnId: string;
+      requestId: string;
+      toolName: string;
+      title: string;
+      detail: string | null;
+    }
+  | { type: "plan"; turnId: string; entries: PlanEntry[] }
+  | { type: "turnEnded"; turnId: string; stopReason: StopReason; usage: Usage | null }
+  | { type: "error"; kind: ErrorKind; message: string; fatal: boolean }
+  | { type: "exited"; code: number | null };
+
+export interface AgentEventEnvelope {
+  sessionId: string;
+  tabId: string;
+  event: AgentEvent;
+}
+
+export interface ToolCallRequest {
+  callId: string;
+  sessionId: string;
+  tabId: string;
+  tool: CanvasToolName;
+  args: Record<string, unknown>;
+}
+
+export type ToolContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
+export interface ToolCallResult {
+  callId: string;
+  isError: boolean;
+  content: ToolContent[];
+}
+
+export type EngineStatus = "ready" | "notFound" | "notLoggedIn" | "unsupportedVersion" | "unknown";
+
+export interface EngineInfo {
+  engine: EngineKind;
+  status: EngineStatus;
+  path: string | null;
+  version: string | null;
+  minVersion: string;
+  message: string | null;
+}
+
+export interface EngineOverride {
+  engine: EngineKind;
+  path: string | null;
+}
+
+export interface AgentStartOptions {
+  tabId: string;
+  engine: EngineKind;
+  pathOverride: string | null;
+  useHostConfig: boolean;
+  model: string | null;
+  attachedFolder: string | null;
+  resumeId: string | null;
+}
+
+export const CANVAS_TOOL_NAMES = [
+  "list_tabs",
+  "get_scene_summary",
+  "get_selection",
+  "get_elements",
+  "render_canvas_png",
+  "add_elements",
+  "update_elements",
+  "delete_elements",
+  "connect",
+  "add_mermaid",
+  "arrange",
+  "set_viewport",
+  "apply_ops",
+] as const;
+export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
+
+export interface CanvasToolDef {
+  name: string;
+  readOnly: boolean;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export const CANVAS_TOOLS: CanvasToolDef[] = toolsContract.tools as CanvasToolDef[];

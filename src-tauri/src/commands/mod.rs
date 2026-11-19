@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod collab;
 pub mod files;
 pub mod scratch;

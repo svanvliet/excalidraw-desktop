@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod collab;
 mod commands;
 mod error;
@@ -5,6 +6,10 @@ mod menu;
 mod profile;
 mod updater;
 
+use commands::agent::{
+    agent_cancel, agent_detect, agent_permission_respond, agent_prompt, agent_start, agent_stop,
+    agent_tool_result,
+};
 use commands::collab::{
     app_profile, collab_remove_peer, collab_set_role, collab_start, collab_status, collab_stop,
     AppProfile,
@@ -140,7 +145,14 @@ pub fn run() {
             app_profile,
             update_status,
             update_check,
-            update_install
+            update_install,
+            agent_detect,
+            agent_start,
+            agent_prompt,
+            agent_cancel,
+            agent_permission_respond,
+            agent_stop,
+            agent_tool_result
         ])
         .manage(AppProfile(profile.clone()))
         .manage(updater::Updates::default())
