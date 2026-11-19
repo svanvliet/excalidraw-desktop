@@ -664,6 +664,87 @@ button {
   line-height: var(--line-default);
 }
 
+.settings__field select,
+.ai-settings__toolbar select {
+  font-size: var(--font-size-sm);
+  height: var(--control-height-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-app);
+  color: var(--fg-default);
+}
+
+.ai-settings__toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.ai-engine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-app);
+}
+
+.ai-engine__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.ai-engine__enable {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+}
+
+.ai-engine__status {
+  font-size: var(--font-size-sm);
+  color: var(--fg-muted);
+  text-align: right;
+}
+
+.ai-engine[data-status="ready"] .ai-engine__status {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.ai-engine[data-status="notLoggedIn"] .ai-engine__status,
+.ai-engine[data-status="unsupportedVersion"] .ai-engine__status {
+  color: var(--warning-fg);
+}
+
+.ai-engine__path,
+.ai-engine__cmd {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.ai-engine__cmd {
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-active);
+  color: var(--fg-default);
+  user-select: all;
+}
+
+.ai-engine__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
 /* ----------------------------- Switch (toggle) ----------------------------- */
 
 .switch {

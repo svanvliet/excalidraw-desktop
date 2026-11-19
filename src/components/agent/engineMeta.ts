@@ -1,0 +1,114 @@
+/**
+ * Static, user-facing metadata about each supported agent engine
+ * (docs/ai-integration.md § UX). No IPC here.
+ */
+import type { EngineInfo, EngineKind, ErrorKind } from "../../agent/types";
+
+export interface EngineMeta {
+  label: string;
+  /** Who receives prompts under the user's account (FR-33 disclosure). */
+  provider: string;
+  /** Account/plan name shown in "Uses your … plan". */
+  plan: string;
+  /** Copyable sign-in command. */
+  signIn: string;
+  installUrl: string;
+}
+
+export const ENGINE_META: Record<EngineKind, EngineMeta> = {
+  copilot: {
+    label: "GitHub Copilot CLI",
+    provider: "GitHub",
+    plan: "GitHub Copilot",
+    signIn: "copilot login",
+    installUrl: "https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli",
+  },
+  claude: {
+    label: "Claude Code",
+    provider: "Anthropic",
+    plan: "Claude",
+    signIn: "claude, then /login",
+    installUrl: "https://docs.anthropic.com/en/docs/claude-code/setup",
+  },
+  codex: {
+    label: "OpenAI Codex",
+    provider: "OpenAI",
+    plan: "ChatGPT",
+    signIn: "codex login",
+    installUrl: "https://github.com/openai/codex",
+  },
+};
+
+export function disclosureText(engine: EngineKind): string {
+  const m = ENGINE_META[engine];
+  return `Prompts, the canvas content the agent reads, and attached-folder files are sent to ${m.provider} under your ${m.label} account.`;
+}
+
+/** One-line status text for a detected engine (Settings → AI). */
+export function engineStatusText(info: EngineInfo | undefined): string {
+  if (!info) return "Not detected yet";
+  const m = ENGINE_META[info.engine];
+  switch (info.status) {
+    case "ready":
+      return `Ready${info.version ? ` — v${info.version}` : ""}`;
+    case "notFound":
+      return "Not found — install it, or set a custom path";
+    case "notLoggedIn":
+      return `Not signed in — run \`${m.signIn}\` in a terminal`;
+    case "unsupportedVersion":
+      return `Unsupported version${info.version ? ` (v${info.version})` : ""} — update to v${info.minVersion} or later`;
+    default:
+      return info.message ?? "Status unknown";
+  }
+}
+
+/** Actionable guidance for an agent error (§ UX empty & error states). */
+export function errorGuidance(
+  kind: ErrorKind,
+  engine: EngineKind | null,
+  message: string,
+  minVersion?: string,
+): string {
+  const m = engine ? ENGINE_META[engine] : null;
+  const label = m?.label ?? "The agent";
+  switch (kind) {
+    case "notInstalled":
+      return `${label} isn't installed. Install it, then use Re-detect in Settings → AI.`;
+    case "notLoggedIn":
+      return `${label} isn't signed in. Run \`${m?.signIn ?? "login"}\` in a terminal, then try again.`;
+    case "orgDisabled":
+      return `${label} is disabled for your account by your organization. Ask your admin, or pick another engine.`;
+    case "unsupportedVersion":
+      return `This version of ${label} isn't supported. Update it${minVersion ? ` to v${minVersion} or later` : ""} and try again.`;
+    case "quotaExceeded":
+      return `You've reached your ${m?.plan ?? "plan's"} usage limit. Try again later or switch engines.`;
+    case "crashed":
+      return `${label} stopped unexpectedly. Retry to start a new session.`;
+    case "protocol":
+      return `${label} sent a response the app couldn't understand. Updating it usually fixes this.`;
+    case "timeout":
+      return `${label} didn't respond in time. Retry, or check your connection.`;
+    default:
+      return message || "Something went wrong.";
+  }
+}
+
+const CANVAS_TOOL_LABELS: Record<string, string> = {
+  list_tabs: "Listed tabs",
+  get_scene_summary: "Read the canvas",
+  get_selection: "Read the selection",
+  get_elements: "Read elements",
+  render_canvas_png: "Looked at the canvas",
+  add_elements: "Added elements",
+  update_elements: "Updated elements",
+  delete_elements: "Deleted elements",
+  connect: "Connected elements",
+  add_mermaid: "Imported a Mermaid diagram",
+  arrange: "Arranged elements",
+  set_viewport: "Moved the viewport",
+  apply_ops: "Edited the canvas",
+};
+
+export function toolLabel(name: string, title: string | null): string {
+  return title || CANVAS_TOOL_LABELS[name] || name;
+}

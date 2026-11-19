@@ -24,13 +24,48 @@ vi.mock("@tauri-apps/plugin-store", () => {
   return { LazyStore: FakeStore };
 });
 
+const agentDetect = vi.hoisted(() => vi.fn());
+vi.mock("../ipc/commands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ipc/commands")>()),
+  agentDetect,
+}));
+
 import { SettingsDialog } from "./SettingsDialog";
+import { __resetAgentStoreForTests } from "../stores/agentStore";
 import { useSettingsStore, __resetSettingsForTests } from "../stores/settingsStore";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
 describe("SettingsDialog", () => {
   beforeEach(async () => {
     __resetSettingsForTests();
+    __resetAgentStoreForTests();
+    agentDetect.mockReset();
+    agentDetect.mockResolvedValue([
+      {
+        engine: "copilot",
+        status: "ready",
+        path: "/usr/local/bin/copilot",
+        version: "1.2.3",
+        minVersion: "1.0.0",
+        message: null,
+      },
+      {
+        engine: "claude",
+        status: "notLoggedIn",
+        path: "/usr/local/bin/claude",
+        version: "2.0.0",
+        minVersion: "1.0.0",
+        message: null,
+      },
+      {
+        engine: "codex",
+        status: "notFound",
+        path: null,
+        version: null,
+        minVersion: "0.40.0",
+        message: null,
+      },
+    ]);
     const wipe = new LazyStore("settings.json");
     await wipe.set("settings", undefined);
     await wipe.save();
@@ -54,27 +89,60 @@ describe("SettingsDialog", () => {
     await waitFor(() => expect(useSettingsStore.getState().ai).toBe(true));
   });
 
-  it("typing into the OpenAI key field updates the secret", async () => {
+  it("has no API key field anywhere (SEC-3)", () => {
     render(<SettingsDialog open={true} onClose={() => {}} />);
-    fireEvent.change(screen.getByTestId("secret-openai"), {
-      target: { value: "sk-typed" },
-    });
-    await waitFor(() => expect(useSettingsStore.getState().openAiKey).toBe("sk-typed"));
+    expect(screen.queryByTestId("secret-openai")).toBeNull();
+    expect(screen.queryByLabelText(/api key/i)).toBeNull();
+    expect(screen.queryByPlaceholderText(/sk-/)).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
   });
 
-  it("Reset all puts every toggle and secret back to its default", async () => {
+  it("AI off: no detection runs and engine cards are hidden", () => {
+    render(<SettingsDialog open={true} onClose={() => {}} />);
+    expect(screen.getByTestId("ai-off-hint")).toBeInTheDocument();
+    expect(screen.queryByTestId("ai-engine-copilot")).toBeNull();
+    expect(agentDetect).not.toHaveBeenCalled();
+    expect(screen.getByTestId("ai-terms")).toHaveTextContent(/terms apply/);
+  });
+
+  it("AI on: detects engines, shows status + sign-in guidance, and edits engine settings", async () => {
+    render(<SettingsDialog open={true} onClose={() => {}} />);
+    fireEvent.click(screen.getByTestId("toggle-ai"));
+    await waitFor(() => expect(agentDetect).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByTestId("ai-status-copilot")).toHaveTextContent("Ready — v1.2.3"),
+    );
+    expect(screen.getByTestId("ai-status-claude")).toHaveTextContent(/Not signed in/);
+    expect(screen.getByTestId("ai-engine-claude")).toHaveTextContent("claude, then /login");
+    expect(screen.getByTestId("ai-status-codex")).toHaveTextContent(/Not found/);
+    expect(screen.getByText(/can't be driven by other apps/)).toBeInTheDocument();
+
+    expect(screen.getByTestId<HTMLInputElement>("ai-hostconfig-codex").checked).toBe(true);
+    fireEvent.click(screen.getByTestId("ai-hostconfig-codex"));
+    fireEvent.click(screen.getByTestId("ai-enable-claude"));
+    fireEvent.change(screen.getByTestId("ai-path-codex"), { target: { value: "/opt/codex" } });
+    fireEvent.change(screen.getByTestId("ai-model-copilot"), { target: { value: "gpt-5" } });
+    fireEvent.change(screen.getByTestId("ai-default-engine"), { target: { value: "codex" } });
+    await waitFor(() => {
+      const s = useSettingsStore.getState();
+      expect(s.aiEngines.codex).toMatchObject({ useHostConfig: false, pathOverride: "/opt/codex" });
+      expect(s.aiEngines.claude.enabled).toBe(false);
+      expect(s.aiEngines.copilot.model).toBe("gpt-5");
+      expect(s.aiDefaultEngine).toBe("codex");
+    });
+
+    fireEvent.click(screen.getByTestId("ai-redetect"));
+    await waitFor(() => expect(agentDetect).toHaveBeenCalledTimes(2));
+    expect(agentDetect).toHaveBeenLastCalledWith([{ engine: "codex", path: "/opt/codex" }]);
+  });
+
+  it("Reset all puts every toggle back to its default", async () => {
     render(<SettingsDialog open={true} onClose={() => {}} />);
     fireEvent.click(screen.getByTestId("toggle-collab"));
-    fireEvent.change(screen.getByTestId("secret-openai"), {
-      target: { value: "sk-leak" },
-    });
     await waitFor(() => expect(useSettingsStore.getState().collab).toBe(true));
 
     fireEvent.click(screen.getByTestId("settings-reset"));
-    await waitFor(() => {
-      expect(useSettingsStore.getState().collab).toBe(false);
-      expect(useSettingsStore.getState().openAiKey).toBe("");
-    });
+    await waitFor(() => expect(useSettingsStore.getState().collab).toBe(false));
   });
 
   it("has no Firebase field and explains end-to-end encryption", () => {
