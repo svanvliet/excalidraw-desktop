@@ -144,27 +144,18 @@ notarize() {
   fi
 }
 
-# Replace the .app inside a Tauri-built DMG with the (stapled) app at $2,
-# keeping the DMG's Finder layout, and write a compressed DMG to $3.
-repack_dmg() {
-  local src="$1" app="$2" out="$3" work mnt size_mb
-  work="$(mktemp -d)"
-  mnt="$work/mnt"
-  mkdir -p "$mnt"
-  hdiutil convert -quiet "$src" -format UDRW -o "$work/rw.dmg"
-  size_mb=$(($(du -sm "$app" | cut -f1) + 64))
-  hdiutil resize -quiet -size "$((size_mb + $(du -sm "$work/rw.dmg" | cut -f1)))m" "$work/rw.dmg"
-  hdiutil attach -quiet -nobrowse -noautoopen -noverify -mountpoint "$mnt" "$work/rw.dmg"
-  if [[ ! -d "$mnt/$PRODUCT_NAME.app" ]]; then
-    hdiutil detach -quiet "$mnt" || true
-    die "DMG does not contain $PRODUCT_NAME.app"
-  fi
-  rm -rf "${mnt:?}/$PRODUCT_NAME.app"
-  ditto "$app" "$mnt/$PRODUCT_NAME.app"
-  hdiutil detach -quiet "$mnt"
+# Build a compressed DMG at $2 holding the (stapled) app at $1 and an
+# /Applications link. Done here rather than by Tauri so the app is stapled
+# first, and without Tauri's Finder AppleScript, which fails when the
+# script isn't run from an interactive GUI session.
+make_dmg() {
+  local app="$1" out="$2" stage
+  stage="$(mktemp -d)"
+  ditto "$app" "$stage/$PRODUCT_NAME.app"
+  ln -s /Applications "$stage/Applications"
   rm -f "$out"
-  hdiutil convert -quiet "$work/rw.dmg" -format UDZO -imagekey zlib-level=9 -o "$out"
-  rm -rf "$work"
+  hdiutil create -quiet -volname "$PRODUCT_NAME" -srcfolder "$stage" -ov -format UDZO -imagekey zlib-level=9 "$out"
+  rm -rf "$stage"
 }
 
 # Mount a DMG read-only and run "$2 <path-to-app>" against the app inside it.
@@ -179,48 +170,16 @@ check_app_in_dmg() {
   return "$rc"
 }
 
-# Merge darwin-* into the draft's latest.json (it may already hold the
-# Windows entry), upload it, and confirm the uploaded copy kept our entries.
-# Retries if the Windows job uploads concurrently.
-publish_manifest() {
-  local attempt work remote
-  for attempt in 1 2 3 4 5; do
-    work="$(mktemp -d)"
-    remote=""
-    if gh_release release view "$TAG" --repo "$GH_REPO" --json assets --jq '.assets[].name' | grep -qx latest.json; then
-      gh_release release download "$TAG" --repo "$GH_REPO" --pattern latest.json --dir "$work"
-      remote="$work/latest.json"
-      log "Merging into the draft's existing latest.json"
-    fi
-    write_manifest "${remote:-/nonexistent}"
-    gh_release release upload "$TAG" --repo "$GH_REPO" --clobber "$MANIFEST"
-    rm -rf "$work"
-    work="$(mktemp -d)"
-    gh_release release download "$TAG" --repo "$GH_REPO" --pattern latest.json --dir "$work"
-    if SIG="$(cat "$TARBALL.sig")" node -e '
-      const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-      const ok = ["darwin-aarch64", "darwin-x86_64"].every((k) => m.platforms?.[k]?.signature === process.env.SIG.trim());
-      process.exit(ok ? 0 : 1);
-    ' "$work/latest.json"; then
-      rm -rf "$work"
-      log "Draft latest.json has: $(node -p 'Object.keys(require(process.argv[1]).platforms).join(", ")' "$MANIFEST")"
-      return 0
-    fi
-    rm -rf "$work"
-    warn "uploaded latest.json lost the darwin entries (concurrent upload?); retrying ($attempt/5)"
-    sleep $((attempt * 5))
-  done
-  die "could not publish latest.json with the darwin entries"
-}
-
-# Write $MANIFEST with the darwin entries, merged over $1 if it exists.
-write_manifest() {
-  local notes_args=(--notes "Excalidraw Desktop $VERSION")
-  [[ -z "${NOTES_FILE:-}" ]] || notes_args=(--notes-file "$NOTES_FILE")
-  node scripts/updater-manifest.mjs --version "$VERSION" \
-    --platform darwin-aarch64 --platform darwin-x86_64 \
-    --sig "$TARBALL.sig" --url "$DOWNLOAD_BASE/$(basename "$TARBALL")" \
-    "${notes_args[@]}" --base "$1" --out "$MANIFEST"
+# Arguments for scripts/updater-manifest.mjs describing the darwin entries.
+manifest_args() {
+  MANIFEST_ARGS=(--version "$VERSION" --platform darwin-aarch64 --platform darwin-x86_64
+    --sig "$TARBALL.sig" --url "$DOWNLOAD_BASE/$(basename "$TARBALL")")
+  # macOS owns the release notes; the Windows job keeps whatever is there.
+  if [[ -n "${NOTES_FILE:-}" ]]; then
+    MANIFEST_ARGS+=(--notes-file "$NOTES_FILE")
+  else
+    MANIFEST_ARGS+=(--notes "Excalidraw Desktop $VERSION")
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -339,7 +298,7 @@ log "Building $TARGET (Tauri signs the .app with the hardened runtime)"
 # Strip Apple notarization creds from the env so Tauri only signs; we
 # notarize explicitly below with the keychain profile. Strip the updater
 # signing vars too: the tarball is created and signed below, after stapling.
-build_args=(--target "$TARGET" --bundles "app,dmg")
+build_args=(--target "$TARGET" --bundles app)
 [[ -z "${EXTRA_CONFIG:-}" ]] || build_args+=(--config "$EXTRA_CONFIG")
 env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH \
   -u TAURI_SIGNING_PRIVATE_KEY -u TAURI_SIGNING_PRIVATE_KEY_PATH -u TAURI_SIGNING_PRIVATE_KEY_PASSWORD -u TAURI_CONFIG \
@@ -347,8 +306,6 @@ env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY -u APPLE_API
   npm run tauri build -- "${build_args[@]}"
 
 [[ -d "$APP_PATH" ]] || die "app bundle not found at $APP_PATH"
-src_dmg="$BUNDLE_DIR/dmg/${PRODUCT_NAME}_${VERSION}_universal.dmg"
-[[ -f "$src_dmg" ]] || die "DMG not found at $src_dmg"
 
 mkdir -p "$OUT_DIR"
 rm -f "$DMG" "$DMG.sha256" "$TARBALL" "$TARBALL.sig" "$TARBALL.sha256" "$MANIFEST"
@@ -377,8 +334,8 @@ else
   spctl -a -vv -t exec "$APP_PATH"
 fi
 
-log "Repacking the DMG with the final .app"
-repack_dmg "$src_dmg" "$APP_PATH" "$DMG"
+log "Creating DMG from the final .app"
+make_dmg "$APP_PATH" "$DMG"
 
 log "Signing DMG"
 codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG"
@@ -412,7 +369,8 @@ unset UPDATER_KEY_PASSWORD
 [[ -s "$TARBALL.sig" ]] || die "signer did not write $TARBALL.sig"
 node scripts/verify-updater-sig.mjs "$TARBALL" "$TARBALL.sig" "$VERSION"
 
-write_manifest /nonexistent
+manifest_args
+node scripts/updater-manifest.mjs "${MANIFEST_ARGS[@]}" --out "$MANIFEST"
 
 (
   cd "$OUT_DIR"
@@ -453,8 +411,8 @@ else
   git tag -a "$TAG" -m "Excalidraw Desktop $TAG"
 fi
 
-# Create the draft before pushing the tag so the Windows CI job
-# (tauri-action, which looks up releases by tag name) reuses it.
+# Create the draft before pushing the tag so the Windows CI job (which
+# looks up the release by tag name) reuses it.
 if gh_release release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
   log "Release $TAG already exists; uploading to it"
 else
@@ -466,7 +424,9 @@ gh_release release upload "$TAG" --repo "$GH_REPO" --clobber \
   "$DMG" "$DMG.sha256" "$TARBALL" "$TARBALL.sig" "$TARBALL.sha256"
 # latest.json goes up after the tarball and before the tag push, so the
 # Windows job (triggered by the tag) normally finds it and merges into it.
-publish_manifest
+# It merges into any latest.json the Windows job already uploaded.
+GH_TOKEN="$(release_token)" GH_REPO="$GH_REPO" \
+  scripts/publish-updater-manifest.sh "$TAG" "$MANIFEST" "${MANIFEST_ARGS[@]}"
 
 log "Pushing tag $TAG as $GH_RELEASE_USER (triggers the Windows CI build)"
 # The token travels via the environment to an inline credential helper, so
