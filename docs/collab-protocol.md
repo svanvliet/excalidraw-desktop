@@ -214,5 +214,9 @@ says "You're viewing this drawing." with **Ask to edit**. The host sees
 "<name> wants to edit this drawing." with **Allow**/**Deny** above the canvas,
 plus the same buttons, a role tag, and a **Make editor**/**Make viewer** toggle
 for each person in the Share dialog's participant list. Guests see the same
-list (read-only) in their Live panel. When the host removes a guest, the
+list (read-only) in their Live panel. In the desktop app a session is bound to one tab:
+that tab shows a live glyph in the tab strip and the toolbar's Live badge;
+other tabs stay private, show Share with a small live glyph, and their Share
+dialog offers **Go to shared tab** or **Share this tab instead** (ends the
+session; new link). When the host removes a guest, the
 guest's canvas is cleared after the socket closes; the host's scene is untouched.
