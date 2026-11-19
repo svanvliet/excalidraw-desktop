@@ -4,6 +4,8 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 
 import { ExcalidrawCanvas } from "./components/ExcalidrawCanvas";
 import { Toolbar } from "./components/Toolbar";
+import { AgentPanel } from "./components/agent/AgentPanel";
+import { installAgentStore, useAgentStore } from "./stores/agentStore";
 import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
@@ -87,6 +89,8 @@ export function App() {
   const endCollabForTab = useCollabStore((s) => s.endSessionForTab);
   const libraryEnabled = useSettingsStore((s) => s.library);
   const aiEnabled = useSettingsStore((s) => s.ai);
+  const agentPanelOpen = useAgentStore((s) => s.panelOpen);
+  const toggleAgentPanel = useAgentStore((s) => s.togglePanel);
   // The official Excalidraw web app uses its own URL as the library return
   // target. For our desktop wrapper there's no callback URL — we just need
   // a non-empty value to let Excalidraw render the library UI. Keep it
@@ -614,6 +618,29 @@ export function App() {
     menuActionRef.current = handleMenuAction;
   }, [handleMenuAction]);
 
+  useEffect(() => installAgentStore(), []);
+
+  // ⌘/Ctrl+Shift+A toggles the AI panel (only while AI is on). Capture phase
+  // so Excalidraw's own key handling doesn't see it.
+  useEffect(() => {
+    if (!aiEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === "KeyA") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleAgentPanel();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [aiEnabled, toggleAgentPanel]);
+
+  const activeTabIsViewer =
+    !!activeTabId &&
+    collabTabId === activeTabId &&
+    collabSession?.role === "guest" &&
+    collab.role === "viewer";
+
   useEffect(() => {
     if (!error) return;
     const id = window.setTimeout(() => setError(null), 6000);
@@ -636,6 +663,8 @@ export function App() {
           collabSession && collabTabId === activeTabId ? collab.peers.length + 1 : null
         }
         liveElsewhere={!!collabSession && collabTabId !== activeTabId}
+        onToggleAgent={aiEnabled ? toggleAgentPanel : undefined}
+        agentOpen={aiEnabled && agentPanelOpen}
       >
         <RecentMenu
           paths={recentPaths}
@@ -664,35 +693,47 @@ export function App() {
         collab.role === "viewer" ? (
         <ViewerBar state={collab.editRequest} onRequest={collab.requestEdit} />
       ) : null}
-      <div className="app-shell__canvas">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className="canvas-slot"
-            data-active={tab.id === activeTabId || undefined}
-            aria-hidden={tab.id === activeTabId ? undefined : true}
-          >
-            <ExcalidrawCanvas
-              initialData={tab.initialData}
-              onApi={(api) => handleApi(tab.id, api)}
-              onSceneChange={() => {
-                markDirtyAction(tab.id);
-                scheduleAutosave(tab.id);
-              }}
-              aiEnabled={aiEnabled}
-              isCollaborating={collabTabId === tab.id}
-              viewOnly={
-                collabTabId === tab.id &&
-                collabSession?.role === "guest" &&
-                collab.role === "viewer"
-              }
-              onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
-              onPointerUpdate={collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined}
-              libraryReturnUrl={libraryReturnUrl}
-              theme={resolvedTheme}
-            />
-          </div>
-        ))}
+      <div className="app-shell__workspace">
+        <div className="app-shell__canvas">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className="canvas-slot"
+              data-active={tab.id === activeTabId || undefined}
+              aria-hidden={tab.id === activeTabId ? undefined : true}
+            >
+              <ExcalidrawCanvas
+                initialData={tab.initialData}
+                onApi={(api) => handleApi(tab.id, api)}
+                onSceneChange={() => {
+                  markDirtyAction(tab.id);
+                  scheduleAutosave(tab.id);
+                }}
+                aiEnabled={aiEnabled}
+                isCollaborating={collabTabId === tab.id}
+                viewOnly={
+                  collabTabId === tab.id &&
+                  collabSession?.role === "guest" &&
+                  collab.role === "viewer"
+                }
+                onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
+                onPointerUpdate={
+                  collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined
+                }
+                libraryReturnUrl={libraryReturnUrl}
+                theme={resolvedTheme}
+              />
+            </div>
+          ))}
+        </div>
+        <AgentPanel
+          tabId={activeTabId}
+          collabParticipants={
+            collabSession && collabTabId === activeTabId ? collab.peers.length : 0
+          }
+          readOnly={activeTabIsViewer}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       </div>
       <ConfirmCloseDialog
         open={pendingClose !== null}

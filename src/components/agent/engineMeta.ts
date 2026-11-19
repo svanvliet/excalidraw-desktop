@@ -2,7 +2,7 @@
  * Static, user-facing metadata about each supported agent engine
  * (docs/ai-integration.md § UX). No IPC here.
  */
-import type { EngineInfo, EngineKind, ErrorKind } from "../../agent/types";
+import type { EngineInfo, EngineKind, ErrorKind, Usage } from "../../agent/types";
 
 export interface EngineMeta {
   label: string;
@@ -111,4 +111,15 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
 
 export function toolLabel(name: string, title: string | null): string {
   return title || CANVAS_TOOL_LABELS[name] || name;
+}
+
+/** Footer usage summary, e.g. "3 premium requests · 1,200 tokens". */
+export function formatUsage(u: Usage): string | null {
+  const parts: string[] = [];
+  if (u.premiumRequests !== null)
+    parts.push(`${u.premiumRequests} premium request${u.premiumRequests === 1 ? "" : "s"}`);
+  const tokens = (u.inputTokens ?? 0) + (u.outputTokens ?? 0);
+  if (u.inputTokens !== null || u.outputTokens !== null)
+    parts.push(`${tokens.toLocaleString()} tokens`);
+  return parts.length ? parts.join(" · ") : null;
 }
