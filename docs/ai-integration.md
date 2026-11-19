@@ -29,11 +29,14 @@
   and doesn't load the runtime in-process.
 - **Claude Code:** `claude -p --input-format stream-json --output-format stream-json --verbose` runs a
   long-lived bidirectional session. It also supports `--mcp-config`, `--disallowedTools
-Bash,Edit,Write,NotebookEdit`, `--permission-prompt-tool` (routes approvals to our own MCP tool),
+Bash,Edit,Write,NotebookEdit`, `--permission-prompt-tool stdio` (approvals arrive as `can_use_tool`
+  control requests on the same stream),
   `--append-system-prompt`, and `--resume`. The ACP adapter (`agentclientprotocol/claude-agent-acp`)
   needs Node plus the Agent SDK, so a native stream-json adapter avoids a Node dependency. Strip
-  `ANTHROPIC_API_KEY` from the child env so the user's own login is used and billing doesn't switch
-  silently.
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `CLAUDECODE` from the child env so the user's own
+  login is used and billing doesn't switch silently. Deliberate enterprise provider choices are kept:
+  `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` / `_VERTEX` / `_FOUNDRY`, and
+  `ANTHROPIC_BASE_URL`.
 - **Codex:** `codex app-server` speaks JSON-RPC over stdio and handles threads and approval requests
   (it is what the Codex IDE extension uses, and what T3 Code uses). It is marked experimental, so we
   pin a minimum version. `codex exec --json` is the fallback. `--sandbox read-only`, `-c
@@ -112,7 +115,8 @@ flowchart LR
   attached folder.
 - **Sandboxing per engine** (always on): Copilot gets `--excluded-tools bash,powershell,edit,create,apply_patch`
   and `--deny-tool shell --deny-tool write`, never `--allow-all*`. Claude gets `--disallowedTools
-Bash,Edit,Write,NotebookEdit,MultiEdit` and `--permission-prompt-tool mcp__excalidraw__approve`.
+Bash,Edit,Write,NotebookEdit,MultiEdit`, a built-in allowlist (`--tools Read,Glob,Grep,WebSearch,
+WebFetch,ToolSearch`), `--permission-mode default`, and `--permission-prompt-tool stdio`.
   Codex gets `--sandbox read-only` and on-request approvals. Our own canvas tools are pre-approved. Any
   other permission request becomes an inline approval card (Allow once / Allow for this conversation /
   Deny).
@@ -132,22 +136,22 @@ Bash,Edit,Write,NotebookEdit,MultiEdit` and `--permission-prompt-tool mcp__excal
 Every tool takes an optional `tabId` (default: the active tab). Read tools return a `revision`. Edit
 tools accept `expectedRevision` and are rejected if the scene changed since that read.
 
-| Tool                | What it does                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------------- |
-| `list_tabs`         | Lists open tabs                                                                           |
-| `get_scene_summary` | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                 |
-| `get_selection`     | Returns the current selection                                                             |
-| `get_elements`      | Returns elements by id                                                                    |
-| `render_canvas_png` | Renders all / viewport / selection as a PNG ≤1280px for the model to look at              |
-| `add_elements`      | Adds skeleton-format elements; agent-chosen ids are checked for collisions                |
-| `update_elements`   | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows         |
-| `delete_elements`   | Tombstones elements and cascades to bound text and arrows                                 |
-| `connect`           | Draws an arrow between existing shapes using manual bindings                              |
-| `add_mermaid`       | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image |
-| `arrange`           | align / distribute / grid / group / z-order                                               |
-| `set_viewport`      | Moves the viewport, without an undo step                                                  |
-| `apply_ops`         | Batches several edits into one undo step                                                  |
-| `approve`           | Internal tool, used only for Claude's permission prompts                                  |
+| Tool                | What it does                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `list_tabs`         | Lists open tabs                                                                                  |
+| `get_scene_summary` | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                        |
+| `get_selection`     | Returns the current selection                                                                    |
+| `get_elements`      | Returns elements by id                                                                           |
+| `render_canvas_png` | Renders all / viewport / selection as a PNG ≤1280px for the model to look at                     |
+| `add_elements`      | Adds skeleton-format elements; agent-chosen ids are checked for collisions                       |
+| `update_elements`   | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                |
+| `delete_elements`   | Tombstones elements and cascades to bound text and arrows                                        |
+| `connect`           | Draws an arrow between existing shapes using manual bindings                                     |
+| `add_mermaid`       | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
+| `arrange`           | align / distribute / grid / group / z-order                                                      |
+| `set_viewport`      | Moves the viewport, without an undo step                                                         |
+| `apply_ops`         | Batches several edits into one undo step                                                         |
+| `approve`           | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 
 A system prompt (appended) explains the coordinate system, the tool workflow (summary, then render,
 then edit), and the style defaults.
