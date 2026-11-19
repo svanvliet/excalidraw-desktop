@@ -1,192 +1,193 @@
-# macOS code signing & notarization
+# macOS release runbook (signed + notarized)
 
-> Copy-pasteable runbook for producing a distributable, double-clickable
-> `.app` (and the `.dmg` Tauri bundles around it) that opens on a fresh
-> macOS install without a Gatekeeper warning.
+> How to cut an Excalidraw Desktop release. The macOS DMG is built,
+> signed, notarized, and stapled **locally** on the release Mac by
+> [`scripts/release-macos.sh`](../scripts/release-macos.sh) — Apple
+> credentials stay in the login keychain and never go to GitHub. Windows
+> installers are built (unsigned) by
+> [`.github/workflows/release.yml`](../.github/workflows/release.yml) and
+> attached to the same **draft** GitHub Release.
 >
-> All commands assume the project root as the working directory. Replace
-> `<placeholders>` with your own values.
+> All commands run from the repo root.
 
 ---
 
-## 1. Prerequisites
+## 1. How it fits together
 
-| You need                                             | How to get it                                                                                                              |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| An active Apple Developer Program membership ($99/y) | https://developer.apple.com/programs/                                                                                      |
-| A **Developer ID Application** certificate           | Xcode → Settings → Accounts → Manage Certificates → `+` → Developer ID Application. Stored in the login keychain.          |
-| Xcode Command Line Tools                             | `xcode-select --install`                                                                                                   |
-| Tauri build prerequisites                            | `rustup target add x86_64-apple-darwin aarch64-apple-darwin` (for a universal binary)                                      |
-| `notarytool` (ships with Xcode 13+)                  | `xcrun notarytool --version` to verify.                                                                                    |
-| An app-specific password OR an API key for Apple ID  | https://appleid.apple.com → Sign-In and Security → App-Specific Passwords. Or App Store Connect → Users and Access → Keys. |
-
-Confirm your Developer ID is loaded:
-
-```bash
-security find-identity -p basic -v | grep "Developer ID Application"
-# Expect: 1 valid identities found
+```
+release Mac                                         GitHub
+───────────                                         ──────
+npm run release:mac -- X.Y.Z --bump --publish
+  preflight (tree, versions, identity, notary, gh)
+  tauri build --target universal-apple-darwin
+    └─ .app signed (Developer ID, hardened runtime, timestamp)
+  codesign DMG → notarytool submit --wait → stapler staple
+  spctl / codesign verify
+  gh release create vX.Y.Z --draft ───────────────▶ draft release + DMG
+  git push tag vX.Y.Z ────────────────────────────▶ release.yml (Windows)
+                                                     tauri-action finds the
+                                                     draft by tag, attaches
+                                                     .msi / -setup.exe
+you: review the draft → Publish
 ```
 
-Note the **Team ID** (10-character string) and the **common-name** of the cert; you'll need both.
+The draft is created **before** the tag is pushed, so the Windows job
+always finds it (tauri-action with `releaseDraft: true` looks up drafts by
+tag name) and never creates a duplicate.
 
 ---
 
-## 2. Build the unsigned bundle
+## 2. Prerequisites
 
-```bash
-npm install
-npm run tauri build -- --target universal-apple-darwin
-```
+| Need                                            | Check                                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| Active Apple Developer Program membership       | Account Holder has accepted the **latest** agreements (see §6, HTTP 403).     |
+| Developer ID Application cert in login keychain | `security find-identity -p codesigning -v \| grep "Developer ID Application"` |
+| Xcode Command Line Tools (notarytool, stapler)  | `xcrun notarytool --version`                                                  |
+| Rust targets for a universal binary             | `rustup target add aarch64-apple-darwin x86_64-apple-darwin`                  |
+| Node + npm (deps installed or installable)      | The script runs `npm ci` if `node_modules` is missing.                        |
+| `gh` logged in as the publishing account        | `env -u GH_TOKEN gh auth token --user svanvliet >/dev/null && echo ok`        |
+| A `notarytool` keychain profile                 | `xcrun notarytool history --keychain-profile spicewood-notary`                |
 
-The build drops:
+Defaults (override via environment variables):
 
-- `src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app`
-- `src-tauri/target/universal-apple-darwin/release/bundle/dmg/Excalidraw Desktop_0.1.0_universal.dmg`
-
----
-
-## 3. Sign the `.app`
-
-Tauri can sign automatically — wire it into `src-tauri/tauri.conf.json`:
-
-```jsonc
-{
-  "bundle": {
-    "macOS": {
-      "signingIdentity": "Developer ID Application: <Your Name> (<TEAMID>)",
-      "providerShortName": "<TEAMID>",
-      "entitlements": "src-tauri/entitlements.plist",
-      "hardenedRuntime": true,
-    },
-  },
-}
-```
-
-Create the entitlements file with the minimum needed for a webview-based
-desktop app:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <!-- Required for tauri-plugin-store, plugin-dialog to read/write files -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-  </dict>
-</plist>
-```
-
-Rebuild after editing tauri.conf.json:
-
-```bash
-npm run tauri build -- --target universal-apple-darwin
-```
-
-Or sign manually after the fact:
-
-```bash
-codesign --deep --force --options runtime \
-  --entitlements src-tauri/entitlements.plist \
-  --sign "Developer ID Application: <Your Name> (<TEAMID>)" \
-  "src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app"
-```
-
-Verify the signature:
-
-```bash
-codesign --verify --deep --strict --verbose=2 \
-  "src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app"
-spctl --assess --type execute --verbose \
-  "src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app"
-```
-
-`spctl` should print `accepted source=Notarized Developer ID` once
-notarization (next step) completes; before notarization it'll say
-`rejected source=no usable signature`.
+| Variable                 | Default                                                  |
+| ------------------------ | -------------------------------------------------------- |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: Scott Van Vliet (97379Y67S5)` |
+| `NOTARY_PROFILE`         | `spicewood-notary`                                       |
+| `GH_RELEASE_USER`        | `svanvliet`                                              |
+| `GH_REPO`                | `svanvliet/excalidraw-desktop`                           |
 
 ---
 
-## 4. Notarize with Apple
+## 3. One-time setup
 
-Apple notarization scans the binary on Apple's servers and returns a
-"this is safe" ticket that Gatekeeper checks on first launch.
+**Developer ID certificate.** Xcode → Settings → Accounts → Manage
+Certificates → `+` → _Developer ID Application_ (or create it at
+developer.apple.com and double-click the `.cer`). It must show up in
+`security find-identity -p codesigning -v`.
 
-**One-time:** store credentials in the keychain (so they're never typed
-on the command line):
+**Notary credentials.** Store them once in the keychain; `notarytool`
+prompts for the app-specific password (create one at
+https://appleid.apple.com → Sign-In and Security → App-Specific Passwords),
+so it never appears in shell history:
 
 ```bash
-xcrun notarytool store-credentials \
-  --apple-id "<your.apple.id@example.com>" \
-  --team-id "<TEAMID>" \
-  --password "<app-specific-password>" \
-  excalidraw-notary
+xcrun notarytool store-credentials spicewood-notary \
+  --apple-id "<apple-id-email>" --team-id 97379Y67S5
 ```
 
-Submit the DMG (notarytool prefers a zipped or DMG'd bundle):
+Any profile name works; point the script at it with `NOTARY_PROFILE=…`.
+An App Store Connect API key (`--key`, `--key-id`, `--issuer`) is an
+equally valid alternative.
+
+**GitHub account.** The publishing account needs push access to the repo.
+If your shell exports a different `GH_TOKEN`, the script bypasses it and
+asks `gh` for the `svanvliet` token explicitly; make sure that account is
+logged in: `env -u GH_TOKEN gh auth login`.
+
+---
+
+## 4. Cut a release
+
+1. Merge everything for the release into `main` and check out a clean
+   `main` (the script refuses a dirty tree and warns if `HEAD` isn't on
+   origin).
+2. Rehearse without publishing (builds, signs, notarizes, staples, verifies):
+
+   ```bash
+   npm run release:mac -- 0.2.0 --bump --dry-run
+   ```
+
+   `--bump` writes the version to `package.json`, `package-lock.json`,
+   `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `Cargo.lock`
+   and commits `chore: release v0.2.0`. Without `--bump` the three
+   manifests must already match the version argument.
+
+3. Release for real (if you already bumped in step 2, drop `--bump`):
+
+   ```bash
+   npm run release:mac -- 0.2.0 --publish
+   ```
+
+   This creates the annotated tag `v0.2.0`, creates the draft release,
+   uploads `Excalidraw-Desktop_0.2.0_universal.dmg` (+ `.sha256`), and
+   pushes the tag, which starts the Windows CI job.
+
+4. Push the version-bump commit to `main` (`git push origin main`).
+5. When the Windows job finishes, open
+   https://github.com/svanvliet/excalidraw-desktop/releases, review the
+   draft (DMG, `.msi`, `-setup.exe`, notes) and click **Publish**.
+
+The DMG is also kept locally at
+`src-tauri/target/release-artifacts/Excalidraw-Desktop_<version>_universal.dmg`.
+
+### Flags
+
+| Flag              | Effect                                                                       |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `--bump`          | Update all version manifests and commit before building.                     |
+| `--dry-run`       | Build + sign + notarize + staple + verify. No tag, no release, no push.      |
+| `--skip-notarize` | Signed build only (local smoke). Gatekeeper will reject it on other Macs.    |
+| `--publish`       | Create the draft release, upload the DMG, push the tag. Required to publish. |
+
+Without `--publish` nothing leaves the machine except the notarization
+upload to Apple.
+
+### What the script verifies
+
+- `.app`: `codesign --verify --deep --strict`, signed by the expected
+  Developer ID, `flags=…(runtime)` (hardened runtime), secure `Timestamp=`.
+- DMG: signed with `--timestamp`, notarized (`status: Accepted`), stapled
+  (`stapler validate`), and `spctl -a -vv -t install` reports
+  `source=Notarized Developer ID`.
+
+Tauri signs the `.app` itself during `tauri build` because
+`APPLE_SIGNING_IDENTITY` is set; `bundle.macOS.hardenedRuntime` is `true`
+and `minimumSystemVersion` is `11.0` in `src-tauri/tauri.conf.json`. No
+custom entitlements are needed: WKWebView runs JavaScript (and its JIT) in
+Apple's own WebContent process, not in our binary.
+
+---
+
+## 5. Manual commands (for debugging)
 
 ```bash
-xcrun notarytool submit \
-  "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Excalidraw Desktop_0.1.0_universal.dmg" \
-  --keychain-profile excalidraw-notary \
-  --wait
-```
+APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app"
+DMG="src-tauri/target/release-artifacts/Excalidraw-Desktop_0.2.0_universal.dmg"
 
-`--wait` blocks until Apple finishes (~1–5 minutes). On success you'll
-see `status: Accepted`. On failure, fetch the log:
-
-```bash
-xcrun notarytool log <submission-id> --keychain-profile excalidraw-notary
-```
-
-Staple the ticket onto the DMG (and into the .app):
-
-```bash
-xcrun stapler staple \
-  "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Excalidraw Desktop_0.1.0_universal.dmg"
-xcrun stapler staple \
-  "src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app"
-```
-
-Re-verify:
-
-```bash
-spctl --assess --type execute --verbose \
-  "src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app"
-# accepted
-# source=Notarized Developer ID
+codesign -dv --verbose=4 "$APP"              # Authority, flags=0x10000(runtime), Timestamp
+codesign --verify --deep --strict --verbose=2 "$APP"
+xcrun notarytool submit "$DMG" --keychain-profile spicewood-notary --wait
+xcrun notarytool log <submission-id> --keychain-profile spicewood-notary
+xcrun stapler staple "$DMG" && xcrun stapler validate "$DMG"
+spctl -a -vv -t install "$DMG"              # accepted, source=Notarized Developer ID
 ```
 
 ---
 
-## 5. Distribute
+## 6. Troubleshooting
 
-Hand out the stapled `.dmg`. First-launch Gatekeeper sees the staple
-and lets the user open the app without the "downloaded from the
-internet" prompt.
+| Symptom                                                                                                      | Fix                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HTTP status code: 403. A required agreement is missing or has expired.` (preflight or `notarytool history`) | Apple published a new Program License Agreement. The **Account Holder** signs in at https://developer.apple.com/account and accepts it (also check App Store Connect → Business for pending agreements). Wait a few minutes, re-run. Use `--skip-notarize` meanwhile. |
+| `notarytool profile '…' not found`                                                                           | Run `xcrun notarytool store-credentials` (§3) or set `NOTARY_PROFILE`.                                                                                                                                                                                                |
+| `signing identity not found in keychain`                                                                     | Cert missing/expired or keychain locked: `security unlock-keychain login.keychain`; renew at developer.apple.com → Certificates.                                                                                                                                      |
+| `errSecInternalComponent` from `codesign`                                                                    | Keychain locked (common over SSH): `security unlock-keychain login.keychain`.                                                                                                                                                                                         |
+| Notarization `status: Invalid`                                                                               | The script prints `notarytool log`; read the `issues` array. Usual causes: unsigned nested binary, missing hardened runtime, or missing timestamp.                                                                                                                    |
+| `tag vX.Y.Z already exists on origin`                                                                        | Versions are immutable once tagged; pick the next version with `--bump`.                                                                                                                                                                                              |
+| `gh has no token for 'svanvliet'` / `no push access`                                                         | `env -u GH_TOKEN gh auth login` as the publishing account (or set `GH_RELEASE_USER`).                                                                                                                                                                                 |
+| Two releases for the same tag                                                                                | Shouldn't happen (draft is created before the tag push). Delete the empty one; re-run the Windows job with **Run workflow** → tag.                                                                                                                                    |
+| Rust target missing                                                                                          | `rustup target add aarch64-apple-darwin x86_64-apple-darwin`.                                                                                                                                                                                                         |
 
----
-
-## Troubleshooting
-
-| Symptom                                                     | Likely cause / fix                                                                                                    |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `errSecInternalComponent` from `codesign`                   | Run `security unlock-keychain login.keychain` first; CI keychains often forget.                                       |
-| `The executable does not have the hardened runtime enabled` | Add `--options runtime` to `codesign`, or `hardenedRuntime: true` in tauri.conf.json.                                 |
-| `Invalid Developer ID Application certificate`              | Expired cert. Renew via developer.apple.com → Certificates.                                                           |
-| `notarytool` says `Invalid`                                 | Use `notarytool log <id>` and look at the `issues` array. Most often: signed without hardened runtime + entitlements. |
-| Universal build fails to find one of the arch targets       | `rustup target add x86_64-apple-darwin aarch64-apple-darwin`.                                                         |
+If the Windows job fails, fix and re-run it from the Actions tab
+(**release → Run workflow**, input the existing tag); it reattaches to the
+same draft.
 
 ---
 
 ## References
 
 - Tauri 2 macOS signing: https://v2.tauri.app/distribute/sign/macos/
-- Apple notarization: https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution
-- `codesign(1)`, `notarytool(1)`, `stapler(1)` man pages.
+- Notarizing macOS software: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
+- `codesign(1)`, `notarytool(1)`, `stapler(1)`, `spctl(8)`.
