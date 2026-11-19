@@ -1,5 +1,13 @@
 import { useCallback, type ReactNode } from "react";
-import { ExportIcon, FolderOpenIcon, SaveAsIcon, SaveIcon, SettingsIcon } from "./icons";
+import {
+  ExportIcon,
+  FolderOpenIcon,
+  LinkIcon,
+  SaveAsIcon,
+  SaveIcon,
+  SettingsIcon,
+  UsersIcon,
+} from "./icons";
 import { ThemeToggle } from "./ThemeToggle";
 
 export interface ToolbarProps {
@@ -10,6 +18,15 @@ export interface ToolbarProps {
   onSaveAs: () => void;
   onExportPng?: () => void;
   onOpenSettings?: () => void;
+  /** Opens the live-collaboration Share dialog. */
+  onShare?: () => void;
+  /** Opens the Join-session dialog. */
+  onJoin?: () => void;
+  /**
+   * Participant count while a live session is active (shown as a badge on
+   * Share). `null`/omitted = no session.
+   */
+  livePeerCount?: number | null;
   /** Slot rendered between Open and Save — used for the Recent menu. */
   children?: ReactNode;
 }
@@ -32,8 +49,12 @@ export function Toolbar({
   onSaveAs,
   onExportPng,
   onOpenSettings,
+  onShare,
+  onJoin,
+  livePeerCount,
   children,
 }: ToolbarProps) {
+  const live = livePeerCount !== null && livePeerCount !== undefined;
   const titleLabel = documentPath ?? "Untitled";
 
   const handleOpen = useCallback(() => onOpen(), [onOpen]);
@@ -89,6 +110,40 @@ export function Toolbar({
             aria-label="Export PNG"
           >
             <ExportIcon />
+          </button>
+        ) : null}
+        {onShare || onJoin ? <span className="toolbar__divider" aria-hidden="true" /> : null}
+        {onShare ? (
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onShare}
+            data-testid="toolbar-share"
+            data-pressed={live || undefined}
+            title={
+              live ? `Live session — ${livePeerCount} connected` : "Share (live collaboration)"
+            }
+            aria-label={live ? `Share, live session with ${livePeerCount} connected` : "Share"}
+          >
+            <UsersIcon />
+            <span>Share</span>
+            {live ? (
+              <span className="toolbar__live-badge" data-testid="toolbar-live-badge">
+                {livePeerCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
+        {onJoin ? (
+          <button
+            type="button"
+            className="icon-btn icon-btn--icon-only"
+            onClick={onJoin}
+            data-testid="toolbar-join"
+            aria-label="Join session…"
+            title="Join session…"
+          >
+            <LinkIcon />
           </button>
         ) : null}
         <span className="toolbar__divider" aria-hidden="true" />

@@ -77,6 +77,48 @@ describe("SettingsDialog", () => {
     });
   });
 
+  it("has no Firebase field and explains end-to-end encryption", () => {
+    render(<SettingsDialog open={true} onClose={() => {}} />);
+    expect(screen.queryByText(/firebase/i)).toBeNull();
+    expect(screen.getByText(/end-to-end encrypted/i)).toBeInTheDocument();
+  });
+
+  it("edits display name and tunnel mode; manual URL field only shows in manual mode", async () => {
+    render(<SettingsDialog open={true} onClose={() => {}} />);
+    expect(screen.getByTestId<HTMLInputElement>("collab-tunnel-auto").checked).toBe(true);
+    expect(screen.queryByTestId("collab-manual-url")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("collab-display-name"), { target: { value: "Ada" } });
+    await waitFor(() => expect(useSettingsStore.getState().collabDisplayName).toBe("Ada"));
+
+    fireEvent.click(screen.getByTestId("collab-tunnel-manual"));
+    await waitFor(() => expect(useSettingsStore.getState().collabTunnelMode).toBe("manual"));
+    const url = screen.getByTestId("collab-manual-url");
+    fireEvent.change(url, { target: { value: "ftp://nope" } });
+    expect(screen.getByText(/http:\/\/ or https:\/\//)).toBeInTheDocument();
+    fireEvent.change(url, { target: { value: "https://t.example.com" } });
+    await waitFor(() =>
+      expect(useSettingsStore.getState().collabManualUrl).toBe("https://t.example.com"),
+    );
+    expect(screen.queryByText(/http:\/\/ or https:\/\//)).toBeNull();
+
+    fireEvent.click(screen.getByTestId("collab-tunnel-local"));
+    await waitFor(() => expect(useSettingsStore.getState().collabTunnelMode).toBe("local"));
+    expect(screen.queryByTestId("collab-manual-url")).toBeNull();
+  });
+
+  it("only commits valid ports and flags invalid input", async () => {
+    render(<SettingsDialog open={true} onClose={() => {}} />);
+    const port = screen.getByTestId<HTMLInputElement>("collab-port");
+    expect(port.value).toBe("4780");
+    fireEvent.change(port, { target: { value: "80" } });
+    expect(screen.getByText(/between 1024 and 65535/)).toBeInTheDocument();
+    expect(useSettingsStore.getState().collabPort).toBe(4780);
+    fireEvent.change(port, { target: { value: "5001" } });
+    await waitFor(() => expect(useSettingsStore.getState().collabPort).toBe(5001));
+    expect(screen.queryByText(/between 1024 and 65535/)).toBeNull();
+  });
+
   it("Done invokes onClose", () => {
     const onClose = vi.fn();
     render(<SettingsDialog open={true} onClose={onClose} />);
