@@ -43,6 +43,7 @@ function running(over: Partial<CollabStatus> = {}): CollabStatus {
     roomId: null,
     localPort: 4780,
     localBase: "http://127.0.0.1:4780",
+    hostToken: null,
     publicBase: null,
     tunnel: { mode: "auto", state: "starting", error: null },
     peerCount: 0,

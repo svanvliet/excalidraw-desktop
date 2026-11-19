@@ -24,18 +24,24 @@ import type {
 
 import { log } from "../lib/logger";
 import { decrypt, encrypt, importKey } from "./crypto";
-import type { Payload, RelayErrorCode } from "./protocol";
+import type { Payload, RelayErrorCode, Role, RolesMap } from "./protocol";
 import type { RelayTransport, TransportEvent, TransportStatus } from "./transport";
 
 export type CollabStatus = "idle" | TransportStatus;
 
 export type UserState = "active" | "idle" | "away";
 
+/** A viewer's own "Ask to edit" state. */
+export type EditRequestState = "none" | "pending" | "denied";
+
 export interface CollabPeer {
   clientId: string;
   /** Null until the peer's HELLO arrives. */
   username: string | null;
   isHost: boolean;
+  role: Role;
+  /** Host only: this viewer asked to edit and hasn't been answered. */
+  requestedEdit: boolean;
   userState: UserState;
 }
 
@@ -78,6 +84,9 @@ export interface CollabSessionOptions {
   onPeersChange?: (peers: CollabPeer[]) => void;
   /** Fires after a remote edit (elements or files) was applied. Never for local edits. */
   onRemoteChange?: () => void;
+  /** Our relay-assigned role changed (also fires once on the first welcome). */
+  onRoleChange?: (role: Role) => void;
+  onEditRequestStateChange?: (state: EditRequestState) => void;
   timing?: Partial<CollabTiming>;
 }
 
@@ -110,6 +119,12 @@ export class CollabSession {
   /** Remote clientIds currently in the room (per relay). */
   private peerIds = new Set<string>();
   private peerInfo = new Map<string, { username: string | null; isHost: boolean }>();
+  /** Relay-assigned roles (self included). Null with a pre-roles relay. */
+  private roles: RolesMap | null = null;
+  private lastRole: Role | null = null;
+  /** Host: viewers with an unanswered EDIT_REQUEST. */
+  private editRequests = new Set<string>();
+  private editRequestState: EditRequestState = "none";
   private collaborators = new Map<SocketId, Collaborator>();
 
   /** Last version/nonce known to be shared with the room, per element id. */
@@ -147,10 +162,41 @@ export class CollabSession {
       return {
         clientId,
         username: info?.username ?? null,
-        isHost: info?.isHost ?? false,
+        isHost: this.roleOf(clientId) === "host",
+        role: this.roleOf(clientId),
+        requestedEdit: this.editRequests.has(clientId),
         userState: (collab?.userState as UserState | undefined) ?? "active",
       };
     });
+  }
+
+  /** Our role. Before the first welcome: `host` for the host, else `viewer`. */
+  get role(): Role {
+    if (this.roles && this.clientId) return this.roles[this.clientId] ?? "viewer";
+    if (this.roles === null && this.joinedOnce) return this.opts.isHost ? "host" : "editor";
+    return this.opts.isHost ? "host" : "viewer";
+  }
+
+  get canEdit(): boolean {
+    return this.role !== "viewer";
+  }
+
+  get currentEditRequestState(): EditRequestState {
+    return this.editRequestState;
+  }
+
+  /** Viewer: ask the host for edit access. Granting arrives as a role change. */
+  requestEdit(): void {
+    if (this.role !== "viewer" || this.status !== "connected") return;
+    this.send({ type: "EDIT_REQUEST" });
+    this.setEditRequestState("pending");
+  }
+
+  /** Host: decline a viewer's request. (Grant with `collab_set_role` instead.) */
+  denyEdit(clientId: string): void {
+    if (this.role !== "host" || !this.editRequests.delete(clientId)) return;
+    this.send({ type: "EDIT_DENIED", clientId });
+    this.emitPeers();
   }
 
   start(): void {
@@ -194,7 +240,7 @@ export class CollabSession {
     _appState?: AppState,
     _files?: BinaryFiles,
   ): void => {
-    if (this.stopped || !this.started) return;
+    if (this.stopped || !this.started || !this.canEdit) return;
     const current = elements ?? this.opts.api.getSceneElementsIncludingDeleted();
     if (!current.some((el) => this.isUnsynced(el))) return;
     this.noteActivity();
@@ -239,9 +285,11 @@ export class CollabSession {
         }
         return;
       case "welcome":
+        this.roles = e.roles ?? null;
         this.onWelcome(e.clientId, e.peers, e.firstInRoom);
         return;
       case "peers":
+        if (e.roles) this.roles = e.roles;
         this.onPeers(e.peers);
         return;
       case "message":
@@ -263,7 +311,11 @@ export class CollabSession {
     if (this.userState !== "active") this.sendIdleStatus();
     if (!firstInRoom) this.send({ type: "SYNC_REQUEST" });
     // Push anything edited while we were offline.
-    if (rejoin && peers.length > 0) this.broadcastFullScene();
+    if (rejoin && peers.length > 0 && this.canEdit) this.broadcastFullScene();
+    // The host forgot our request when our old connection left.
+    if (rejoin && this.editRequestState === "pending" && this.role === "viewer") {
+      this.send({ type: "EDIT_REQUEST" });
+    }
     log.info(`collab: joined as ${clientId} (${peers.length} peer(s), rejoin=${rejoin})`);
   }
 
@@ -280,9 +332,13 @@ export class CollabSession {
       if (!next.has(id)) {
         this.collaborators.delete(id as SocketId);
         this.peerInfo.delete(id);
+        this.editRequests.delete(id);
       }
     }
     this.peerIds = next;
+    for (const id of this.editRequests)
+      if (this.roleOf(id) !== "viewer") this.editRequests.delete(id);
+    this.checkRoleChange();
     // Let newcomers learn our name / host flag.
     if (announce && added) this.sendHello();
     this.pushCollaborators();
@@ -308,13 +364,14 @@ export class CollabSession {
         this.emitPeers();
         return;
       case "SYNC_REQUEST":
-        if (this.shouldAnswerSync(from)) {
+        if (this.canEdit && this.shouldAnswerSync(from)) {
           this.sendFiles(this.referencedFileIds(this.opts.api.getSceneElementsIncludingDeleted()));
           this.broadcastFullScene();
         }
         return;
       case "SCENE_INIT":
       case "SCENE_UPDATE":
+        if (!this.mayEdit(from, p.type)) return;
         if (Array.isArray(p.elements)) this.applyRemoteElements(p.elements);
         return;
       case "MOUSE_LOCATION":
@@ -333,10 +390,23 @@ export class CollabSession {
         this.emitPeers();
         return;
       case "FILES":
+        if (!this.mayEdit(from, p.type)) return;
         this.applyRemoteFiles(p.files);
         return;
       case "FILES_REQUEST":
-        this.sendFiles(p.ids);
+        if (this.canEdit) this.sendFiles(p.ids);
+        return;
+      case "EDIT_REQUEST":
+        if (this.role !== "host" || this.roleOf(from) !== "viewer") return;
+        if (!this.editRequests.has(from)) {
+          this.editRequests.add(from);
+          this.emitPeers();
+        }
+        return;
+      case "EDIT_DENIED":
+        if (this.roleOf(from) === "host" && p.clientId === this.clientId) {
+          this.setEditRequestState("denied");
+        }
         return;
       default:
         log.warn(`collab: ignoring unknown payload ${(p as { type?: unknown }).type}`);
@@ -344,12 +414,51 @@ export class CollabSession {
   }
 
   private shouldAnswerSync(requester: string): boolean {
-    if (this.opts.isHost) return true;
-    const hostPresent = [...this.peerIds].some((id) => this.peerInfo.get(id)?.isHost);
+    if (this.role === "host") return true;
+    const hostPresent = [...this.peerIds].some((id) => this.roleOf(id) === "host");
     if (hostPresent || !this.clientId) return false;
-    // No host: exactly one guest (lowest clientId, excluding the requester) answers.
-    const candidates = [this.clientId, ...this.peerIds].filter((id) => id !== requester).sort();
+    // No host: exactly one editor (lowest clientId, excluding the requester) answers.
+    const candidates = [this.clientId, ...this.peerIds]
+      .filter((id) => id !== requester && this.roleOf(id) !== "viewer")
+      .sort();
     return candidates[0] === this.clientId;
+  }
+
+  /** Role of a room member. Without relay roles: HELLO host flag, else editor. */
+  private roleOf(id: string): Role {
+    if (id === this.clientId) return this.role;
+    if (this.roles) return this.roles[id] ?? "viewer";
+    return this.peerInfo.get(id)?.isHost ? "host" : "editor";
+  }
+
+  private mayEdit(from: string, what: string): boolean {
+    if (this.roleOf(from) !== "viewer") return true;
+    log.warn(`collab: dropping ${what} from viewer ${from}`);
+    return false;
+  }
+
+  private checkRoleChange(): void {
+    if (!this.joinedOnce) return;
+    const role = this.role;
+    if (role === this.lastRole) return;
+    const was = this.lastRole;
+    this.lastRole = role;
+    if (role === "viewer") {
+      // Demoted: drop unsent local edits rather than broadcast them.
+      if (this.sceneTimer) clearTimeout(this.sceneTimer);
+      this.sceneTimer = null;
+    } else {
+      this.markAllSynced(this.opts.api.getSceneElementsIncludingDeleted());
+      this.setEditRequestState("none");
+    }
+    log.info(`collab: role ${was ?? "(none)"} -> ${role}`);
+    this.opts.onRoleChange?.(role);
+  }
+
+  private setEditRequestState(state: EditRequestState): void {
+    if (state === this.editRequestState) return;
+    this.editRequestState = state;
+    this.opts.onEditRequestStateChange?.(state);
   }
 
   private applyRemoteElements(incoming: readonly OrderedExcalidrawElement[]): void {
@@ -429,7 +538,7 @@ export class CollabSession {
   }
 
   private flushScene(): void {
-    if (this.status !== "connected") return;
+    if (this.status !== "connected" || !this.canEdit) return;
     const elements = this.opts.api.getSceneElementsIncludingDeleted();
     const changed = elements.filter(
       (el) => this.isUnsynced(el) && (el.isDeleted || !isInvisiblySmallElement(el)),
@@ -445,7 +554,7 @@ export class CollabSession {
   }
 
   private broadcastFullScene(): void {
-    if (this.status !== "connected" || this.peerIds.size === 0) return;
+    if (this.status !== "connected" || this.peerIds.size === 0 || !this.canEdit) return;
     const elements = this.opts.api
       .getSceneElementsIncludingDeleted()
       .filter((el) => el.isDeleted || !isInvisiblySmallElement(el));

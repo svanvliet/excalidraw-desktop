@@ -60,7 +60,16 @@ describe("GuestApp", () => {
   it("skips the prompt for returning guests and shows peer count", () => {
     localStorage.setItem(GUEST_NAME_KEY, "Bob");
     hook.result = {
-      peers: [{ clientId: "x", username: "Ann", isHost: true, userState: "active" }],
+      peers: [
+        {
+          clientId: "x",
+          username: "Ann",
+          isHost: true,
+          role: "host",
+          requestedEdit: false,
+          userState: "active",
+        },
+      ],
     };
     render(<GuestApp link={LINK} />);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -71,7 +80,16 @@ describe("GuestApp", () => {
   it("session panel lists people, renames, and leaves/rejoins", () => {
     localStorage.setItem(GUEST_NAME_KEY, "Bob");
     hook.result = {
-      peers: [{ clientId: "x", username: "Ann", isHost: true, userState: "active" }],
+      peers: [
+        {
+          clientId: "x",
+          username: "Ann",
+          isHost: true,
+          role: "host",
+          requestedEdit: false,
+          userState: "active",
+        },
+      ],
     };
     render(<GuestApp link={LINK} />);
     fireEvent.click(screen.getByTestId("guest-session-btn"));

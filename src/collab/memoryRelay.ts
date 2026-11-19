@@ -11,7 +11,14 @@ import {
   REMOVED_CLOSE_CODE,
   SESSION_ENDED_CLOSE_CODE,
   type RelayFrame,
+  type Role,
+  type RolesMap,
 } from "./protocol";
+
+/** Host token the memory relay accepts by default (tests pass it for the host peer). */
+export const MEMORY_HOST_TOKEN = "memory-host-token";
+
+let nextToken = 1;
 
 let nextId = 1;
 function makeClientId(): string {
@@ -20,15 +27,41 @@ function makeClientId(): string {
 
 export class MemoryRelay {
   private rooms = new Map<string, Set<MemoryTransport>>();
+  private roles = new Map<MemoryTransport, Role>();
+  private resume = new Map<string, Role>();
+  private readonly guestRole: Role;
+  private readonly hostToken: string;
   private pending = 0;
   private idleWaiters: Array<() => void> = [];
   /** Every broadcast seen by the relay, for assertions. */
   readonly log: Array<{ room: string; from: string; volatile: boolean }> = [];
 
-  constructor(private readonly allowedRooms?: ReadonlySet<string>) {}
+  /**
+   * `guestRole` is what non-host joins get. The real relay uses `viewer`; the
+   * default here is `editor` so host-less tests can edit each other.
+   */
+  constructor(
+    private readonly allowedRooms?: ReadonlySet<string>,
+    opts: { guestRole?: Role; hostToken?: string } = {},
+  ) {
+    this.guestRole = opts.guestRole ?? "editor";
+    this.hostToken = opts.hostToken ?? MEMORY_HOST_TOKEN;
+  }
 
-  createTransport(): MemoryTransport {
-    return new MemoryTransport(this);
+  createTransport(opts: { hostToken?: string | null; resumeToken?: string | null } = {}) {
+    return new MemoryTransport(this, opts);
+  }
+
+  /** Simulates `collab_set_role`. */
+  setRole(t: MemoryTransport, role: "editor" | "viewer"): void {
+    if (!t._room || this.roles.get(t) === "host") return;
+    this.roles.set(t, role);
+    if (t.resumeTokenForTests) this.resume.set(t.resumeTokenForTests, role);
+    this.announce(t._room);
+  }
+
+  roleOf(t: MemoryTransport): Role | undefined {
+    return this.roles.get(t);
   }
 
   peersIn(room: string): string[] {
@@ -91,15 +124,32 @@ export class MemoryRelay {
       return;
     }
     const peers = [...members].map((m) => m.clientId!);
+    const { hostToken, resume } = t._credentials();
+    let role: Role;
+    let token: string;
+    if (hostToken && hostToken === this.hostToken) {
+      role = "host";
+      token = `t${nextToken++}`;
+    } else if (resume && this.resume.has(resume)) {
+      role = this.resume.get(resume)!;
+      token = resume;
+    } else {
+      role = this.guestRole;
+      token = `t${nextToken++}`;
+    }
+    if (role !== "host") this.resume.set(token, role);
     t.clientId = makeClientId();
     t._room = room;
     members.add(t);
+    this.roles.set(t, role);
     this.rooms.set(room, members);
     this.deliver(t, {
       type: "welcome",
       clientId: t.clientId,
       peers,
       firstInRoom: peers.length === 0,
+      roles: this.rolesIn(room),
+      resumeToken: token,
     });
     this.announce(room);
   }
@@ -121,6 +171,7 @@ export class MemoryRelay {
     if (!room) return;
     const members = this.rooms.get(room);
     members?.delete(t);
+    this.roles.delete(t);
     t._room = null;
     t.clientId = null;
     if (members && members.size === 0) this.rooms.delete(room);
@@ -130,7 +181,14 @@ export class MemoryRelay {
   private announce(room: string): void {
     const members = [...(this.rooms.get(room) ?? [])];
     const peers = members.map((m) => m.clientId!);
-    for (const m of members) this.deliver(m, { type: "peers", peers });
+    const roles = this.rolesIn(room);
+    for (const m of members) this.deliver(m, { type: "peers", peers, roles });
+  }
+
+  private rolesIn(room: string): RolesMap {
+    const out: RolesMap = {};
+    for (const m of this.rooms.get(room) ?? []) out[m.clientId!] = this.roles.get(m) ?? "viewer";
+    return out;
   }
 }
 
@@ -140,8 +198,20 @@ export class MemoryTransport extends BaseTransport {
   _room: string | null = null;
   private wantedRoom: string | null = null;
 
-  constructor(private readonly relay: MemoryRelay) {
-    super();
+  constructor(
+    private readonly relay: MemoryRelay,
+    opts: { hostToken?: string | null; resumeToken?: string | null } = {},
+  ) {
+    super(opts);
+  }
+
+  /** @internal */
+  _credentials(): { hostToken: string | null; resume: string | null } {
+    return { hostToken: this.hostToken, resume: this.resumeToken };
+  }
+
+  get resumeTokenForTests(): string | null {
+    return this.resumeToken;
   }
 
   connect(room: string): void {

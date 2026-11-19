@@ -28,6 +28,7 @@ function status(over: Partial<CollabStatus> = {}): CollabStatus {
     roomId: "0123456789abcdef0123",
     localPort: 4780,
     localBase: "http://127.0.0.1:4780",
+    hostToken: null,
     publicBase: null,
     tunnel: { mode: "auto", state: "starting", error: null },
     peerCount: 1,
@@ -100,8 +101,22 @@ describe("ShareDialog", () => {
     });
     renderDialog({
       peers: [
-        { clientId: "a", username: "Ann", isHost: false, userState: "active" },
-        { clientId: "b", username: "Bob", isHost: false, userState: "idle" },
+        {
+          clientId: "a",
+          username: "Ann",
+          isHost: false,
+          role: "editor",
+          requestedEdit: false,
+          userState: "active",
+        },
+        {
+          clientId: "b",
+          username: "Bob",
+          isHost: false,
+          role: "editor",
+          requestedEdit: false,
+          userState: "idle",
+        },
       ],
     });
     const link = screen.getByTestId<HTMLInputElement>("share-link");
@@ -123,7 +138,16 @@ describe("ShareDialog", () => {
     hostSession({ tunnel: { mode: "auto", state: "ready", error: null } });
     renderDialog({
       selfName: "Scott",
-      peers: [{ clientId: "c1", username: "Ann", isHost: false, userState: "active" }],
+      peers: [
+        {
+          clientId: "c1",
+          username: "Ann",
+          isHost: false,
+          role: "editor",
+          requestedEdit: false,
+          userState: "active",
+        },
+      ],
     });
     expect(screen.getByTestId("participants")).toHaveTextContent(/Scott.*you · host.*Ann/);
     fireEvent.click(screen.getByRole("button", { name: "Remove Ann" }));

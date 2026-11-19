@@ -20,7 +20,7 @@ import {
   type CollabStatus,
   type CollabTiming,
 } from "./CollabSession";
-import { MemoryRelay, type MemoryTransport } from "./memoryRelay";
+import { MEMORY_HOST_TOKEN, MemoryRelay, type MemoryTransport } from "./memoryRelay";
 import type { Payload } from "./protocol";
 
 const ROOM = "0123456789abcdef0123";
@@ -152,7 +152,9 @@ function makePeer(
   const api = new FakeApi();
   api.elements = opts.elements ?? [];
   api.files = opts.files ?? {};
-  const transport = relay.createTransport();
+  const transport = relay.createTransport({
+    hostToken: opts.isHost ? MEMORY_HOST_TOKEN : null,
+  });
   const peer = { api, transport, statuses: [], remoteChanges: 0, sent: [] } as unknown as Peer;
   peer.session = new CollabSession({
     transport,

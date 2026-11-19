@@ -125,6 +125,8 @@ export interface CollabStatus {
     error: string | null;
   };
   peerCount: number;
+  /** Sent in the host webview's `join` so the relay grants it the host role. */
+  hostToken: string | null;
 }
 
 export const COLLAB_STATUS_EVENT = "collab://status";
@@ -137,6 +139,7 @@ export const COLLAB_STATUS_OFF: CollabStatus = {
   publicBase: null,
   tunnel: { mode: null, state: "off", error: null },
   peerCount: 0,
+  hostToken: null,
 };
 
 /** Start the local relay, register `roomId`, and (optionally) a tunnel. */
@@ -155,6 +158,12 @@ export function collabStop(): Promise<CollabStatus> {
 export function collabRemovePeer(clientId: string): Promise<void> {
   if (!isTauri()) return Promise.reject(unavailable("collab_remove_peer"));
   return invoke<void>("collab_remove_peer", { clientId });
+}
+
+/** Make a guest an editor or a viewer in the active room. */
+export function collabSetRole(clientId: string, role: "editor" | "viewer"): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("collab_set_role"));
+  return invoke<void>("collab_set_role", { clientId, role });
 }
 
 export function collabStatus(): Promise<CollabStatus> {

@@ -61,6 +61,32 @@ const FATAL_ERRORS: ReadonlySet<RelayErrorCode> = new Set([
 export abstract class BaseTransport implements RelayTransport {
   private listeners = new Set<(event: TransportEvent) => void>();
   private _status: TransportStatus = "closed";
+  /** From the last `welcome`; sent back on reconnect so the relay restores our role. */
+  protected resumeToken: string | null;
+
+  constructor(opts: { hostToken?: string | null; resumeToken?: string | null } = {}) {
+    this.hostToken = opts.hostToken ?? null;
+    this.resumeToken = opts.resumeToken ?? null;
+  }
+
+  /** Host webview secret; makes the relay assign the `host` role. */
+  protected readonly hostToken: string | null;
+
+  /** Last resume token the relay issued (persist it to keep a role across reloads). */
+  get currentResumeToken(): string | null {
+    return this.resumeToken;
+  }
+
+  /** The `join` frame for `room`, including host/resume credentials. */
+  protected joinFrame(room: string): ClientFrame {
+    return {
+      type: "join",
+      room,
+      protocol: PROTOCOL_VERSION,
+      ...(this.hostToken ? { hostToken: this.hostToken } : {}),
+      ...(this.resumeToken ? { resume: this.resumeToken } : {}),
+    };
+  }
 
   get status(): TransportStatus {
     return this._status;
@@ -95,6 +121,7 @@ export abstract class BaseTransport implements RelayTransport {
   protected handleFrame(frame: RelayFrame): boolean {
     switch (frame.type) {
       case "welcome":
+        if (typeof frame.resumeToken === "string") this.resumeToken = frame.resumeToken;
         this.setStatus("connected");
         this.emit(frame);
         return false;
@@ -128,6 +155,9 @@ export interface WebSocketTransportOptions {
   initialBackoffMs?: number;
   /** Retry delay cap. Default 10 s. */
   maxBackoffMs?: number;
+  hostToken?: string | null;
+  /** Resume token from an earlier connection (e.g. before a page reload). */
+  resumeToken?: string | null;
 }
 
 export class WebSocketTransport extends BaseTransport {
@@ -144,7 +174,7 @@ export class WebSocketTransport extends BaseTransport {
     private readonly url: string,
     opts: WebSocketTransportOptions = {},
   ) {
-    super();
+    super(opts);
     this.WS = opts.WebSocketImpl ?? globalThis.WebSocket;
     this.initialBackoffMs = opts.initialBackoffMs ?? 500;
     this.maxBackoffMs = opts.maxBackoffMs ?? 10_000;
@@ -194,9 +224,7 @@ export class WebSocketTransport extends BaseTransport {
     this.ws = ws;
     ws.onopen = () => {
       if (this.ws !== ws) return;
-      ws.send(
-        JSON.stringify({ type: "join", room, protocol: PROTOCOL_VERSION } satisfies ClientFrame),
-      );
+      ws.send(JSON.stringify(this.joinFrame(room)));
     };
     ws.onmessage = (ev: MessageEvent) => {
       if (this.ws !== ws) return;
