@@ -47,20 +47,36 @@ Unknown `type` → `error` frame, connection kept. Malformed JSON → close 1003
 
 | type        | fields                                                      | notes                                 |
 | ----------- | ----------------------------------------------------------- | ------------------------------------- |
-| `join`      | `room: string`, `protocol: 1`                               | must be the first frame               |
+| `join`      | `room: string`, `protocol: 1`, `hostToken?`, `resume?`      | must be the first frame               |
 | `broadcast` | `volatile: boolean`, `iv: string(b64)`, `data: string(b64)` | relayed to every _other_ peer in room |
 
 ### Relay → client
 
-| type      | fields                                                                                               | notes                                                                                |
-| --------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `welcome` | `clientId: string`, `peers: string[]`, `firstInRoom: boolean`                                        | reply to `join`; `peers` excludes self                                               |
-| `peers`   | `peers: string[]`                                                                                    | sent to everyone in room whenever membership changes; includes all clientIds in room |
-| `message` | `from: string`, `volatile: boolean`, `iv: string`, `data: string`                                    | relayed `broadcast`                                                                  |
-| `error`   | `code: "unknown_room" \| "room_full" \| "bad_frame" \| "too_large" \| "protocol"`, `message: string` | `unknown_room`/`room_full`/`protocol` are followed by close                          |
+| type      | fields                                                                                               | notes                                                                      |
+| --------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `welcome` | `clientId: string`, `peers: string[]`, `firstInRoom: boolean`, `roles: RolesMap`, `resumeToken`      | reply to `join`; `peers` excludes self; `roles` covers everyone incl. self |
+| `peers`   | `peers: string[]`, `roles: RolesMap`                                                                 | sent to everyone in room whenever membership or a role changes             |
+| `message` | `from: string`, `volatile: boolean`, `iv: string`, `data: string`                                    | relayed `broadcast`                                                        |
+| `error`   | `code: "unknown_room" \| "room_full" \| "bad_frame" \| "too_large" \| "protocol"`, `message: string` | `unknown_room`/`room_full`/`protocol` are followed by close                |
 
-`clientId`: relay-assigned, 16 hex chars. `volatile` messages (cursors) may be
-dropped under backpressure; non-volatile must be delivered in order.
+`clientId`: relay-assigned, 16 hex chars.
+
+**Roles.** `RolesMap = Record<clientId, "host" | "editor" | "viewer">`. The
+relay is the authority: it assigns roles and stamps `message.from`, so a peer
+can't impersonate the host or another client.
+
+- A `join` whose `hostToken` matches the secret registered with the room gets
+  `host`. The token is only exposed to the host webview (`CollabStatus.hostToken`).
+- Everyone else gets the room's guest default: **`viewer`** in the app relay.
+  `relay_standalone` and the e2e Node fixture default to `editor`
+  (`--guest-role viewer` overrides).
+- `welcome.resumeToken` is opaque. Passing it back as `join.resume` restores
+  that client's current role after a reconnect. Browser guests keep it in
+  `sessionStorage` (`excalidraw-collab-resume:<roomId>`).
+- A relay that omits `roles` is treated as legacy: everyone may edit.
+- Test-only: `POST /__role/<room>/<client>/<editor|viewer>` on the fixture
+  (and on `relay_standalone --control-port`) sets a role. `volatile` messages (cursors) may be
+  dropped under backpressure; non-volatile must be delivered in order.
 
 When the host calls `collab_stop`, the relay closes all sockets in the room with
 close code **4000** ("session ended").
@@ -99,7 +115,9 @@ type Payload =
     }
   | { type: "IDLE_STATUS"; userState: "active" | "idle" | "away"; username: string }
   | { type: "FILES"; files: BinaryFileData[] } // images (dataURL inside)
-  | { type: "FILES_REQUEST"; ids: string[] };
+  | { type: "FILES_REQUEST"; ids: string[] }
+  | { type: "EDIT_REQUEST" } // viewer asks the host for edit access
+  | { type: "EDIT_DENIED"; clientId: string }; // host declines; only that viewer reacts
 ```
 
 Rules:
@@ -107,8 +125,16 @@ Rules:
 - Newcomer (`firstInRoom=false`) sends `HELLO` then `SYNC_REQUEST`. The **host**
   answers with `FILES` for referenced files (sent first, so images resolve on
   arrival) then `SCENE_INIT`. Non-hosts ignore `SYNC_REQUEST` unless no host is
-  in the room; then only the guest with the lowest `clientId` (excluding the
-  requester) answers.
+  in the room; then only the **editor** with the lowest `clientId` (excluding
+  the requester) answers. Viewers never answer.
+- Viewers don't send `SCENE_INIT`/`SCENE_UPDATE`/`FILES` and don't answer
+  `FILES_REQUEST`. Receivers also drop those payloads when `from` is a viewer,
+  so a modified client can't push edits. Cursors, `HELLO`, `IDLE_STATUS` and
+  `EDIT_REQUEST` are allowed from anyone.
+- Promotion (`peers` shows the client as `editor`) clears any pending request;
+  the promoted client re-marks its scene as synced so it doesn't rebroadcast
+  everything. A pending request is re-sent after a reconnect. Requests from
+  peers who leave are dropped.
 - Merging uses Excalidraw's `reconcileElements` (version / versionNonce).
   Remote updates apply with `CaptureUpdateAction.NEVER` so they don't pollute undo.
 - `SCENE_UPDATE` is throttled (~50 ms) and sends only elements whose `version`
@@ -131,10 +157,12 @@ interface CollabStatus {
   publicBase: string | null;         // tunnel URL, manualUrl, or localBase for "local"
   tunnel: { mode: TunnelMode | null; state: "off" | "starting" | "ready" | "error"; error: string | null };
   peerCount: number;
+  hostToken: string | null;          // secret the host webview passes in `join`
 }
 collab_start(args) -> CollabStatus   // starts relay (idempotent), registers room, starts tunnel
 collab_stop() -> CollabStatus        // closes room (4000), stops tunnel host process + relay
 collab_remove_peer(clientId) -> ()  // closes that peer (4001); errors "no active session" / "unknown peer"
+collab_set_role(clientId, "editor" | "viewer") -> ()  // same errors; broadcasts `peers`
 collab_status() -> CollabStatus
 event "collab://status" (payload CollabStatus) on every change
 ```
@@ -180,3 +208,11 @@ like Excalidraw's Library button) that opens a session panel (participants,
 rename, Leave session), and a banner when the session ends (close 4000), the
 host removes the guest (close 4001), or the connection drops (auto-reconnect
 with backoff).
+
+Guests start as viewers: the canvas is in Excalidraw view mode and a bar
+says "You're viewing this drawing." with **Ask to edit**. The host sees
+"<name> wants to edit this drawing." with **Allow**/**Deny** above the canvas,
+plus the same buttons, a role tag, and a **Make editor**/**Make viewer** toggle
+for each person in the Share dialog's participant list. Guests see the same
+list (read-only) in their Live panel. When the host removes a guest, the
+guest's canvas is cleared after the socket closes; the host's scene is untouched.

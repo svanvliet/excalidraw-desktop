@@ -29,6 +29,10 @@ Settings → enable **Live collaboration**, set a display name.
 | 11  | Network blip (Wi-Fi off 5 s on guest) → auto-reconnects and catches up                 |
 | 12  | Host clicks **Stop session** → guest sees "session ended", can no longer edit live     |
 | 13  | Log file has no `ERROR` lines for the session                                          |
+| 14  | Guest joins as a **viewer**: can't draw; sees "You're viewing" + **Ask to edit**       |
+| 15  | Ask to edit → host sees the request bar + "wants to edit" tag; **Deny** → guest told   |
+| 16  | Ask again → **Allow** → guest can draw; **Make viewer** in Share dialog → read-only    |
+| 17  | Host **Remove** → guest canvas clears and shows "removed"; host drawing is unchanged   |
 
 ## Stage A — desktop build ↔ local browser
 
