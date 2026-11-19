@@ -1,12 +1,11 @@
 /**
  * Settings dialog. Surfaces the three online-feature toggles, the
- * live-collaboration preferences, and the OpenAI key.
+ * live-collaboration preferences, and the AI agent (bring your own
+ * engine) settings.
  *
- * **Privacy contract:** every toggle defaults to `false`, the dialog
+ * **Privacy contract:** every toggle defaults to `false`, and the dialog
  * makes it visually obvious that turning anything on hands data to a
- * third party, and the secrets section ships with a warning that the
- * values are stored unencrypted on disk (until a native keychain
- * integration lands post-v1 — see docs/plan.md §M6 follow-ups).
+ * third party. The app stores no AI credentials (SEC-3).
  *
  * The component is purely presentational; persistence is owned by
  * `useSettingsStore`.
@@ -15,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TunnelMode } from "../ipc/commands";
 import { isHttpUrl, isValidPort, useSettingsStore } from "../stores/settingsStore";
 import { UpdatesSection } from "./UpdatesSection";
+import { AiSettingsSection } from "./agent/AiSettingsSection";
 import { CloseIcon } from "./icons";
 
 export interface SettingsDialogProps {
@@ -46,13 +46,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const collab = useSettingsStore((s) => s.collab);
   const library = useSettingsStore((s) => s.library);
   const ai = useSettingsStore((s) => s.ai);
-  const openAiKey = useSettingsStore((s) => s.openAiKey);
   const displayName = useSettingsStore((s) => s.collabDisplayName);
   const tunnelMode = useSettingsStore((s) => s.collabTunnelMode);
   const manualUrl = useSettingsStore((s) => s.collabManualUrl);
   const port = useSettingsStore((s) => s.collabPort);
   const setFlag = useSettingsStore((s) => s.setFlag);
-  const setSecret = useSettingsStore((s) => s.setSecret);
   const setCollab = useSettingsStore((s) => s.setCollab);
 
   // Port is edited as text so the user can clear/retype it; only valid
@@ -158,9 +156,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 data-testid="toggle-ai"
               />
               <span className="settings__row-text">
-                <strong>AI text-to-diagram</strong>
+                <strong>AI agent</strong>
                 <span className="settings__hint">
-                  Sends prompts you type to OpenAI. Requires your own API key below.
+                  Lets an AI agent you already use (Copilot CLI, Claude Code, or Codex) read and
+                  edit your drawing. Prompts and the canvas content it reads go to that agent&apos;s
+                  provider under your own account. Nothing runs until you send a prompt.
                 </span>
               </span>
             </label>
@@ -253,28 +253,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             </label>
           </section>
 
+          <AiSettingsSection />
+
           <UpdatesSection />
-
-          <section className="settings__section">
-            <h3>Secrets</h3>
-            <p className="settings__warning" role="note">
-              Values below are stored unencrypted in <code>settings.json</code>. Treat this file
-              like a credentials file on your machine.
-            </p>
-
-            <label className="settings__field">
-              <span>OpenAI API key</span>
-              <input
-                type="password"
-                autoComplete="off"
-                spellCheck={false}
-                value={openAiKey}
-                onChange={(e) => void setSecret("openAiKey", e.target.value)}
-                data-testid="secret-openai"
-                placeholder="sk-…"
-              />
-            </label>
-          </section>
         </div>
 
         <div className="modal__actions">

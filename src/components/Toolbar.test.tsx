@@ -128,4 +128,19 @@ describe("Toolbar", () => {
       "Share, a different tab is being shared",
     );
   });
+
+  it("AI toggle is hidden without onToggleAgent", () => {
+    setup();
+    expect(screen.queryByTestId("toolbar-agent")).toBeNull();
+  });
+
+  it("AI toggle calls onToggleAgent and shows pressed while open", () => {
+    const onToggleAgent = vi.fn();
+    setup({ onToggleAgent, agentOpen: true });
+    const btn = screen.getByTestId("toolbar-agent");
+    expect(btn).toHaveAttribute("aria-pressed", "true");
+    expect(btn).toHaveAttribute("data-pressed", "true");
+    fireEvent.click(btn);
+    expect(onToggleAgent).toHaveBeenCalledTimes(1);
+  });
 });

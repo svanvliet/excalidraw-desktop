@@ -45,7 +45,15 @@ describe("settingsStore", () => {
     expect(s.collab).toBe(false);
     expect(s.library).toBe(false);
     expect(s.ai).toBe(false);
-    expect(s.openAiKey).toBe("");
+    expect("openAiKey" in s).toBe(false);
+    expect(s.aiEngines.copilot).toEqual({
+      enabled: true,
+      pathOverride: "",
+      useHostConfig: true,
+      model: "",
+    });
+    expect(s.aiDefaultEngine).toBe("copilot");
+    expect(s.aiDisclosureAccepted).toEqual({ copilot: false, claude: false, codex: false });
     expect(s.loaded).toBe(false);
     expect(s.collabDisplayName).toBe("");
     expect(s.collabTunnelMode).toBe("auto");
@@ -82,25 +90,69 @@ describe("settingsStore", () => {
     expect(useSettingsStore.getState().collab).toBe(true);
   });
 
-  it("setSecret stores secrets independently of the online toggles", async () => {
+  it("persists per-engine AI settings, default engine and disclosure acceptance", async () => {
     await useSettingsStore.getState().load();
-    await useSettingsStore.getState().setSecret("openAiKey", "sk-test-123");
-    expect(useSettingsStore.getState().openAiKey).toBe("sk-test-123");
+    const st = useSettingsStore.getState();
+    await st.setEngineSettings("claude", { pathOverride: "/opt/claude", useHostConfig: false });
+    await st.setDefaultEngine("codex");
+    await st.acceptAiDisclosure("claude");
     expect(useSettingsStore.getState().ai).toBe(false);
+    __resetSettingsForTests();
+    await useSettingsStore.getState().load();
+    const s = useSettingsStore.getState();
+    expect(s.aiEngines.claude).toEqual({
+      enabled: true,
+      pathOverride: "/opt/claude",
+      useHostConfig: false,
+      model: "",
+    });
+    expect(s.aiEngines.copilot.pathOverride).toBe("");
+    expect(s.aiDefaultEngine).toBe("codex");
+    expect(s.aiDisclosureAccepted).toEqual({ copilot: false, claude: true, codex: false });
+  });
+
+  it("migration: drops a legacy openAiKey on load and rewrites settings.json without it (SEC-3)", async () => {
+    const direct = new LazyStore("settings.json");
+    await direct.set("settings", { ai: true, library: true, openAiKey: "sk-legacy-secret" });
+    await useSettingsStore.getState().load();
+    const s = useSettingsStore.getState();
+    expect(s.ai).toBe(true);
+    expect(s.library).toBe(true);
+    expect("openAiKey" in s).toBe(false);
+    const persisted = await direct.get<Record<string, unknown>>("settings");
+    expect(persisted).not.toHaveProperty("openAiKey");
+    expect(JSON.stringify(persisted)).not.toContain("sk-legacy-secret");
+    expect(persisted?.ai).toBe(true);
+  });
+
+  it("sanitize coerces malformed AI settings", () => {
+    const s = sanitize({
+      aiEngines: { copilot: { enabled: "yes", pathOverride: 3, model: "gpt-x" }, codex: null },
+      aiDefaultEngine: "chatgpt",
+      aiDisclosureAccepted: { copilot: "true", claude: true },
+    });
+    expect(s.aiEngines.copilot).toEqual({
+      enabled: true,
+      pathOverride: "",
+      useHostConfig: true,
+      model: "gpt-x",
+    });
+    expect(s.aiEngines.codex.enabled).toBe(true);
+    expect(s.aiDefaultEngine).toBe("copilot");
+    expect(s.aiDisclosureAccepted).toEqual({ copilot: false, claude: true, codex: false });
   });
 
   it("resetAll restores defaults and persists the reset", async () => {
     await useSettingsStore.getState().load();
     await useSettingsStore.getState().setFlag("library", true);
-    await useSettingsStore.getState().setSecret("openAiKey", "sk-zap");
+    await useSettingsStore.getState().acceptAiDisclosure("codex");
     await useSettingsStore.getState().resetAll();
     expect(useSettingsStore.getState().library).toBe(false);
-    expect(useSettingsStore.getState().openAiKey).toBe("");
+    expect(useSettingsStore.getState().aiDisclosureAccepted.codex).toBe(false);
     // Reload check.
-    useSettingsStore.setState({ library: true, openAiKey: "leak", loaded: false });
+    useSettingsStore.setState({ library: true, loaded: false });
     await useSettingsStore.getState().load();
     expect(useSettingsStore.getState().library).toBe(false);
-    expect(useSettingsStore.getState().openAiKey).toBe("");
   });
 
   it("sanitize ignores wrong-typed persisted values", async () => {
@@ -112,7 +164,6 @@ describe("settingsStore", () => {
       collab: "yes" as unknown as boolean,
       library: null as unknown as boolean,
       ai: 1 as unknown as boolean,
-      openAiKey: 42 as unknown as string,
       collabTunnelMode: "cloud",
       collabManualUrl: "ftp://example.com",
       collabPort: 80,
@@ -125,7 +176,6 @@ describe("settingsStore", () => {
     expect(s.collab).toBe(false);
     expect(s.library).toBe(false);
     expect(s.ai).toBe(false);
-    expect(s.openAiKey).toBe("");
     expect(s.collabTunnelMode).toBe("auto");
     expect(s.collabManualUrl).toBe("");
     expect(s.collabPort).toBe(4780);
