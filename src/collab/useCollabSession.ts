@@ -13,10 +13,11 @@ import {
   type CollabPeer,
   type CollabStatus,
   type CollabTiming,
+  type EditRequestState,
   type PointerUpdatePayload,
 } from "./CollabSession";
 import { wsUrlFor } from "./link";
-import type { RelayErrorCode, RoomLink } from "./protocol";
+import type { RelayErrorCode, Role, RoomLink } from "./protocol";
 import { WebSocketTransport, type RelayTransport } from "./transport";
 
 export interface UseCollabSessionOptions {
@@ -26,10 +27,12 @@ export interface UseCollabSessionOptions {
   link: RoomLink | null;
   username: string;
   isHost: boolean;
+  /** Host webview only: `CollabStatus.hostToken`, so the relay grants the host role. */
+  hostToken?: string | null;
   /** Fired after a remote edit was applied (never for local edits). */
   onRemoteChange?: () => void;
   /** Override the transport (tests). Defaults to a WebSocket to `wsUrlFor(link.publicBase)`. */
-  createTransport?: (link: RoomLink) => RelayTransport;
+  createTransport?: (link: RoomLink, creds: TransportCredentials) => RelayTransport;
   timing?: Partial<CollabTiming>;
 }
 
@@ -42,26 +45,56 @@ export interface CollabHandlers {
   onPointerUpdate: (payload: PointerUpdatePayload) => void;
 }
 
+export interface TransportCredentials {
+  hostToken: string | null;
+  resumeToken: string | null;
+}
+
 export interface UseCollabSessionResult {
   status: CollabStatus;
   error: { code: RelayErrorCode; message: string } | null;
   peers: CollabPeer[];
+  /** Our relay-assigned role; viewers must render the canvas read-only. */
+  role: Role;
+  editRequest: EditRequestState;
+  requestEdit: () => void;
+  denyEdit: (clientId: string) => void;
   handlers: CollabHandlers;
   session: CollabSession | null;
 }
 
-const defaultTransport = (link: RoomLink): RelayTransport =>
-  new WebSocketTransport(wsUrlFor(link.publicBase));
+const defaultTransport = (link: RoomLink, creds: TransportCredentials): RelayTransport =>
+  new WebSocketTransport(wsUrlFor(link.publicBase), creds);
+
+/** Guests keep their role across page reloads via a per-room resume token. */
+const resumeKey = (roomId: string) => `excalidraw-collab-resume:${roomId}`;
+function loadResume(roomId: string): string | null {
+  try {
+    return globalThis.sessionStorage?.getItem(resumeKey(roomId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+function saveResume(roomId: string, token: string | null): void {
+  try {
+    if (token) globalThis.sessionStorage?.setItem(resumeKey(roomId), token);
+  } catch {
+    // Storage unavailable (private mode); the role just won't survive a reload.
+  }
+}
 
 export function useCollabSession({
   api,
   link,
   username,
   isHost,
+  hostToken = null,
   onRemoteChange,
   createTransport,
   timing,
 }: UseCollabSessionOptions): UseCollabSessionResult {
+  const [role, setRole] = useState<Role>(isHost ? "host" : "viewer");
+  const [editRequest, setEditRequest] = useState<EditRequestState>("none");
   const [status, setStatus] = useState<CollabStatus>("idle");
   const [error, setError] = useState<UseCollabSessionResult["error"]>(null);
   const [peers, setPeers] = useState<CollabPeer[]>([]);
@@ -79,7 +112,12 @@ export function useCollabSession({
   useEffect(() => {
     if (!api || roomId === null || key === null || publicBase === null) return;
     const roomLink: RoomLink = { roomId, key, publicBase };
-    const transport = (latest.current.createTransport ?? defaultTransport)(roomLink);
+    const transport = (latest.current.createTransport ?? defaultTransport)(roomLink, {
+      hostToken,
+      resumeToken: hostToken ? null : loadResume(roomId),
+    });
+    setRole(isHost ? "host" : "viewer");
+    setEditRequest("none");
     const s = new CollabSession({
       transport,
       roomId,
@@ -94,6 +132,16 @@ export function useCollabSession({
       },
       onPeersChange: setPeers,
       onRemoteChange: () => latest.current.onRemoteChange?.(),
+      onRoleChange: (r) => {
+        setRole(r);
+        if (!hostToken && "currentResumeToken" in transport) {
+          saveResume(
+            roomId,
+            (transport as { currentResumeToken: string | null }).currentResumeToken,
+          );
+        }
+      },
+      onEditRequestStateChange: setEditRequest,
     });
     sessionRef.current = s;
     setSession(s);
@@ -106,7 +154,7 @@ export function useCollabSession({
       setError(null);
       void s.stop();
     };
-  }, [api, roomId, key, publicBase, isHost]);
+  }, [api, roomId, key, publicBase, isHost, hostToken]);
 
   useEffect(() => {
     sessionRef.current?.setUsername(username);
@@ -121,6 +169,8 @@ export function useCollabSession({
     [],
   );
   const handlers = useMemo(() => ({ onChange, onPointerUpdate }), [onChange, onPointerUpdate]);
+  const requestEdit = useCallback(() => sessionRef.current?.requestEdit(), []);
+  const denyEdit = useCallback((id: string) => sessionRef.current?.denyEdit(id), []);
 
-  return { status, error, peers, handlers, session };
+  return { status, error, peers, role, editRequest, requestEdit, denyEdit, handlers, session };
 }

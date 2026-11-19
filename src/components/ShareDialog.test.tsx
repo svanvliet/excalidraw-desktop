@@ -6,6 +6,7 @@ const ipc = vi.hoisted(() => ({
   collabStart: vi.fn<(args: CollabStartArgs) => Promise<CollabStatus>>(),
   collabStop: vi.fn<() => Promise<CollabStatus>>(),
   collabRemovePeer: vi.fn<(id: string) => Promise<void>>(),
+  collabSetRole: vi.fn<(id: string, role: "editor" | "viewer") => Promise<void>>(),
 }));
 vi.mock("../ipc/commands", async (orig) => {
   const actual = await orig<typeof import("../ipc/commands")>();
@@ -14,6 +15,7 @@ vi.mock("../ipc/commands", async (orig) => {
     collabStart: (a: CollabStartArgs) => ipc.collabStart(a),
     collabStop: () => ipc.collabStop(),
     collabRemovePeer: (id: string) => ipc.collabRemovePeer(id),
+    collabSetRole: (id: string, role: "editor" | "viewer") => ipc.collabSetRole(id, role),
   };
 });
 
@@ -152,6 +154,28 @@ describe("ShareDialog", () => {
     expect(screen.getByTestId("participants")).toHaveTextContent(/Scott.*you · host.*Ann/);
     fireEvent.click(screen.getByRole("button", { name: "Remove Ann" }));
     await waitFor(() => expect(ipc.collabRemovePeer).toHaveBeenCalledWith("c1"));
+  });
+
+  it("host toggles roles and answers edit requests", async () => {
+    useSettingsStore.setState({ collab: true });
+    ipc.collabSetRole.mockResolvedValue(undefined);
+    hostSession({ tunnel: { mode: "auto", state: "ready", error: null } });
+    const onDenyEdit = vi.fn();
+    const peer = { isHost: false, requestedEdit: false, userState: "active" } as const;
+    renderDialog({
+      onDenyEdit,
+      peers: [
+        { ...peer, clientId: "e1", username: "Ed", role: "editor" },
+        { ...peer, clientId: "v1", username: "Vi", role: "viewer", requestedEdit: true },
+      ],
+    });
+    expect(screen.getByText("wants to edit")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Make Ed a viewer" }));
+    await waitFor(() => expect(ipc.collabSetRole).toHaveBeenCalledWith("e1", "viewer"));
+    fireEvent.click(screen.getByRole("button", { name: "Let Vi edit" }));
+    await waitFor(() => expect(ipc.collabSetRole).toHaveBeenCalledWith("v1", "editor"));
+    fireEvent.click(screen.getByRole("button", { name: "Decline Vi's request" }));
+    expect(onDenyEdit).toHaveBeenCalledWith("v1");
   });
 
   it.each([

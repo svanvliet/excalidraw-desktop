@@ -17,6 +17,7 @@ import type {
 import {
   CollabSession,
   type CollabApi,
+  type CollabSessionOptions,
   type CollabStatus,
   type CollabTiming,
 } from "./CollabSession";
@@ -491,5 +492,92 @@ describe("CollabSession", () => {
     expect(a.api.elements).toHaveLength(1);
     expect(a.remoteChanges).toBe(0);
     intruder.close();
+  });
+
+  describe("roles", () => {
+    const forge = (p: Peer, payload: Payload) =>
+      (p.session as unknown as { send: (x: Payload) => void }).send(payload);
+
+    it("viewers can't edit: no broadcasts, and forged edits are dropped", async () => {
+      const relay = new MemoryRelay(undefined, { guestRole: "viewer" });
+      const host = makePeer(relay, { username: "H", isHost: true, elements: [rect("a", "a0")] });
+      await settle(relay);
+      const v = makePeer(relay, { username: "V" });
+      await settle(relay);
+      expect(v.session.role).toBe("viewer");
+      expect(host.session.peers[0]).toMatchObject({ role: "viewer", isHost: false });
+      expect(v.api.get("a")).toBeDefined();
+
+      v.sent.length = 0;
+      v.api.edit("a", { x: 999 });
+      await settle(relay);
+      expect(types(v)).not.toContain("SCENE_UPDATE");
+
+      forge(v, { type: "SCENE_UPDATE", elements: [{ ...rect("evil", "a1") }] as never });
+      await settle(relay);
+      expect(host.api.get("evil")).toBeUndefined();
+      expect(host.api.get("a")?.x).not.toBe(999);
+    });
+
+    it("request, deny, then promote via set_role", async () => {
+      const relay = new MemoryRelay(undefined, { guestRole: "viewer" });
+      const host = makePeer(relay, { username: "H", isHost: true, elements: [rect("a", "a0")] });
+      await settle(relay);
+      const states: string[] = [];
+      const roles: string[] = [];
+      const v = makePeer(relay, { username: "V", start: false });
+      (v.session as unknown as { opts: CollabSessionOptions }).opts.onEditRequestStateChange = (
+        s,
+      ) => states.push(s);
+      (v.session as unknown as { opts: CollabSessionOptions }).opts.onRoleChange = (r) =>
+        roles.push(r);
+      v.session.start();
+      await settle(relay);
+      const vId = host.session.peers[0].clientId;
+
+      v.session.requestEdit();
+      await settle(relay);
+      expect(host.session.peers[0].requestedEdit).toBe(true);
+      host.session.denyEdit(vId);
+      await settle(relay);
+      expect(host.session.peers[0].requestedEdit).toBe(false);
+      expect(states).toEqual(["pending", "denied"]);
+
+      v.session.requestEdit();
+      await settle(relay);
+      relay.setRole(v.transport, "editor");
+      await settle(relay);
+      expect(roles).toEqual(["viewer", "editor"]);
+      expect(host.session.peers[0]).toMatchObject({ role: "editor", requestedEdit: false });
+      expect(states[states.length - 1]).toBe("none");
+
+      v.api.edit("a", { x: 42 });
+      await settle(relay);
+      expect(host.api.get("a")?.x).toBe(42);
+    });
+
+    it("keeps a promoted role across reconnects via the resume token", async () => {
+      const relay = new MemoryRelay(undefined, { guestRole: "viewer" });
+      makePeer(relay, { username: "H", isHost: true });
+      await settle(relay);
+      const v = makePeer(relay, { username: "V" });
+      await settle(relay);
+      relay.setRole(v.transport, "editor");
+      await settle(relay);
+      const again = relay.createTransport({ resumeToken: v.transport.resumeTokenForTests });
+      again.connect(ROOM);
+      await settle(relay);
+      expect(relay.roleOf(again)).toBe("editor");
+      again.close();
+    });
+
+    it("viewers never answer SYNC_REQUEST", async () => {
+      const relay = new MemoryRelay(undefined, { guestRole: "viewer" });
+      const v1 = makePeer(relay, { username: "V1", elements: [rect("a", "a0")] });
+      await settle(relay);
+      makePeer(relay, { username: "V2" });
+      await settle(relay);
+      expect(types(v1)).not.toContain("SCENE_INIT");
+    });
   });
 });

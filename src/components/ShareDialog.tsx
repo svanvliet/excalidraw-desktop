@@ -9,7 +9,8 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { CollabPeer } from "../collab/CollabSession";
-import { collabRemovePeer, type CollabStatus } from "../ipc/commands";
+import { collabRemovePeer, collabSetRole, type CollabStatus } from "../ipc/commands";
+import type { Role } from "../collab/protocol";
 import { selectLocalLink, selectShareLink, useCollabStore } from "../stores/collabStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { log } from "../lib/logger";
@@ -26,6 +27,10 @@ export interface ShareDialogProps {
   peers?: CollabPeer[];
   /** This app's display name in the session. */
   selfName?: string;
+  /** This app's relay-assigned role (guests see it in the list). */
+  selfRole?: Role;
+  /** Host: decline a viewer's edit request. */
+  onDenyEdit?: (clientId: string) => void;
 }
 
 export function ShareDialog({
@@ -35,8 +40,10 @@ export function ShareDialog({
   onOpenSettings,
   peers = [],
   selfName = "You",
+  selfRole,
+  onDenyEdit,
 }: ShareDialogProps) {
-  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [removeError, setRemoveError] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const collabEnabled = useSettingsStore((s) => s.collab);
@@ -69,22 +76,34 @@ export function ShareDialog({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  const removePeer = useCallback(async (clientId: string) => {
-    setRemoveError(null);
-    setRemoving((s) => new Set(s).add(clientId));
-    try {
-      await collabRemovePeer(clientId);
-    } catch (e) {
-      log.warn("collab: remove peer failed", e);
-      setRemoveError(`Couldn't remove that person: ${String(e)}`);
-    } finally {
-      setRemoving((s) => {
-        const next = new Set(s);
-        next.delete(clientId);
-        return next;
-      });
-    }
-  }, []);
+  const managePeer = useCallback(
+    async (clientId: string, what: string, op: () => Promise<void>) => {
+      setRemoveError(null);
+      setBusy((s) => new Set(s).add(clientId));
+      try {
+        await op();
+      } catch (e) {
+        log.warn(`collab: ${what} failed`, e);
+        setRemoveError(`Couldn't ${what}: ${String(e)}`);
+      } finally {
+        setBusy((s) => {
+          const next = new Set(s);
+          next.delete(clientId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
+  const removePeer = useCallback(
+    (id: string) => managePeer(id, "remove that person", () => collabRemovePeer(id)),
+    [managePeer],
+  );
+  const setRole = useCallback(
+    (id: string, role: "editor" | "viewer") =>
+      managePeer(id, "change that person's role", () => collabSetRole(id, role)),
+    [managePeer],
+  );
 
   if (!open) return null;
 
@@ -122,7 +141,7 @@ export function ShareDialog({
           You&rsquo;re joined to someone else&rsquo;s session. Only the host can share it further.
         </p>
         <Participants>
-          <ParticipantList selfName={selfName} selfIsHost={false} peers={peers} />
+          <ParticipantList selfName={selfName} selfRole={selfRole ?? "viewer"} peers={peers} />
         </Participants>
       </>
     );
@@ -196,15 +215,17 @@ export function ShareDialog({
         <Participants count={peers.length + 1}>
           <ParticipantList
             selfName={selfName}
-            selfIsHost
+            selfRole="host"
             peers={peers}
             onRemove={(id) => void removePeer(id)}
-            removing={removing}
+            onSetRole={(id, role) => void setRole(id, role)}
+            onDeny={onDenyEdit}
+            busy={busy}
           />
           {peers.length > 0 ? (
             <p className="settings__hint">
-              Removed people can rejoin with the link. To revoke it, stop the session and start a
-              new one.
+              People join as viewers. Removed people can rejoin with the link; to revoke it, stop
+              the session and start a new one.
             </p>
           ) : null}
           {removeError ? (

@@ -9,9 +9,10 @@ import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ShareDialog } from "./components/ShareDialog";
+import { EditRequestBar, ViewerBar } from "./components/RoleBar";
 import { JoinDialog } from "./components/JoinDialog";
 import { useCollabStore } from "./stores/collabStore";
-import { collabStop } from "./ipc/commands";
+import { collabSetRole, collabStop } from "./ipc/commands";
 import type { RoomLink } from "./collab/protocol";
 import { useCollabSession } from "./collab/useCollabSession";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
@@ -251,6 +252,7 @@ export function App() {
   const relayRunning = useCollabStore((s) => s.status.running);
   const relayRoomId = useCollabStore((s) => s.status.roomId);
   const relayLocalBase = useCollabStore((s) => s.status.localBase);
+  const relayHostToken = useCollabStore((s) => s.status.hostToken);
   const leaveCollab = useCollabStore((s) => s.leaveSession);
   const collabDisplayName = useSettingsStore((s) => s.collabDisplayName);
   const collabTabId = collabSession?.tabId ?? null;
@@ -281,6 +283,7 @@ export function App() {
     link: collabLink,
     username: collabUsername,
     isHost: collabSession?.role === "host",
+    hostToken: collabSession?.role === "host" ? relayHostToken : null,
     onRemoteChange: () => {
       if (!collabTabId) return;
       markDirtyAction(collabTabId);
@@ -292,15 +295,25 @@ export function App() {
       leaveCollab();
       setError("The host ended the live session. Your copy of the drawing is kept in this tab.");
     } else if (collab.status === "removed") {
+      // The socket is already closed, so clearing can't propagate to the room.
+      const api = collabTabId ? apisRef.current.get(collabTabId) : undefined;
+      if (collabSession?.role === "guest") api?.resetScene();
       leaveCollab();
-      setError(
-        "The host removed you from the live session. Your copy of the drawing is kept in this tab.",
-      );
+      setError("The host removed you from the live session.");
     } else if (collab.status === "failed" && collab.error) {
       log.warn("collab: session failed", collab.error);
       setError(`Live session error: ${collab.error.message}`);
     }
+    // Only react to status transitions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collab.status, collab.error, leaveCollab]);
+
+  const allowEdit = useCallback((clientId: string) => {
+    collabSetRole(clientId, "editor").catch((e) => {
+      log.warn("collab: set role failed", e);
+      setError(`Couldn't change that person's role: ${String(e)}`);
+    });
+  }, []);
 
   const openPath = useCallback(
     async (path: string) => {
@@ -620,6 +633,13 @@ export function App() {
           {error}
         </div>
       ) : null}
+      {collabSession?.role === "host" ? (
+        <EditRequestBar peers={collab.peers} onAllow={allowEdit} onDeny={collab.denyEdit} />
+      ) : collabSession?.role === "guest" &&
+        collab.status === "connected" &&
+        collab.role === "viewer" ? (
+        <ViewerBar state={collab.editRequest} onRequest={collab.requestEdit} />
+      ) : null}
       <div className="app-shell__canvas">
         {tabs.map((tab) => (
           <div
@@ -637,6 +657,11 @@ export function App() {
               }}
               aiEnabled={aiEnabled}
               isCollaborating={collabTabId === tab.id}
+              viewOnly={
+                collabTabId === tab.id &&
+                collabSession?.role === "guest" &&
+                collab.role === "viewer"
+              }
               onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
               onPointerUpdate={collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined}
               libraryReturnUrl={libraryReturnUrl}
@@ -660,6 +685,8 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         peers={collabSession ? collab.peers : []}
         selfName={collabUsername}
+        selfRole={collab.role}
+        onDenyEdit={collab.denyEdit}
       />
       <JoinDialog
         open={joinOpen}

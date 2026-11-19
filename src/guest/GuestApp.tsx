@@ -14,6 +14,8 @@ import type { RoomLink } from "../collab/protocol";
 import { useCollabSession } from "../collab/useCollabSession";
 import { CloseIcon, LiveIcon, UsersIcon } from "../components/icons";
 import { ParticipantList } from "../components/ParticipantList";
+import { ViewerBar } from "../components/RoleBar";
+import type { Role } from "../collab/protocol";
 import { log } from "../lib/logger";
 
 export const GUEST_NAME_KEY = "excalidraw-desktop:guest-name";
@@ -74,13 +76,14 @@ export function GuestApp({ link }: GuestAppProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [left, setLeft] = useState(false);
 
-  const { status, error, peers, handlers, session } = useCollabSession({
-    api,
-    // Hold off joining until the guest has a name so peers never see a blank one.
-    link: username && !left ? link : null,
-    username,
-    isHost: false,
-  });
+  const { status, error, peers, role, editRequest, requestEdit, handlers, session } =
+    useCollabSession({
+      api,
+      // Hold off joining until the guest has a name so peers never see a blank one.
+      link: username && !left ? link : null,
+      username,
+      isHost: false,
+    });
 
   useEffect(() => {
     log.info(`guest: status=${status}${error ? ` error=${error.code}` : ""}`);
@@ -111,6 +114,11 @@ export function GuestApp({ link }: GuestAppProps) {
     setPanelOpen(false);
     setLeft(true);
   }, []);
+
+  // Removed: wipe our copy. The socket is closed, so nothing reaches the room.
+  useEffect(() => {
+    if (status === "removed") api?.resetScene();
+  }, [status, api]);
 
   const banner = BANNERS[status];
   const ended = status === "ended" || status === "failed" || status === "removed";
@@ -152,6 +160,8 @@ export function GuestApp({ link }: GuestAppProps) {
             ? `${banner.text} (${error.message})`
             : banner.text}
         </div>
+      ) : status === "connected" && role === "viewer" ? (
+        <ViewerBar state={editRequest} onRequest={requestEdit} />
       ) : null}
       <div className="guest-app__canvas">
         <Excalidraw
@@ -160,7 +170,7 @@ export function GuestApp({ link }: GuestAppProps) {
           onChange={handlers.onChange}
           onPointerUpdate={handlers.onPointerUpdate}
           isCollaborating={!offline}
-          viewModeEnabled={offline}
+          viewModeEnabled={offline || role === "viewer"}
           theme={theme}
           renderTopRightUI={renderTopRightUI}
         />
@@ -171,6 +181,7 @@ export function GuestApp({ link }: GuestAppProps) {
       {panelOpen && (
         <SessionPanel
           username={username}
+          role={role}
           peers={offline ? [] : peers}
           offline={offline}
           onRename={saveName}
@@ -250,6 +261,7 @@ function NamePrompt({ initial, onSubmit, onCancel }: NamePromptProps) {
 
 interface SessionPanelProps {
   username: string;
+  role: Role;
   peers: CollabPeer[];
   offline: boolean;
   onRename: (name: string) => void;
@@ -257,7 +269,15 @@ interface SessionPanelProps {
   onClose: () => void;
 }
 
-function SessionPanel({ username, peers, offline, onRename, onLeave, onClose }: SessionPanelProps) {
+function SessionPanel({
+  username,
+  role,
+  peers,
+  offline,
+  onRename,
+  onLeave,
+  onClose,
+}: SessionPanelProps) {
   const [value, setValue] = useState(username);
 
   useEffect(() => {
@@ -310,7 +330,7 @@ function SessionPanel({ username, peers, offline, onRename, onLeave, onClose }: 
               <h3 className="guest-name__label">
                 <UsersIcon /> In this session ({peers.length + 1})
               </h3>
-              <ParticipantList selfName={username} selfIsHost={false} peers={peers} />
+              <ParticipantList selfName={username} selfRole={role} peers={peers} />
             </>
           )}
           <label className="guest-name__label" htmlFor="guest-session-name">

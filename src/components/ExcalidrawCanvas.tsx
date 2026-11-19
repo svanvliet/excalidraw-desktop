@@ -33,6 +33,8 @@ export interface ExcalidrawCanvasProps {
    */
   aiEnabled?: boolean;
   isCollaborating?: boolean;
+  /** Force read-only (collab viewers). */
+  viewOnly?: boolean;
   libraryReturnUrl?: string;
   /**
    * Resolved theme to apply to the editor chrome. The host app already
@@ -60,6 +62,7 @@ export function ExcalidrawCanvas({
   onSceneChange,
   aiEnabled,
   isCollaborating,
+  viewOnly,
   libraryReturnUrl,
   theme,
   onCollabChange,
@@ -110,6 +113,8 @@ export function ExcalidrawCanvas({
         onChange={handleChange}
         aiEnabled={aiEnabled ?? false}
         isCollaborating={isCollaborating ?? false}
+        // `undefined` (not false) hands view mode back to the user when promoted.
+        viewModeEnabled={viewOnly ? true : undefined}
         {...(onPointerUpdate ? { onPointerUpdate } : {})}
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
         {...(theme ? { theme } : {})}
