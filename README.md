@@ -82,6 +82,7 @@ npm run e2e:install   # downloads chromium
 | `npm run rust:fmt:check` | `cargo fmt --check` for the Rust crate.                                               |
 | `npm run rust:lint`      | `cargo clippy --all-targets -- -D warnings`.                                          |
 | `npm run rust:test`      | `cargo test` for the Rust crate.                                                      |
+| `npm run release:mac`    | Local signed + notarized macOS release (see [Releasing](#releasing)).                 |
 
 **Every commit must pass `npm run check`.** See `CLAUDE.md` § Commits.
 
@@ -109,18 +110,23 @@ src-tauri/
 
 ---
 
-## Signing & notarization
+## Releasing
 
-Producing a distributable build that opens without Gatekeeper /
-SmartScreen warnings requires platform-specific signing. We document the
-steps so a future developer (or a CI release pipeline — see M9) can
-follow them, but the actual signed-release pipeline is **deferred to
-post-v1**.
+Releases are cut from a Mac that holds the Developer ID certificate and a
+`notarytool` keychain profile. One command builds the universal DMG, signs,
+notarizes, staples, creates a **draft** GitHub Release, uploads the DMG, and
+pushes the `v<version>` tag; CI then builds the (unsigned) Windows installers
+and attaches them to the same draft. Review the draft and publish it by hand.
 
-- **macOS:** [`docs/signing-macos.md`](docs/signing-macos.md) — Developer ID,
-  `codesign`, `notarytool`, stapling.
-- **Windows:** [`docs/signing-windows.md`](docs/signing-windows.md) — code-signing
-  cert options, `signtool`, timestamping.
+```bash
+npm run release:mac -- 0.2.0 --dry-run          # build + sign + notarize, no publish
+npm run release:mac -- 0.2.0 --bump --publish   # bump versions, release for real
+```
+
+- **macOS (signed + notarized):** [`docs/signing-macos.md`](docs/signing-macos.md) —
+  full runbook, one-time setup, troubleshooting.
+- **Windows (unsigned for now):** [`docs/signing-windows.md`](docs/signing-windows.md) —
+  code-signing cert options, `signtool`, timestamping.
 
 ---
 
