@@ -78,7 +78,7 @@ for attempt in 1 2 3 4 5; do
     ' "$work/latest.json" "$sig_file" "${platforms[@]}"; then
       cp "$work/latest.json" "$OUT"
       rm -rf "$work"
-      echo "latest.json on $TAG now lists: $(node -p 'Object.keys(require(process.argv[1]).platforms).join(", ")' "$OUT")"
+      echo "latest.json on $TAG now lists: $(node -p 'Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).platforms).join(", ")' "$OUT")"
       exit 0
     fi
     echo "uploaded latest.json lost our entries (concurrent upload?); retrying ($attempt/5)" >&2
