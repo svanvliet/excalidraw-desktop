@@ -4,9 +4,11 @@
 //! AI toggle (SEC-3): the `ai` setting lives in the TS settings store, so the UI lane gates every
 //! call behind it. These commands never run on their own: detection spawns only `--version` /
 //! offline auth probes, and sessions start solely on an explicit `agent_start`.
+use crate::agent::adapter::McpEndpoint;
 use crate::agent::detect::{self, EngineInfo, ProbeEnv};
 use crate::agent::events::{EngineKind, PermissionDecision, ToolCallResult, AGENT_EVENT};
 use crate::agent::manager::{self, AgentManager, ManagerConfig, StartRequest};
+use crate::agent::mcp::{McpServer, TauriToolSink};
 use crate::error::AppError;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -32,16 +34,40 @@ pub struct AgentStartOptions {
     pub resume_id: Option<String>,
 }
 
-fn todo(cmd: &str) -> AppError {
-    AppError::Other(format!("{cmd} is not implemented yet"))
+pub type AgentState = Arc<AgentManager>;
+
+/// One adapter per engine kind; the manager owns each instance for a single session.
+fn adapter_factory() -> manager::AdapterFactory {
+    Arc::new(
+        |kind| -> Option<Box<dyn crate::agent::adapter::EngineAdapter>> {
+            match kind {
+                EngineKind::Claude => Some(Box::new(crate::agent::claude::ClaudeAdapter::new())),
+                _ => None,
+            }
+        },
+    )
 }
 
-pub type AgentState = Arc<AgentManager>;
+/// Routes manager registrations to the app-wide loopback MCP server, which `agent_start`
+/// starts lazily so nothing listens until the user actually starts an agent.
+struct GlobalMcp;
+
+impl manager::McpEndpointProvider for GlobalMcp {
+    fn register(&self, session_id: &str, tab_id: &str) -> McpEndpoint {
+        match McpServer::global() {
+            Some(server) => server.register_session(session_id, tab_id),
+            None => manager::UnwiredMcp.register(session_id, tab_id),
+        }
+    }
+    fn unregister(&self, session_id: &str) {
+        if let Some(server) = McpServer::global() {
+            server.unregister_session(session_id);
+        }
+    }
+}
 
 /// Build the managed [`AgentManager`]. Events go to the webview as `agent://event`.
 ///
-/// Integration: replace [`manager::no_adapters`] / [`manager::UnwiredMcp`] with the real
-/// adapter factory (acp/claude/codex lanes) and MCP server (mcp lane).
 pub fn create_manager(app: &AppHandle) -> AgentState {
     let data_dir = app
         .path()
@@ -50,8 +76,8 @@ pub fn create_manager(app: &AppHandle) -> AgentState {
     let handle = app.clone();
     AgentManager::new(ManagerConfig {
         agent_root: manager::agent_root(&data_dir),
-        adapters: manager::no_adapters(),
-        mcp: Arc::new(manager::UnwiredMcp),
+        adapters: adapter_factory(),
+        mcp: Arc::new(GlobalMcp),
         sink: Arc::new(move |envelope| {
             if let Err(e) = handle.emit(AGENT_EVENT, &envelope) {
                 log::warn!("agent: emit {AGENT_EVENT} failed: {e}");
@@ -92,6 +118,7 @@ pub async fn agent_detect(overrides: Vec<EngineOverride>) -> Result<Vec<EngineIn
 /// Start an engine session bound to a tab. Returns the app session id.
 #[tauri::command]
 pub async fn agent_start(
+    app: AppHandle,
     state: State<'_, AgentState>,
     options: AgentStartOptions,
 ) -> Result<String, AppError> {
@@ -109,6 +136,9 @@ pub async fn agent_start(
             })
         })?;
     let spawn_env = probe.shell.for_binary(&binary);
+    McpServer::start_global(Arc::new(TauriToolSink(app.clone())))
+        .await
+        .map_err(|e| AppError::Other(format!("could not start the canvas tool server: {e}")))?;
     state
         .inner()
         .start(StartRequest {
