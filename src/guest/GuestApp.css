@@ -1,0 +1,64 @@
+.guest-app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  color: var(--fg-default);
+}
+
+.guest-app__canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.guest-banner {
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.guest-banner--info {
+  background: var(--accent-tint);
+  color: var(--accent-active);
+}
+
+.guest-banner--warn {
+  background: var(--warning-tint);
+  color: var(--warning-fg);
+}
+
+.guest-banner--error {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.guest-name {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.guest-name__label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--fg-muted);
+}
+
+.guest-name__input {
+  width: 100%;
+  box-sizing: border-box;
+  height: var(--control-height-md);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--fg-default);
+  font: inherit;
+}
+
+.guest-name__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
