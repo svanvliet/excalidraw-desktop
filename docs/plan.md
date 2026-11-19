@@ -263,8 +263,8 @@ continue to pass.
 
 ### M9 — Deferred for post-v1
 
-- CI release pipeline that actually signs and publishes.
-- Auto-update via `tauri-plugin-updater`.
+- CI release pipeline that actually signs and publishes. _(Superseded by M11.)_
+- Auto-update via `tauri-plugin-updater`. _(Superseded by M12.)_
 - Linux builds.
 
 ## 5. Tauri capabilities (minimal allowlist)
@@ -279,6 +279,8 @@ continue to pass.
 - `opener:default` (for external URLs only, behind settings).
 - `keyring:default` for secrets.
 
+The updater (M12) adds **no** capability: the webview never calls the plugin's JS API; it uses the app's own `update_status` / `update_check` / `update_install` commands, which run the plugin from Rust.
+
 ## 6. CSP
 
 Static allow-list in `src-tauri/tauri.conf.json` (decision D-C3 — chosen over runtime widening because Tauri 2 can't change CSP per-toggle without a reload; the collab origins stay unused unless a session is started, which is itself gated by the `collab` setting):
@@ -292,6 +294,8 @@ frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'
 ```
 
 Excalidraw fonts are self-hosted (copied to `dist/fonts`, `window.EXCALIDRAW_ASSET_PATH = "/"`) so text never fetches from esm.sh. Tradeoffs: no `'unsafe-eval'` (peers send untrusted scene data), so SVG export embeds full fonts instead of subsets; a desktop guest can only join hosts on `*.devtunnels.ms` or loopback (browser guests are unaffected). `e2e/csp-privacy.spec.ts` guards both. The relay-served guest page sends its own self-only CSP header.
+
+The updater (M12) needs **no CSP change**: `latest.json` and the update artifact are fetched by `tauri-plugin-updater` (reqwest) in Rust, outside the webview. `e2e/csp-privacy.spec.ts` asserts the webview makes no update traffic.
 
 ### M10 — Live collaboration (embedded relay + DevTunnels)
 
@@ -308,6 +312,15 @@ Contract: `docs/collab-protocol.md`. Firebase dropped: on excalidraw.com Firebas
 ### M11 — Local notarized macOS release
 
 `scripts/release-macos.sh` builds the universal DMG locally, signs with the Developer ID cert, notarizes (`notarytool --keychain-profile`), staples, verifies, and uploads to a draft GitHub Release. CI builds only Windows and attaches to the same draft. Runs only after the M10 validation gate passes.
+
+### M12 — Signed auto-update (macOS universal + Windows)
+
+Modeled on tunnel-bar's updater.
+
+- `src-tauri/src/updater.rs`: state machine (idle → checking → upToDate / downloading → ready → installing, or error), event `excalidraw://update-status`, commands in `commands/updater.rs`. Downloads + verifies, holds the bytes, installs only on `update_install`, then `request_restart()`. Disabled in debug builds unless built with `EXCALIDRAW_UPDATE_ENDPOINT` (local tests only).
+- Frontend: `autoUpdate: boolean | null` setting, `updateStore` (scheduler gated on consent), `UpdateController` (consent prompt, ready toast, menu handler), Settings → Updates.
+- Feed: `https://github.com/svanvliet/excalidraw-desktop/releases/latest/download/latest.json` with `darwin-aarch64` + `darwin-x86_64` (both → the universal `.app.tar.gz`, made from the stapled app) and `windows-x86_64` (NSIS setup.exe). Signed with `tauri signer sign --app-version`; `requireSignedVersion: true`; Windows `installMode: passive`.
+- Key: `~/repos/certs/excalidraw-desktop-updater.key` (password in Keychain, service `excalidraw-desktop-updater-key-password`); CI uses the `TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]` secrets. Release scripts / runbooks: `docs/signing-macos.md`, `docs/signing-windows.md`.
 
 ## 7. Decisions log
 
@@ -326,6 +339,9 @@ Contract: `docs/collab-protocol.md`. Firebase dropped: on excalidraw.com Firebas
 | D7   | Vitest + cargo test + Playwright via tauri-driver         | Layered coverage from units to full app smoke.                                                                |
 | D8   | Online features opt-in via settings, off by default       | User wants the capability but no data leaving the box by default.                                             |
 | D9   | Signing/notarization documented, deferred                 | User asked for docs without implementation in v1.                                                             |
+| D-U1 | Auto-update asks once on first launch; never auto-restart | Keeps the offline-first promise explicit; user decides when to restart (unsaved work, live sessions).         |
+| D-U2 | Updater runs in Rust, frontend owns the schedule          | No CSP/capability change; consent lives in one setting; Rust never checks on its own.                         |
+| D-U3 | Updater key local + GitHub secrets; signed versions       | Mac artifacts signed locally like notarization; Windows in CI; `requireSignedVersion` blocks downgrades.      |
 
 ## 8. Risks & mitigations
 
