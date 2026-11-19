@@ -73,7 +73,7 @@
     {
       "name": "add_elements",
       "readOnly": false,
-      "description": "Add elements in Excalidraw skeleton format (type rectangle|ellipse|diamond|text|arrow|line|frame, x, y, width, height, label {text}, strokeColor, backgroundColor, start/end {id} for arrows). Optional agent-chosen ids must not collide. Returns created ids and new revision.",
+      "description": "Add elements in Excalidraw skeleton format (type rectangle|ellipse|diamond|text|arrow|line|frame, x, y, width, height, label {text}, strokeColor, backgroundColor, start/end {id} for arrows). Optional agent-chosen ids must not collide. Returns created ids and new revision. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -93,7 +93,7 @@
     {
       "name": "update_elements",
       "readOnly": false,
-      "description": "Patch existing elements. Allowed fields: x, y, width, height, angle, strokeColor, backgroundColor, fillStyle, strokeWidth, strokeStyle, roughness, opacity, text, fontSize, fontFamily, textAlign, roundness, locked, link. Bound arrows are re-routed.",
+      "description": "Patch existing elements. Allowed fields: x, y (absolute), width, height, angle, strokeColor, backgroundColor, fillStyle, strokeWidth, strokeStyle, roughness, opacity, text (on a container sets its label; empty removes it), fontSize, fontFamily, textAlign, roundness (\"round\" | \"sharp\"), locked, link. Bound labels move with their container and bound arrows are re-routed. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -116,7 +116,7 @@
     {
       "name": "delete_elements",
       "readOnly": false,
-      "description": "Delete elements by id (also removes their bound text and dangling bound arrows).",
+      "description": "Delete elements by id (also removes their bound text and dangling bound arrows). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -131,7 +131,7 @@
     {
       "name": "connect",
       "readOnly": false,
-      "description": "Draw a bound arrow between two existing elements, optionally labeled.",
+      "description": "Draw an arrow bound to two existing elements (it follows them when they move), optionally labeled. style may set strokeColor, strokeWidth, strokeStyle, roughness, opacity, startArrowhead, endArrowhead. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -149,7 +149,7 @@
     {
       "name": "add_mermaid",
       "readOnly": false,
-      "description": "Convert Mermaid source (flowchart, sequence, class...) to native Excalidraw elements and place them at an optional position. Reports when the diagram type fell back to an image.",
+      "description": "Convert Mermaid source (flowchart, sequence, class...) to native Excalidraw elements, placed at x/y or by default to the right of existing content. Reports imageFallback when the diagram type could only be rendered as an image. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -166,7 +166,7 @@
     {
       "name": "arrange",
       "readOnly": false,
-      "description": "Arrange elements: align (left|center|right|top|middle|bottom), distribute (horizontal|vertical), grid {columns,gap}, group, ungroup, or z-order (front|back).",
+      "description": "Arrange elements. action align: value left|center|right|top|middle|bottom. distribute: value horizontal|vertical. grid: columns, gap. group / ungroup. zorder: value front|back. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -188,13 +188,13 @@
     {
       "name": "set_viewport",
       "readOnly": true,
-      "description": "Scroll/zoom the user's view to fit the given ids (or the whole scene). Does not change the drawing or create an undo step.",
+      "description": "Scroll/zoom the user's view to fit the given ids (or the whole scene); optional fixed zoom 0.1-30. Does not change the drawing or create an undo step.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "tabId": { "type": "string" },
           "ids": { "type": "array", "items": { "type": "string" } },
-          "zoom": { "type": "number" }
+          "zoom": { "type": "number", "minimum": 0.1, "maximum": 30 }
         },
         "additionalProperties": false
       }
@@ -202,7 +202,7 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically as one undo step. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, or arrange.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, or arrange (omit tabId/expectedRevision inside ops). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
