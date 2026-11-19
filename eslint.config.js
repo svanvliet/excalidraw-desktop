@@ -31,12 +31,14 @@ export default [
     },
   },
   {
-    // Node-side e2e fixtures (e.g. the reference collab relay).
-    files: ["e2e/fixtures/**/*.mjs"],
+    // Node-side e2e fixtures (e.g. the reference collab relay) and release scripts.
+    files: ["e2e/fixtures/**/*.mjs", "scripts/**/*.mjs"],
     languageOptions: {
       globals: {
         process: "readonly",
         URL: "readonly",
+        Buffer: "readonly",
+        console: "readonly",
       },
     },
   },
