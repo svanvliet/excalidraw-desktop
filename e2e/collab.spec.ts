@@ -140,9 +140,18 @@ test.describe("live collaboration — browser guests", () => {
 
   test("shows the session-ended banner when the room closes", async ({ browser, request }) => {
     const carol = await openGuest(browser, "Carol");
+    await carol.locator("canvas.interactive").click({ position: { x: 600, y: 600 } });
+    await carol.keyboard.press("r");
+    await carol.mouse.move(300, 300);
+    await carol.mouse.down();
+    await carol.mouse.move(420, 400, { steps: 5 });
+    await carol.mouse.up();
+    await carol.waitForFunction(() => (window.__guest?.api.getSceneElements().length ?? 0) > 0);
     const res = await request.post(`${CONTROL}/__end/${ROOM}`);
     expect(res.status()).toBe(204);
     await expect(carol.getByRole("status")).toHaveText(/host ended this session/);
+    // Guests don't keep the shared drawing once the session is over.
+    await carol.waitForFunction(() => window.__guest?.api.getSceneElements().length === 0);
     await carol.context().close();
   });
 });

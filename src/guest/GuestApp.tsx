@@ -115,10 +115,11 @@ export function GuestApp({ link }: GuestAppProps) {
     setLeft(true);
   }, []);
 
-  // Removed: wipe our copy. The socket is closed, so nothing reaches the room.
+  // Left, ended or removed: wipe our copy. The session is already offline, so
+  // nothing reaches the room.
   useEffect(() => {
-    if (status === "removed") api?.resetScene();
-  }, [status, api]);
+    if (left || status === "removed" || status === "ended") api?.resetScene();
+  }, [left, status, api]);
 
   const banner = BANNERS[status];
   const ended = status === "ended" || status === "failed" || status === "removed";

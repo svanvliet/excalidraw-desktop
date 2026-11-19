@@ -211,7 +211,9 @@ Excalidraw editor joined to the room, a top-right "Live N" button (styled
 like Excalidraw's Library button) that opens a session panel (participants,
 rename, Leave session), and a banner when the session ends (close 4000), the
 host removes the guest (close 4001), or the connection drops (auto-reconnect
-with backoff).
+with backoff). Guests don't keep the shared drawing: Leave, session ended, and removed
+all clear the guest's canvas (desktop guests clear the joined tab). The
+engine is stopped first, so the clear never reaches the room.
 
 Guests start as viewers: the canvas is in Excalidraw view mode and a bar
 says "You're viewing this drawing." with **Ask to edit**. The host sees

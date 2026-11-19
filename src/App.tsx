@@ -293,22 +293,27 @@ export function App() {
       scheduleAutosave(collabTabId);
     },
   });
+  // A guest never keeps the shared drawing: when its session goes away (Leave,
+  // host ended, removed), wipe that tab. The engine is already stopped by then,
+  // so the reset can't reach the room.
+  const guestTabRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = guestTabRef.current;
+    guestTabRef.current = collabSession?.role === "guest" ? collabSession.tabId : null;
+    if (prev && prev !== guestTabRef.current) apisRef.current.get(prev)?.resetScene();
+  }, [collabSession]);
+
   useEffect(() => {
     if (collab.status === "ended") {
       leaveCollab();
-      setError("The host ended the live session. Your copy of the drawing is kept in this tab.");
+      setError("The host ended the live session.");
     } else if (collab.status === "removed") {
-      // The socket is already closed, so clearing can't propagate to the room.
-      const api = collabTabId ? apisRef.current.get(collabTabId) : undefined;
-      if (collabSession?.role === "guest") api?.resetScene();
       leaveCollab();
       setError("The host removed you from the live session.");
     } else if (collab.status === "failed" && collab.error) {
       log.warn("collab: session failed", collab.error);
       setError(`Live session error: ${collab.error.message}`);
     }
-    // Only react to status transitions.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collab.status, collab.error, leaveCollab]);
 
   const allowEdit = useCallback((clientId: string) => {
