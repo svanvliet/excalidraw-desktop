@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 import "@excalidraw/excalidraw/index.css";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
+import { sceneContentKey } from "../lib/sceneContent";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -79,22 +80,22 @@ export function ExcalidrawCanvas({
     [onApi],
   );
 
-  // Guard against `onSceneChange` firing during the initial mount before the
-  // user has actually edited anything.
-  const hasMountedRef = useRef(false);
+  // Excalidraw's onChange also fires for selection, scroll, zoom and hover,
+  // so only report a change when the saved content differs: element
+  // versions, attached files, or the background color. The first callback
+  // after a (re)load sets the baseline.
+  const contentKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    hasMountedRef.current = false;
-    // re-arm whenever a new scene is loaded
+    contentKeyRef.current = null;
   }, [initialData]);
 
   const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
     (elements, appState, files) => {
       onCollabChange?.(elements, appState, files);
-      if (!hasMountedRef.current) {
-        hasMountedRef.current = true;
-        return;
-      }
-      onSceneChange();
+      const key = sceneContentKey(elements, appState, files);
+      const prev = contentKeyRef.current;
+      contentKeyRef.current = key;
+      if (prev !== null && prev !== key) onSceneChange();
     },
     [onSceneChange, onCollabChange],
   );
