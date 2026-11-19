@@ -20,7 +20,8 @@
     "rust:fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run rust:fmt:check && npm run rust:lint && npm run rust:test"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run rust:fmt:check && npm run rust:lint && npm run rust:test",
+    "release:mac": "bash scripts/release-macos.sh"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
