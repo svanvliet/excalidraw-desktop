@@ -30,9 +30,10 @@ tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-log = { version = "2", features = ["colored"] }
 log = "0.4.32"
 axum = { version = "0.8", features = ["ws"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "sync", "time", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "sync", "time", "io-util", "io-std"] }
 futures-util = "0.3"
 rand = "0.8"
+reqwest = { version = "0.13", default-features = false }
 mime_guess = "2"
 tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }
 
