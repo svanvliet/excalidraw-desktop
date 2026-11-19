@@ -74,6 +74,10 @@ vi.mock("./ipc/commands", () => ({
   collabStop: vi.fn(async () => COLLAB_OFF),
   collabStart: vi.fn(),
   COLLAB_STATUS_OFF: COLLAB_OFF,
+  UPDATE_STATE_UNAVAILABLE: { status: "idle", currentVersion: "", enabled: false },
+  updateStatus: vi.fn(() => new Promise(() => {})),
+  updateCheck: vi.fn(),
+  updateInstall: vi.fn(),
 }));
 
 import { App } from "./App";

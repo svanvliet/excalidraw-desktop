@@ -10,6 +10,7 @@ import { RecentMenu } from "./components/RecentMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ShareDialog } from "./components/ShareDialog";
 import { JoinDialog } from "./components/JoinDialog";
+import { UpdateController } from "./components/UpdateController";
 import { useCollabStore } from "./stores/collabStore";
 import { collabStop } from "./ipc/commands";
 import type { RoomLink } from "./collab/protocol";
@@ -505,6 +506,12 @@ export function App() {
 
   const handleConfirmCancel = useCallback(() => setPendingClose(null), []);
 
+  // Write pending autosaves before restarting into an update.
+  const flushBeforeUpdate = useCallback(async () => {
+    await Promise.all(useTabsStore.getState().tabs.map((t) => autosaver.flush(t.id)));
+    await persistSession();
+  }, [autosaver]);
+
   const handleMenuAction = useCallback(
     (id: MenuItemId) => {
       switch (id) {
@@ -646,6 +653,7 @@ export function App() {
         onCancel={handleConfirmCancel}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <UpdateController onBeforeRestart={flushBeforeUpdate} />
       <ShareDialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

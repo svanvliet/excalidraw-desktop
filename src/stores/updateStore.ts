@@ -31,6 +31,13 @@ export interface UpdateStoreState extends UpdateState {
   dismiss: () => void;
 }
 
+let beforeInstall: (() => Promise<void>) | null = null;
+
+/** Register work (e.g. flushing autosaves) to run before restarting. */
+export function setBeforeInstall(fn: (() => Promise<void>) | null): void {
+  beforeInstall = fn;
+}
+
 export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
   ...UPDATE_STATE_UNAVAILABLE,
   dismissedVersion: null,
@@ -47,6 +54,12 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
   },
 
   async checkNow(manual = true) {
+    // A manual check re-offers a dismissed update and hides a stale result.
+    if (manual) {
+      const { status } = get();
+      set({ dismissedVersion: null });
+      if (status !== "ready" && status !== "installing") set({ status: "checking", error: null });
+    }
     try {
       set(await updateCheck(manual));
     } catch (e) {
@@ -55,6 +68,11 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
   },
 
   async install() {
+    try {
+      await beforeInstall?.();
+    } catch (e) {
+      log.warn("updateStore: pre-restart hook failed", e);
+    }
     try {
       await updateInstall();
     } catch (e) {
@@ -118,4 +136,5 @@ export function startUpdateScheduler(
 /** Exported for tests. */
 export function __resetUpdateStoreForTests(): void {
   useUpdateStore.setState({ ...UPDATE_STATE_UNAVAILABLE, dismissedVersion: null });
+  beforeInstall = null;
 }
