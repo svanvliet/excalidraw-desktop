@@ -826,6 +826,28 @@ fn replay_simple_turn() {
 }
 
 #[test]
+fn replay_live_0_170() {
+    let r = replay("live_0_170_simple", PermissionDecision::AllowOnce);
+    assert!(r.events.iter().any(|e| matches!(
+        e,
+        AgentEvent::Ready { version: Some(v), .. } if v == "0.170.0"
+    )));
+    assert_eq!(text_of(&r.events), "ok");
+    assert!(matches!(
+        r.events.last(),
+        Some(AgentEvent::TurnEnded {
+            stop_reason: StopReason::EndTurn,
+            usage: Some(_),
+            ..
+        })
+    ));
+    assert!(!r
+        .events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::Error { .. })));
+}
+
+#[test]
 fn replay_command_approval() {
     let r = replay(
         "tool_call_read_only_on_request",
@@ -907,4 +929,126 @@ fn replay_todo_list_plan() {
             ..
         })
     ));
+}
+
+// ---- live smoke (manual) ----
+
+/// `CODEX_BIN=/opt/homebrew/bin/codex cargo test --lib codex::tests::live_smoke -- --ignored --nocapture`
+/// Spawns the real binary with our LaunchSpec and runs one tiny turn (uses a little quota).
+/// `CODEX_RECORD=<path>` writes the raw stdout/stdin transcript as NDJSON.
+#[test]
+#[ignore]
+fn live_smoke() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let bin = std::env::var("CODEX_BIN").expect("set CODEX_BIN");
+    let mut c = cfg();
+    c.binary = bin.into();
+    c.cwd = std::env::temp_dir();
+    // No canvas server in this smoke: point at a closed port (optional server, startup grace).
+    c.mcp.url = "http://127.0.0.1:9/mcp".into();
+    c.system_prompt = "Reply tersely.".into();
+    let mut a = CodexAdapter::new();
+    let spec = a.launch_spec(&c);
+    let mut cmd = Command::new(&spec.program);
+    cmd.args(&spec.args).current_dir(&spec.cwd);
+    for (k, v) in &spec.env_set {
+        cmd.env(k, v);
+    }
+    for k in &spec.env_remove {
+        cmd.env_remove(k);
+    }
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn codex");
+    let mut stdin = child.stdin.take().unwrap();
+    let (tx, rx) = mpsc::channel::<(bool, String)>();
+    let tx2 = tx.clone();
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    std::thread::spawn(move || {
+        for l in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let _ = tx.send((true, l));
+        }
+    });
+    std::thread::spawn(move || {
+        for l in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let _ = tx2.send((false, l));
+        }
+    });
+    let mut transcript: Vec<Value> = vec![];
+    let mut events: Vec<AgentEvent> = vec![];
+    let mut send =
+        |out: AdapterOutput, transcript: &mut Vec<Value>, events: &mut Vec<AgentEvent>| {
+            for w in &out.writes {
+                transcript.push(json!({ "dir": "out", "frame": parse(w) }));
+                writeln!(stdin, "{w}").unwrap();
+            }
+            stdin.flush().unwrap();
+            for e in &out.events {
+                eprintln!("EVENT {}", serde_json::to_string(e).unwrap());
+            }
+            events.extend(out.events);
+        };
+    send(a.start(&c), &mut transcript, &mut events);
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let mut prompted = false;
+    while Instant::now() < deadline {
+        let Ok((is_out, line)) = rx.recv_timeout(Duration::from_secs(1)) else {
+            continue;
+        };
+        let out = if is_out {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                transcript.push(json!({ "dir": "in", "frame": v }));
+            }
+            a.on_line(&line)
+        } else {
+            eprintln!("STDERR {line}");
+            a.on_stderr(&line)
+        };
+        send(out, &mut transcript, &mut events);
+        if !prompted && events.iter().any(|e| matches!(e, AgentEvent::Ready { .. })) {
+            prompted = true;
+            send(
+                a.prompt("t1", "Reply with exactly: ok"),
+                &mut transcript,
+                &mut events,
+            );
+        }
+        if events.iter().any(|e| {
+            matches!(
+                e,
+                AgentEvent::TurnEnded { .. } | AgentEvent::Error { fatal: true, .. }
+            )
+        }) {
+            break;
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    if let Ok(path) = std::env::var("CODEX_RECORD") {
+        let body: Vec<String> = transcript.iter().map(Value::to_string).collect();
+        std::fs::write(path, body.join("\n") + "\n").unwrap();
+    }
+    assert!(
+        events.iter().any(|e| matches!(e, AgentEvent::Ready { .. })),
+        "{events:#?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEvent::TurnEnded {
+                stop_reason: StopReason::EndTurn,
+                ..
+            }
+        )),
+        "{events:#?}"
+    );
+    assert!(text_of(&events).to_lowercase().contains("ok"));
 }
