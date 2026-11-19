@@ -162,6 +162,60 @@ export async function appProfile(): Promise<string | null> {
   return (await invoke<string | null>("app_profile")) ?? null;
 }
 
+// ---------- Updates (src-tauri/src/updater.rs) ----------
+
+export type UpdateStatusKind =
+  | "idle"
+  | "checking"
+  | "upToDate"
+  | "downloading"
+  | "ready"
+  | "installing"
+  | "error";
+
+export interface UpdateState {
+  status: UpdateStatusKind;
+  currentVersion: string;
+  version: string | null;
+  notes: string | null;
+  progress: number | null;
+  error: string | null;
+  lastChecked: string | null;
+  /** False in dev builds and the web preview. */
+  enabled: boolean;
+}
+
+/** Mirror of `updater::UPDATE_STATUS_EVENT`. */
+export const UPDATE_STATUS_EVENT = "excalidraw://update-status";
+
+export const UPDATE_STATE_UNAVAILABLE: UpdateState = {
+  status: "idle",
+  currentVersion: "",
+  version: null,
+  notes: null,
+  progress: null,
+  error: null,
+  lastChecked: null,
+  enabled: false,
+};
+
+export function updateStatus(): Promise<UpdateState> {
+  if (!isTauri()) return Promise.resolve(UPDATE_STATE_UNAVAILABLE);
+  return invoke<UpdateState>("update_status");
+}
+
+/** Check GitHub Releases and download a newer version in the background. */
+export function updateCheck(manual: boolean): Promise<UpdateState> {
+  if (!isTauri()) return Promise.resolve(UPDATE_STATE_UNAVAILABLE);
+  return invoke<UpdateState>("update_check", { manual });
+}
+
+/** Install the downloaded update and restart the app. */
+export function updateInstall(): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("update_install"));
+  return invoke<void>("update_install");
+}
+
 /**
  * Type guard for the shaped error coming back from a failed `invoke`.
  * Tauri rejects with the serialized form when a command returns `Err(...)`.

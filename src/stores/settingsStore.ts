@@ -14,6 +14,9 @@
  *                  system browser. No in-app webview is loaded.
  * - `ai`         — Excalidraw's text-to-diagram AI panel; requires the
  *                  user to supply their own OpenAI key.
+ * - `autoUpdate` — Periodic update checks against GitHub Releases.
+ *                  `null` means "not asked yet": the first-launch prompt
+ *                  sets it, and no check runs until it is `true`.
  *
  * **Secret handling:** for v1 we persist the OpenAI key alongside the
  * other settings in plain `settings.json`. A loud warning is shown in
@@ -46,7 +49,15 @@ export interface CollabSettings {
   collabPort: number;
 }
 
-export type AllSettings = OnlineFeaturesSettings & SecretsSettings & CollabSettings;
+export interface UpdateSettings {
+  /** Automatic update checks. `null` = the user hasn't been asked yet. */
+  autoUpdate: boolean | null;
+}
+
+export type AllSettings = OnlineFeaturesSettings &
+  SecretsSettings &
+  CollabSettings &
+  UpdateSettings;
 
 export interface SettingsState extends AllSettings {
   loaded: boolean;
@@ -61,6 +72,8 @@ export interface SettingsState extends AllSettings {
   setSecret: <K extends keyof SecretsSettings>(key: K, value: SecretsSettings[K]) => Promise<void>;
   /** Update a live-collaboration preference. */
   setCollab: <K extends keyof CollabSettings>(key: K, value: CollabSettings[K]) => Promise<void>;
+  /** Record the automatic-update consent. */
+  setAutoUpdate: (value: boolean) => Promise<void>;
   /** Reset every toggle/secret to its default. Useful for tests + "Reset" UI. */
   resetAll: () => Promise<void>;
 }
@@ -79,6 +92,7 @@ export const SETTINGS_DEFAULTS = {
   collabTunnelMode: "auto",
   collabManualUrl: "",
   collabPort: DEFAULT_COLLAB_PORT,
+  autoUpdate: null,
 } as const satisfies AllSettings;
 const DEFAULTS: AllSettings = SETTINGS_DEFAULTS;
 
@@ -127,6 +141,7 @@ export function sanitize(raw: unknown): AllSettings {
       : DEFAULTS.collabTunnelMode,
     collabManualUrl: isHttpUrl(r.collabManualUrl) ? r.collabManualUrl : DEFAULTS.collabManualUrl,
     collabPort: isValidPort(r.collabPort) ? r.collabPort : DEFAULTS.collabPort,
+    autoUpdate: typeof r.autoUpdate === "boolean" ? r.autoUpdate : DEFAULTS.autoUpdate,
   };
 }
 
@@ -140,6 +155,7 @@ function snapshot(s: AllSettings): AllSettings {
     collabTunnelMode: s.collabTunnelMode,
     collabManualUrl: s.collabManualUrl,
     collabPort: s.collabPort,
+    autoUpdate: s.autoUpdate,
   };
 }
 
@@ -183,6 +199,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     // Persist only valid values; in-progress edits (e.g. a half-typed URL)
     // stay in memory and are sanitized away if the app quits mid-edit.
     await persist(sanitize(snapshot(get())));
+  },
+
+  async setAutoUpdate(value) {
+    set({ autoUpdate: value });
+    await persist(snapshot(get()));
   },
 
   async resetAll() {
