@@ -151,6 +151,12 @@ export function collabStop(): Promise<CollabStatus> {
   return invoke<CollabStatus>("collab_stop");
 }
 
+/** Disconnect one peer from the hosted room (close 4001). */
+export function collabRemovePeer(clientId: string): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("collab_remove_peer"));
+  return invoke<void>("collab_remove_peer", { clientId });
+}
+
 export function collabStatus(): Promise<CollabStatus> {
   if (!isTauri()) return Promise.resolve(COLLAB_STATUS_OFF);
   return invoke<CollabStatus>("collab_status");

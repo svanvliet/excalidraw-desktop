@@ -6,7 +6,12 @@
  * socket. Call `await relay.flush()` to drain pending deliveries.
  */
 import { BaseTransport, type TransportStatus } from "./transport";
-import { MAX_PEERS_PER_ROOM, SESSION_ENDED_CLOSE_CODE, type RelayFrame } from "./protocol";
+import {
+  MAX_PEERS_PER_ROOM,
+  REMOVED_CLOSE_CODE,
+  SESSION_ENDED_CLOSE_CODE,
+  type RelayFrame,
+} from "./protocol";
 
 let nextId = 1;
 function makeClientId(): string {
@@ -36,6 +41,12 @@ export class MemoryRelay {
       this.leave(t);
       t._closed(SESSION_ENDED_CLOSE_CODE);
     }
+  }
+
+  /** Simulates `collab_remove_peer`: closes one socket with 4001. */
+  kick(t: MemoryTransport): void {
+    this.leave(t);
+    t._closed(REMOVED_CLOSE_CODE);
   }
 
   /** Simulates a network drop for one client (non-4000 close). */
@@ -162,7 +173,12 @@ export class MemoryTransport extends BaseTransport {
 
   /** @internal */
   _closed(code: number): void {
-    const next: TransportStatus = code === SESSION_ENDED_CLOSE_CODE ? "ended" : "reconnecting";
+    const next: TransportStatus =
+      code === SESSION_ENDED_CLOSE_CODE
+        ? "ended"
+        : code === REMOVED_CLOSE_CODE
+          ? "removed"
+          : "reconnecting";
     this.setStatus(next);
   }
 }

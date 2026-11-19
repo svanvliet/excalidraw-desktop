@@ -403,6 +403,21 @@ describe("CollabSession", () => {
     expect(b.api.appState.collaborators.size).toBe(0);
   });
 
+  it("reports 'removed' only to the peer the host removed", async () => {
+    const relay = new MemoryRelay();
+    const a = makePeer(relay, { username: "A", isHost: true });
+    const b = makePeer(relay, { username: "B" });
+    await settle(relay);
+
+    relay.kick(b.transport);
+    await settle(relay);
+
+    expect(last(b.statuses)).toBe("removed");
+    expect(b.api.appState.collaborators.size).toBe(0);
+    expect(last(a.statuses)).toBe("connected");
+    expect(a.api.appState.collaborators.size).toBe(0);
+  });
+
   it("re-broadcasts the full scene after reconnecting so offline edits arrive", async () => {
     const relay = new MemoryRelay();
     const a = makePeer(relay, { username: "A", isHost: true, elements: [rect("x", "a0")] });

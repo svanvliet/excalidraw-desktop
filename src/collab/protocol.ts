@@ -9,6 +9,7 @@ export const PROTOCOL_VERSION = 1;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const MAX_PEERS_PER_ROOM = 32;
 export const SESSION_ENDED_CLOSE_CODE = 4000;
+export const REMOVED_CLOSE_CODE = 4001;
 
 // ----- relay frames (plaintext JSON) -----
 

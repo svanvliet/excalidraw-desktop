@@ -9,6 +9,7 @@ import { log } from "../lib/logger";
 import {
   MAX_FRAME_BYTES,
   PROTOCOL_VERSION,
+  REMOVED_CLOSE_CODE,
   SESSION_ENDED_CLOSE_CODE,
   type ClientFrame,
   type RelayErrorCode,
@@ -20,6 +21,7 @@ import {
  * - `connected`: `welcome` received; broadcasts are accepted
  * - `reconnecting`: connection dropped; retrying with backoff
  * - `ended`: host ended the session (close 4000) — terminal
+ * - `removed`: host removed this peer (close 4001) — terminal
  * - `failed`: relay rejected us (unknown room, full, protocol) — terminal
  * - `closed`: we called `close()` — terminal
  */
@@ -28,6 +30,7 @@ export type TransportStatus =
   | "connected"
   | "reconnecting"
   | "ended"
+  | "removed"
   | "failed"
   | "closed";
 
@@ -221,6 +224,12 @@ export class WebSocketTransport extends BaseTransport {
         this.terminal = true;
         log.info("collab transport: session ended by host");
         this.setStatus("ended");
+        return;
+      }
+      if (ev.code === REMOVED_CLOSE_CODE) {
+        this.terminal = true;
+        log.info("collab transport: removed by host");
+        this.setStatus("removed");
         return;
       }
       if (this.terminal) return;

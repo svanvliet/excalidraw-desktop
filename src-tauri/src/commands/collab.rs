@@ -65,6 +65,18 @@ pub async fn collab_stop(manager: State<'_, Arc<CollabManager>>) -> Result<Colla
 }
 
 #[tauri::command]
+pub async fn collab_remove_peer(
+    manager: State<'_, Arc<CollabManager>>,
+    client_id: String,
+) -> Result<(), AppError> {
+    log::info!("collab_remove_peer: {client_id}");
+    manager
+        .remove_peer(&client_id)
+        .await
+        .map_err(AppError::Other)
+}
+
+#[tauri::command]
 pub fn collab_status(manager: State<'_, Arc<CollabManager>>) -> Result<CollabStatus, AppError> {
     Ok(manager.status())
 }

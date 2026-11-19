@@ -4,7 +4,9 @@ mod error;
 mod menu;
 mod profile;
 
-use commands::collab::{app_profile, collab_start, collab_status, collab_stop, AppProfile};
+use commands::collab::{
+    app_profile, collab_remove_peer, collab_start, collab_status, collab_stop, AppProfile,
+};
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
 
@@ -126,6 +128,7 @@ pub fn run() {
             list_scratch,
             collab_start,
             collab_stop,
+            collab_remove_peer,
             collab_status,
             app_profile
         ])

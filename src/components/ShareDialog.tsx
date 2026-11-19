@@ -5,14 +5,16 @@
  *   network activity is possible from this state.
  * - No session → Start session (collab_start with the user's tunnel prefs).
  * - Hosting → relay/tunnel status with actionable errors, the share link,
- *   the local-only link, participant count, and Stop session.
+ *   the local-only link, the participant list (with Remove), and Stop session.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { CollabStatus } from "../ipc/commands";
+import type { CollabPeer } from "../collab/CollabSession";
+import { collabRemovePeer, type CollabStatus } from "../ipc/commands";
 import { selectLocalLink, selectShareLink, useCollabStore } from "../stores/collabStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { log } from "../lib/logger";
 import { CloseIcon, CopyIcon } from "./icons";
+import { ParticipantList } from "./ParticipantList";
 
 export interface ShareDialogProps {
   open: boolean;
@@ -20,9 +22,22 @@ export interface ShareDialogProps {
   /** Tab to share when starting a session. */
   tabId: string | null;
   onOpenSettings: () => void;
+  /** Connected peers from the live session (excluding this app). */
+  peers?: CollabPeer[];
+  /** This app's display name in the session. */
+  selfName?: string;
 }
 
-export function ShareDialog({ open, onClose, tabId, onOpenSettings }: ShareDialogProps) {
+export function ShareDialog({
+  open,
+  onClose,
+  tabId,
+  onOpenSettings,
+  peers = [],
+  selfName = "You",
+}: ShareDialogProps) {
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const collabEnabled = useSettingsStore((s) => s.collab);
   const tunnelMode = useSettingsStore((s) => s.collabTunnelMode);
@@ -53,6 +68,23 @@ export function ShareDialog({ open, onClose, tabId, onOpenSettings }: ShareDialo
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
+
+  const removePeer = useCallback(async (clientId: string) => {
+    setRemoveError(null);
+    setRemoving((s) => new Set(s).add(clientId));
+    try {
+      await collabRemovePeer(clientId);
+    } catch (e) {
+      log.warn("collab: remove peer failed", e);
+      setRemoveError(`Couldn't remove that person: ${String(e)}`);
+    } finally {
+      setRemoving((s) => {
+        const next = new Set(s);
+        next.delete(clientId);
+        return next;
+      });
+    }
+  }, []);
 
   if (!open) return null;
 
@@ -85,9 +117,14 @@ export function ShareDialog({ open, onClose, tabId, onOpenSettings }: ShareDialo
     );
   } else if (session?.role === "guest") {
     body = (
-      <p className="share__text" data-testid="share-guest">
-        You&rsquo;re joined to someone else&rsquo;s session. Only the host can share it further.
-      </p>
+      <>
+        <p className="share__text" data-testid="share-guest">
+          You&rsquo;re joined to someone else&rsquo;s session. Only the host can share it further.
+        </p>
+        <Participants>
+          <ParticipantList selfName={selfName} selfIsHost={false} peers={peers} />
+        </Participants>
+      </>
     );
     actions = (
       <button
@@ -155,9 +192,27 @@ export function ShareDialog({ open, onClose, tabId, onOpenSettings }: ShareDialo
           <dd>{status.running ? `Running on ${status.localBase ?? "127.0.0.1"}` : "Starting…"}</dd>
           <dt>Tunnel</dt>
           <dd data-testid="share-tunnel-state">{tunnelLabel(status)}</dd>
-          <dt>Participants</dt>
-          <dd data-testid="share-peer-count">{status.peerCount}</dd>
         </dl>
+        <Participants count={peers.length + 1}>
+          <ParticipantList
+            selfName={selfName}
+            selfIsHost
+            peers={peers}
+            onRemove={(id) => void removePeer(id)}
+            removing={removing}
+          />
+          {peers.length > 0 ? (
+            <p className="settings__hint">
+              Removed people can rejoin with the link. To revoke it, stop the session and start a
+              new one.
+            </p>
+          ) : null}
+          {removeError ? (
+            <p className="share__error" role="alert">
+              {removeError}
+            </p>
+          ) : null}
+        </Participants>
         {status.tunnel.state === "error" && status.tunnel.error ? (
           <TunnelErrorHelp error={status.tunnel.error} />
         ) : null}
@@ -227,6 +282,17 @@ export function ShareDialog({ open, onClose, tabId, onOpenSettings }: ShareDialo
         </div>
       </div>
     </div>
+  );
+}
+
+function Participants({ count, children }: { count?: number; children: ReactNode }) {
+  return (
+    <section className="share__people">
+      <h3 className="share__people-title" data-testid="share-peer-count">
+        {count === undefined ? "In this session" : `In this session (${count})`}
+      </h3>
+      {children}
+    </section>
   );
 }
 

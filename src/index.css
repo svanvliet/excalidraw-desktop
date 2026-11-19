@@ -868,6 +868,60 @@ button {
   min-width: 0;
 }
 
+.share__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.share__people-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+/* Participant list shared by the host Share dialog and the guest panel. */
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.people__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  font-size: var(--font-size-sm);
+  color: var(--fg-default);
+}
+
+.people__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__tag {
+  flex-shrink: 0;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: var(--font-size-xs);
+}
+
+.people__remove {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Live badge on the toolbar Share button while hosting. */
 .toolbar__live-badge {
   min-width: 18px;

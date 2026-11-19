@@ -21,8 +21,9 @@ use tokio::task::JoinHandle;
 
 use super::protocol::{
     is_valid_room_id, new_client_id, parse_client_frame, ClientFrame, ErrorCode, ParseError,
-    ServerFrame, CLOSE_POLICY, CLOSE_SESSION_ENDED, CLOSE_TRY_AGAIN_LATER, CLOSE_UNSUPPORTED_DATA,
-    HARD_FRAME_BYTES, MAX_FRAME_BYTES, MAX_PEERS_PER_ROOM, PROTOCOL_VERSION,
+    ServerFrame, CLOSE_POLICY, CLOSE_REMOVED, CLOSE_SESSION_ENDED, CLOSE_TRY_AGAIN_LATER,
+    CLOSE_UNSUPPORTED_DATA, HARD_FRAME_BYTES, MAX_FRAME_BYTES, MAX_PEERS_PER_ROOM,
+    PROTOCOL_VERSION,
 };
 
 /// CSP for the guest web app. `wasm-unsafe-eval` is needed by Excalidraw's
@@ -260,6 +261,20 @@ impl RelayServer {
             }
             self.state.notify(room, 0);
         }
+    }
+
+    /// Close one peer's socket with code 4001. Returns false if it isn't in `room`.
+    pub fn kick_peer(&self, room: &str, client_id: &str) -> bool {
+        let rooms = self.state.rooms.lock().unwrap();
+        let Some(peer) = rooms
+            .get(room)
+            .and_then(|peers| peers.iter().find(|p| p.id == client_id))
+        else {
+            return false;
+        };
+        log::info!("collab relay: removing peer {client_id} from room {room}");
+        peer.close(CLOSE_REMOVED, "removed by host");
+        true
     }
 
     pub fn peer_count(&self, room: &str) -> usize {

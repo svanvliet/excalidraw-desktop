@@ -293,6 +293,19 @@ impl CollabManager {
         }
     }
 
+    /// Disconnect one peer from the active room (close 4001).
+    pub async fn remove_peer(&self, client_id: &str) -> Result<(), String> {
+        let inner = self.inner.lock().await;
+        let (Some(relay), Some(room)) = (inner.relay.as_ref(), inner.room.as_deref()) else {
+            return Err("no active session".to_owned());
+        };
+        if relay.kick_peer(room, client_id) {
+            Ok(())
+        } else {
+            Err(format!("unknown peer {client_id}"))
+        }
+    }
+
     pub async fn stop(&self) -> CollabStatus {
         let mut inner = self.inner.lock().await;
         self.stop_locked(&mut inner).await;

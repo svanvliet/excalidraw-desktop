@@ -240,6 +240,20 @@ async fn close_room_sends_4000_to_everyone() {
 }
 
 #[tokio::test]
+async fn kick_peer_closes_only_that_peer_with_4001() {
+    let s = server().await;
+    let (mut a, a_id, _) = join(s.port()).await;
+    let (mut b, b_id, _) = join(s.port()).await;
+    let _ = recv(&mut a).await;
+    assert!(!s.kick_peer(ROOM, "0000000000000000"));
+    assert!(s.kick_peer(ROOM, &b_id));
+    assert_eq!(recv_close(&mut b).await, CLOSE_REMOVED);
+    let pa = recv(&mut a).await;
+    assert_eq!(pa, json!({"type":"peers","peers":[a_id]}));
+    assert_eq!(s.peer_count(ROOM), 1);
+}
+
+#[tokio::test]
 async fn peer_count_callback_fires() {
     let counts = Arc::new(Mutex::new(Vec::new()));
     let sink = counts.clone();

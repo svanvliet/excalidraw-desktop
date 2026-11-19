@@ -274,10 +274,12 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [collabTabId, apiTick],
   );
+  const collabUsername =
+    collabDisplayName.trim() || (collabSession?.role === "host" ? "Host" : "Guest");
   const collab = useCollabSession({
     api: collabApi,
     link: collabLink,
-    username: collabDisplayName.trim() || (collabSession?.role === "host" ? "Host" : "Guest"),
+    username: collabUsername,
     isHost: collabSession?.role === "host",
     onRemoteChange: () => {
       if (!collabTabId) return;
@@ -289,6 +291,11 @@ export function App() {
     if (collab.status === "ended") {
       leaveCollab();
       setError("The host ended the live session. Your copy of the drawing is kept in this tab.");
+    } else if (collab.status === "removed") {
+      leaveCollab();
+      setError(
+        "The host removed you from the live session. Your copy of the drawing is kept in this tab.",
+      );
     } else if (collab.status === "failed" && collab.error) {
       log.warn("collab: session failed", collab.error);
       setError(`Live session error: ${collab.error.message}`);
@@ -651,6 +658,8 @@ export function App() {
         onClose={() => setShareOpen(false)}
         tabId={activeTabId}
         onOpenSettings={() => setSettingsOpen(true)}
+        peers={collabSession ? collab.peers : []}
+        selfName={collabUsername}
       />
       <JoinDialog
         open={joinOpen}

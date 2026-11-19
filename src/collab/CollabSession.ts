@@ -231,7 +231,7 @@ export class CollabSession {
     switch (e.type) {
       case "status":
         if (e.status !== "connected") this.setStatus(e.status, e.error);
-        if (e.status === "reconnecting" || e.status === "ended" || e.status === "failed") {
+        if (e.status !== "connecting" && e.status !== "connected") {
           this.peerIds.clear();
           this.collaborators.clear();
           this.pushCollaborators();

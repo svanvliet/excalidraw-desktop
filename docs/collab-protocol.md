@@ -65,6 +65,13 @@ dropped under backpressure; non-volatile must be delivered in order.
 When the host calls `collab_stop`, the relay closes all sockets in the room with
 close code **4000** ("session ended").
 
+When the host calls `collab_remove_peer(clientId)`, the relay closes only that
+peer's socket with close code **4001** ("removed by host") and broadcasts the
+updated `peers` list. Clients treat 4001 as terminal (status `"removed"`, no
+auto-reconnect). This is not a ban: the removed person can still reopen the
+link. To revoke access, the host stops the session and starts a new one (new
+room id + key).
+
 Other close codes: **1008** after a fatal `error` frame (`unknown_room`,
 `room_full`, `protocol`), **1003** malformed JSON, **1013** peer too slow to
 drain its non-volatile backlog, **1001** relay shutting down (sockets not yet
@@ -127,6 +134,7 @@ interface CollabStatus {
 }
 collab_start(args) -> CollabStatus   // starts relay (idempotent), registers room, starts tunnel
 collab_stop() -> CollabStatus        // closes room (4000), stops tunnel host process + relay
+collab_remove_peer(clientId) -> ()  // closes that peer (4001); errors "no active session" / "unknown peer"
 collab_status() -> CollabStatus
 event "collab://status" (payload CollabStatus) on every change
 ```
@@ -167,6 +175,8 @@ frontend via `app_profile() -> string | null`.
 
 When the bundle runs outside Tauri and `location.hash` contains `#room=`, the
 app renders `GuestApp`: name prompt (remembered in `localStorage`), a full
-Excalidraw editor joined to the room, `LiveCollaborationTrigger` showing
-participants, and a banner when the session ends (close 4000) or the
-connection drops (auto-reconnect with backoff).
+Excalidraw editor joined to the room, a top-right "Live N" button (styled
+like Excalidraw's Library button) that opens a session panel (participants,
+rename, Leave session), and a banner when the session ends (close 4000), the
+host removes the guest (close 4001), or the connection drops (auto-reconnect
+with backoff).

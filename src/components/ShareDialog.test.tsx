@@ -5,6 +5,7 @@ import type { CollabStartArgs, CollabStatus } from "../ipc/commands";
 const ipc = vi.hoisted(() => ({
   collabStart: vi.fn<(args: CollabStartArgs) => Promise<CollabStatus>>(),
   collabStop: vi.fn<() => Promise<CollabStatus>>(),
+  collabRemovePeer: vi.fn<(id: string) => Promise<void>>(),
 }));
 vi.mock("../ipc/commands", async (orig) => {
   const actual = await orig<typeof import("../ipc/commands")>();
@@ -12,6 +13,7 @@ vi.mock("../ipc/commands", async (orig) => {
     ...actual,
     collabStart: (a: CollabStartArgs) => ipc.collabStart(a),
     collabStop: () => ipc.collabStop(),
+    collabRemovePeer: (id: string) => ipc.collabRemovePeer(id),
   };
 });
 
@@ -96,7 +98,12 @@ describe("ShareDialog", () => {
       tunnel: { mode: "auto", state: "ready", error: null },
       peerCount: 3,
     });
-    renderDialog();
+    renderDialog({
+      peers: [
+        { clientId: "a", username: "Ann", isHost: false, userState: "active" },
+        { clientId: "b", username: "Bob", isHost: false, userState: "idle" },
+      ],
+    });
     const link = screen.getByTestId<HTMLInputElement>("share-link");
     expect(link.value).toBe(
       "https://abc-4780.usw3.devtunnels.ms/#room=0123456789abcdef0123,AAAAAAAAAAAAAAAAAAAAAA",
@@ -108,6 +115,19 @@ describe("ShareDialog", () => {
     fireEvent.click(screen.getByTestId("share-link-copy"));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(link.value));
     expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+
+  it("lists participants and removes one via collab_remove_peer", async () => {
+    useSettingsStore.setState({ collab: true });
+    ipc.collabRemovePeer.mockResolvedValue(undefined);
+    hostSession({ tunnel: { mode: "auto", state: "ready", error: null } });
+    renderDialog({
+      selfName: "Scott",
+      peers: [{ clientId: "c1", username: "Ann", isHost: false, userState: "active" }],
+    });
+    expect(screen.getByTestId("participants")).toHaveTextContent(/Scott.*you · host.*Ann/);
+    fireEvent.click(screen.getByRole("button", { name: "Remove Ann" }));
+    await waitFor(() => expect(ipc.collabRemovePeer).toHaveBeenCalledWith("c1"));
   });
 
   it.each([

@@ -13,6 +13,8 @@ pub const HARD_FRAME_BYTES: usize = 2 * MAX_FRAME_BYTES;
 pub const MAX_PEERS_PER_ROOM: usize = 32;
 /// Close code sent to every peer when the host ends the session.
 pub const CLOSE_SESSION_ENDED: u16 = 4000;
+/// The host removed this peer from the room.
+pub const CLOSE_REMOVED: u16 = 4001;
 /// Close code after `unknown_room` / `room_full` / `protocol` errors.
 pub const CLOSE_POLICY: u16 = 1008;
 /// Close code for malformed JSON.
