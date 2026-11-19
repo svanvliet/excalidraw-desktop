@@ -804,3 +804,103 @@ fn prompt_before_start_errors() {
     ));
     assert!(matches!(&out.events[2], AgentEvent::TurnEnded { .. }));
 }
+
+// ---- round trip against examples/fake_acp_agent.rs ---------------------------------------------
+
+/// Drives the adapter against the real fake-agent process (built by `cargo test` alongside the
+/// examples). Skipped when the example binary is not present.
+#[test]
+fn round_trip_with_fake_acp_agent() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let exe = std::env::current_exe().unwrap();
+    let bin = exe
+        .parent()
+        .and_then(|deps| deps.parent())
+        .map(|dir| {
+            dir.join("examples")
+                .join(format!("fake_acp_agent{}", std::env::consts::EXE_SUFFIX))
+        })
+        .unwrap();
+    if !bin.exists() {
+        eprintln!("skipping: {} not built", bin.display());
+        return;
+    }
+    let mut c = cfg();
+    c.binary = bin.clone();
+    let mut a = AcpAdapter::generic(EngineKind::Claude, vec![]);
+    let spec = a.launch_spec(&c);
+    let mut child = Command::new(&spec.program)
+        .args(&spec.args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut write = |out: &AdapterOutput| {
+        for w in &out.writes {
+            writeln!(stdin, "{w}").unwrap();
+        }
+        stdin.flush().unwrap();
+    };
+
+    let mut events = Vec::new();
+    write(&a.start(&c));
+    write(&a.prompt("t1", "draw a box"));
+    let ended = loop {
+        let line = lines.next().expect("agent closed stdout").unwrap();
+        let out = a.on_line(&line);
+        write(&out);
+        for e in out.events {
+            if let AgentEvent::PermissionRequest { request_id, .. } = &e {
+                write(&a.respond_permission(request_id, PermissionDecision::AllowOnce));
+            }
+            let done = matches!(e, AgentEvent::TurnEnded { .. });
+            events.push(e);
+            if done {
+                break;
+            }
+        }
+        if let Some(AgentEvent::TurnEnded { .. }) = events.last() {
+            break events.last().cloned().unwrap();
+        }
+    };
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(matches!(&events[0], AgentEvent::Ready { version: Some(v), .. } if v == "0.1.0"));
+    let text: String = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::TextDelta { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(text.contains("You said: draw a box"), "{text}");
+    assert!(text.contains("Permission outcome: allow-once."), "{text}");
+    let calls = tool_calls(&events);
+    assert!(calls.contains(&(
+        "fake-tool-1",
+        "mcp__excalidraw__add_elements",
+        ToolSource::Canvas,
+        ToolCallStatus::Completed
+    )));
+    assert!(calls
+        .iter()
+        .any(|c| c.0 == "fake-tool-2" && c.3 == ToolCallStatus::Completed));
+    assert_eq!(
+        ended,
+        AgentEvent::TurnEnded {
+            turn_id: "t1".into(),
+            stop_reason: StopReason::EndTurn,
+            usage: Some(Usage {
+                input_tokens: Some(42),
+                output_tokens: Some(7),
+                premium_requests: None
+            })
+        }
+    );
+}
