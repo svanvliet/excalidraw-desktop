@@ -36,11 +36,19 @@ import { log } from "../lib/logger";
 // Turn hooks — implemented by the scene-tools lane (undo step + Revert turn).
 // ---------------------------------------------------------------------------
 
+/** `"conflict"`: someone edited the agent's elements since; retry with `force` after confirming. */
+export type RevertOutcome = boolean | "conflict";
+
 export interface TurnController {
   beginTurn(tabId: string, turnId: string): void;
-  endTurn(tabId: string, turnId: string): void;
+  /** Returns how many elements the turn touched (0 hides "Revert turn"), if known. */
+  endTurn(tabId: string, turnId: string): number | void;
   /** Resolve false (or throw) if the turn couldn't be reverted. */
-  revertTurn(tabId: string, turnId: string): Promise<boolean> | boolean;
+  revertTurn(
+    tabId: string,
+    turnId: string,
+    opts?: { force?: boolean },
+  ): Promise<RevertOutcome> | RevertOutcome;
 }
 
 const NOOP_TURN_CONTROLLER: TurnController = {
@@ -88,7 +96,7 @@ export type TranscriptItem =
       turnId: string;
       stopReason: StopReason;
       usage: Usage | null;
-      revert: "available" | "reverting" | "reverted" | "failed";
+      revert: "available" | "reverting" | "reverted" | "failed" | "conflict" | "none";
     }
   | { kind: "error"; id: string; errorKind: ErrorKind; message: string; fatal: boolean };
 
@@ -321,7 +329,7 @@ export interface AgentState {
     requestId: string,
     decision: PermissionDecision,
   ) => Promise<void>;
-  revertTurn: (tabId: string, turnId: string) => Promise<void>;
+  revertTurn: (tabId: string, turnId: string, force?: boolean) => Promise<void>;
   setAttachedFolder: (tabId: string, path: string | null) => Promise<void>;
   /** Drop the session (keeps engine) so the next prompt starts fresh. */
   newConversation: (tabId: string) => Promise<void>;
@@ -582,8 +590,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
     },
 
-    async revertTurn(tabId, turnId) {
-      const setRevert = (r: "available" | "reverting" | "reverted" | "failed") =>
+    async revertTurn(tabId, turnId, force = false) {
+      const setRevert = (r: "available" | "reverting" | "reverted" | "failed" | "conflict") =>
         patch(tabId, (x) => ({
           ...x,
           items: x.items.map((it) =>
@@ -592,8 +600,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
         }));
       setRevert("reverting");
       try {
-        const ok = await turnController.revertTurn(tabId, turnId);
-        setRevert(ok ? "reverted" : "failed");
+        const ok = await turnController.revertTurn(tabId, turnId, { force });
+        setRevert(ok === "conflict" ? "conflict" : ok ? "reverted" : "failed");
       } catch (e) {
         log.warn("agentStore: revertTurn failed", e);
         setRevert("failed");
@@ -666,7 +674,18 @@ export const useAgentStore = create<AgentState>((set, get) => {
         if (e.type === "turnStarted") {
           turnController.beginTurn(env.tabId, e.turnId);
         } else if (e.type === "turnEnded") {
-          turnController.endTurn(env.tabId, e.turnId);
+          if (turnController.endTurn(env.tabId, e.turnId) === 0) {
+            set((s) => {
+              const c = s.conversations[env.tabId];
+              if (!c) return s;
+              const items = c.items.map((it) =>
+                it.kind === "turnEnd" && it.turnId === e.turnId
+                  ? { ...it, revert: "none" as const }
+                  : it,
+              );
+              return { conversations: { ...s.conversations, [env.tabId]: { ...c, items } } };
+            });
+          }
         } else if (prev.currentTurnId && next.currentTurnId === null) {
           // Fatal error / exit mid-turn: still close the undo step.
           turnController.endTurn(env.tabId, prev.currentTurnId);

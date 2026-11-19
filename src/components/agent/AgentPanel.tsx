@@ -257,7 +257,7 @@ export function AgentPanel({
             onPermission={(requestId, decision) =>
               tabId && void store().respondPermission(tabId, requestId, decision)
             }
-            onRevert={(turnId) => tabId && void store().revertTurn(tabId, turnId)}
+            onRevert={(turnId, force) => tabId && void store().revertTurn(tabId, turnId, force)}
             onRetry={() => tabId && void store().retry(tabId)}
           />
         ))}

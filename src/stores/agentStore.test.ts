@@ -310,7 +310,7 @@ describe("agentStore session flow", () => {
     expect(tc.endTurn).toHaveBeenCalledWith("t1", "T");
 
     await useAgentStore.getState().revertTurn("t1", "T");
-    expect(tc.revertTurn).toHaveBeenCalledWith("t1", "T");
+    expect(tc.revertTurn).toHaveBeenCalledWith("t1", "T", { force: false });
     const marker = useAgentStore
       .getState()
       .conversations.t1.items.find((i) => i.kind === "turnEnd");
@@ -320,6 +320,35 @@ describe("agentStore session flow", () => {
     emit("t1", "s1", { type: "exited", code: 1 });
     expect(tc.endTurn).toHaveBeenCalledWith("t1", "T2");
     expect(useAgentStore.getState().conversations.t1.sessionId).toBeNull();
+  });
+
+  it("hides Revert for turns without edits and asks before forcing a conflicting revert", async () => {
+    const tc = {
+      beginTurn: vi.fn(),
+      endTurn: vi.fn((_tab: string, turnId: string) => (turnId === "empty" ? 0 : 2)),
+      revertTurn: vi.fn(async (_t: string, _u: string, o?: { force?: boolean }) =>
+        o?.force ? true : ("conflict" as const),
+      ),
+    };
+    setTurnController(tc);
+    await enableAi();
+    await useAgentStore.getState().send("t1", "go");
+    const marker = (turnId: string) =>
+      useAgentStore
+        .getState()
+        .conversations.t1.items.find((i) => i.kind === "turnEnd" && i.turnId === turnId);
+    for (const id of ["empty", "T"]) {
+      emit("t1", "s1", { type: "turnStarted", turnId: id });
+      emit("t1", "s1", { type: "turnEnded", turnId: id, stopReason: "endTurn", usage: null });
+    }
+    expect(marker("empty")).toMatchObject({ revert: "none" });
+    expect(marker("T")).toMatchObject({ revert: "available" });
+
+    await useAgentStore.getState().revertTurn("t1", "T");
+    expect(marker("T")).toMatchObject({ revert: "conflict" });
+    await useAgentStore.getState().revertTurn("t1", "T", true);
+    expect(tc.revertTurn).toHaveBeenLastCalledWith("t1", "T", { force: true });
+    expect(marker("T")).toMatchObject({ revert: "reverted" });
   });
 
   it("agentStart failure surfaces an actionable error", async () => {

@@ -39,10 +39,11 @@ pub struct EngineInfo {
 /// Minimum supported engine versions. Conservative picks, re-verified in the AI-0 spikes:
 /// - Copilot CLI: 1.0.0 — first GA line; `--acp` shipped in late 0.0.x previews (Jan 2026).
 /// - Claude Code: 2.0.0 — stream-json I/O, `--append-system-prompt`, `--permission-prompt-tool`.
-/// - Codex: 0.60.0 — `codex app-server` v2 protocol and `codex login status`.
+/// - Codex: owned by the adapter (`codex::CODEX_MIN_VERSION`) — the oldest app-server protocol
+///   it was tested against.
 pub const MIN_COPILOT_VERSION: &str = "1.0.0";
 pub const MIN_CLAUDE_VERSION: &str = "2.0.0";
-pub const MIN_CODEX_VERSION: &str = "0.60.0";
+pub const MIN_CODEX_VERSION: &str = crate::agent::codex::CODEX_MIN_VERSION;
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -942,7 +943,7 @@ mod tests {
             write_exe(
                 dir.path(),
                 "codex",
-                r#"case "$1" in --version) echo "codex-cli 0.70.1";; login) echo "Logged in using ChatGPT" >&2;; esac"#,
+                r#"case "$1" in --version) echo "codex-cli 0.170.0";; login) echo "Logged in using ChatGPT" >&2;; esac"#,
             );
             let p = probe(dir.path());
             let all = detect_all(&[], &p).await;

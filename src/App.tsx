@@ -6,6 +6,7 @@ import { ExcalidrawCanvas } from "./components/ExcalidrawCanvas";
 import { Toolbar } from "./components/Toolbar";
 import { AgentPanel } from "./components/agent/AgentPanel";
 import { installAgentStore, useAgentStore } from "./stores/agentStore";
+import { installAgentRuntime } from "./agent/runtime";
 import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
@@ -664,6 +665,7 @@ export function App() {
   }, [handleMenuAction]);
 
   useEffect(() => installAgentStore(), []);
+  useEffect(() => installAgentRuntime(), []);
 
   // ⌘/Ctrl+Shift+A toggles the AI panel (only while AI is on). Capture phase
   // so Excalidraw's own key handling doesn't see it.

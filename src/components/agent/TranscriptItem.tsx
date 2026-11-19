@@ -15,7 +15,7 @@ export interface TranscriptItemProps {
   engine: EngineKind | null;
   streaming: boolean;
   onPermission: (requestId: string, decision: PermissionDecision) => void;
-  onRevert: (turnId: string) => void;
+  onRevert: (turnId: string, force?: boolean) => void;
   onRetry: () => void;
 }
 
@@ -146,12 +146,26 @@ export function TranscriptItemView({
       return (
         <div className="agent-turn-end" data-testid="agent-turn-end">
           {note ? <span className="agent-turn-end__note">{note}</span> : null}
-          {item.revert === "reverted" ? (
+          {item.revert === "none" ? null : item.revert === "reverted" ? (
             <span className="agent-turn-end__note">Turn reverted</span>
           ) : item.revert === "failed" ? (
             <span className="agent-turn-end__note agent-turn-end__note--error">
-              Couldn&apos;t revert — the canvas changed since
+              Couldn&apos;t revert this turn
             </span>
+          ) : item.revert === "conflict" ? (
+            <>
+              <span className="agent-turn-end__note agent-turn-end__note--error">
+                Some of these elements were edited since. Reverting will discard those edits.
+              </span>
+              <button
+                type="button"
+                className="icon-btn icon-btn--danger agent-turn-end__revert"
+                onClick={() => onRevert(item.turnId, true)}
+              >
+                <UndoIcon />
+                <span>Revert anyway</span>
+              </button>
+            </>
           ) : (
             <button
               type="button"

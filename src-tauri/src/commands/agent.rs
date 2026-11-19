@@ -43,7 +43,7 @@ fn adapter_factory() -> manager::AdapterFactory {
             match kind {
                 EngineKind::Claude => Some(Box::new(crate::agent::claude::ClaudeAdapter::new())),
                 EngineKind::Copilot => Some(Box::new(crate::agent::acp::AcpAdapter::copilot())),
-                _ => None,
+                EngineKind::Codex => Some(Box::new(crate::agent::codex::CodexAdapter::new())),
             }
         },
     )
