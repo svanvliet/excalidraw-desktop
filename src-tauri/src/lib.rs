@@ -1,4 +1,4 @@
-mod collab;
+pub mod collab;
 mod commands;
 mod error;
 mod menu;

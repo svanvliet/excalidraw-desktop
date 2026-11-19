@@ -9,6 +9,8 @@ import { test, expect, type Browser, type Page } from "@playwright/test";
  */
 
 const RELAY = "http://127.0.0.1:4174";
+// The Rust relay exposes its test-only `/__end` hook on a separate port.
+const CONTROL = process.env.COLLAB_RELAY === "rust" ? "http://127.0.0.1:4175" : RELAY;
 const ROOM = "0123456789abcdef0123";
 const KEY = "AAAAAAAAAAAAAAAAAAAAAA";
 const ROOM_URL = `${RELAY}/#room=${ROOM},${KEY}`;
@@ -88,7 +90,7 @@ test.describe("live collaboration — browser guests", () => {
 
   test("shows the session-ended banner when the room closes", async ({ browser, request }) => {
     const carol = await openGuest(browser, "Carol");
-    const res = await request.post(`${RELAY}/__end/${ROOM}`);
+    const res = await request.post(`${CONTROL}/__end/${ROOM}`);
     expect(res.status()).toBe(204);
     await expect(carol.getByRole("status")).toHaveText(/host ended this session/);
     await carol.context().close();
