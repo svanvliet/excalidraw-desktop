@@ -799,3 +799,85 @@ button {
 .popover__panel::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ----------------------------- Share / Join dialogs ----------------------------- */
+
+.modal__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.share__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.share__text {
+  margin: 0;
+  font-size: var(--font-size-md);
+  line-height: var(--line-default);
+  color: var(--fg-default);
+}
+
+.share__status {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.share__status dt {
+  color: var(--fg-muted);
+}
+
+.share__status dd {
+  margin: 0;
+  color: var(--fg-default);
+}
+
+.share__error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--danger-tint);
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-default);
+}
+
+.share__code {
+  display: block;
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  user-select: all;
+}
+
+.share__link-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.share__link-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Live badge on the toolbar Share button while hosting. */
+.toolbar__live-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-1);
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}

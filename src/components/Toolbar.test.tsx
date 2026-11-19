@@ -74,4 +74,47 @@ describe("Toolbar", () => {
     expect(props.onSave).toHaveBeenCalledTimes(1);
     expect(props.onSaveAs).toHaveBeenCalledTimes(1);
   });
+
+  it("hides Share/Join unless handlers are provided", () => {
+    setup();
+    expect(screen.queryByTestId("toolbar-share")).toBeNull();
+    expect(screen.queryByTestId("toolbar-join")).toBeNull();
+  });
+
+  it("wires Share and Join, and shows a live peer badge only while hosting", () => {
+    const onShare = vi.fn();
+    const onJoin = vi.fn();
+    const { rerender } = render(
+      <Toolbar
+        documentPath={null}
+        dirty={false}
+        onOpen={() => {}}
+        onSave={() => {}}
+        onSaveAs={() => {}}
+        onShare={onShare}
+        onJoin={onJoin}
+        livePeerCount={null}
+      />,
+    );
+    expect(screen.queryByTestId("toolbar-live-badge")).toBeNull();
+    fireEvent.click(screen.getByTestId("toolbar-share"));
+    fireEvent.click(screen.getByRole("button", { name: "Join session…" }));
+    expect(onShare).toHaveBeenCalledTimes(1);
+    expect(onJoin).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <Toolbar
+        documentPath={null}
+        dirty={false}
+        onOpen={() => {}}
+        onSave={() => {}}
+        onSaveAs={() => {}}
+        onShare={onShare}
+        onJoin={onJoin}
+        livePeerCount={3}
+      />,
+    );
+    expect(screen.getByTestId("toolbar-live-badge")).toHaveTextContent("3");
+    expect(screen.getByTestId("toolbar-share")).toHaveAttribute("data-pressed", "true");
+  });
 });
