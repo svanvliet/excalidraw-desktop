@@ -144,7 +144,8 @@ fi
 remote_tag_sha="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
 [[ -n "$remote_tag_sha" ]] || remote_tag_sha="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
 if [[ -n "$remote_tag_sha" && "$remote_tag_sha" != "$HEAD_SHA" ]]; then
-  die "tag $TAG already exists on origin at ${remote_tag_sha:0:12} (HEAD is ${HEAD_SHA:0:12}). Pick a new version with --bump."
+  msg="tag $TAG already exists on origin at ${remote_tag_sha:0:12} (HEAD is ${HEAD_SHA:0:12}). Pick a new version with --bump."
+  if [[ $PUBLISH -eq 1 ]]; then die "$msg"; else warn "$msg"; fi
 fi
 
 security find-identity -p codesigning -v | grep -Fq "\"$APPLE_SIGNING_IDENTITY\"" ||
