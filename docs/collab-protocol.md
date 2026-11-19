@@ -90,8 +90,10 @@ type Payload =
 Rules:
 
 - Newcomer (`firstInRoom=false`) sends `HELLO` then `SYNC_REQUEST`. The **host**
-  answers with `SCENE_INIT` + `FILES` for referenced files. Non-hosts ignore
-  `SYNC_REQUEST` unless no host is in the room.
+  answers with `FILES` for referenced files (sent first, so images resolve on
+  arrival) then `SCENE_INIT`. Non-hosts ignore `SYNC_REQUEST` unless no host is
+  in the room; then only the guest with the lowest `clientId` (excluding the
+  requester) answers.
 - Merging uses Excalidraw's `reconcileElements` (version / versionNonce).
   Remote updates apply with `CaptureUpdateAction.NEVER` so they don't pollute undo.
 - `SCENE_UPDATE` is throttled (~50 ms) and sends only elements whose `version`
