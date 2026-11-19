@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod collab;
 mod commands;
 mod error;
@@ -5,6 +6,10 @@ mod menu;
 mod profile;
 mod updater;
 
+use commands::agent::{
+    agent_cancel, agent_detect, agent_permission_respond, agent_prompt, agent_start, agent_stop,
+    agent_tool_result,
+};
 use commands::collab::{
     app_profile, collab_remove_peer, collab_set_role, collab_start, collab_status, collab_stop,
     AppProfile,
@@ -140,7 +145,14 @@ pub fn run() {
             update_install,
             file_open_ready,
             set_recent_menu,
-            os_user_name
+            os_user_name,
+            agent_detect,
+            agent_start,
+            agent_prompt,
+            agent_cancel,
+            agent_permission_respond,
+            agent_stop,
+            agent_tool_result
         ])
         .manage(AppProfile(profile.clone()))
         .manage(OpenQueue::default())
@@ -169,6 +181,7 @@ pub fn run() {
                 app.handle(),
                 profile.as_deref(),
             ));
+            app.manage(commands::agent::create_manager(app.handle()));
 
             // First-launch CLI args. On macOS the file path arrives via
             // RunEvent::Opened instead so we just look for it on win/linux.
@@ -227,6 +240,13 @@ pub fn run() {
                 let m = m.inner().clone();
                 tauri::async_runtime::block_on(async move {
                     m.stop().await;
+                });
+            }
+            // Stop every agent session and kill its engine process tree.
+            if let Some(m) = _app_handle.try_state::<commands::agent::AgentState>() {
+                let m = m.inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    m.kill_all(std::time::Duration::from_secs(3)).await;
                 });
             }
         }

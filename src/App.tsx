@@ -4,6 +4,9 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 
 import { ExcalidrawCanvas } from "./components/ExcalidrawCanvas";
 import { Toolbar } from "./components/Toolbar";
+import { AgentPanel } from "./components/agent/AgentPanel";
+import { installAgentStore, useAgentStore } from "./stores/agentStore";
+import { installAgentRuntime } from "./agent/runtime";
 import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
@@ -52,6 +55,13 @@ import { restoreInitialData } from "./lib/excalidrawRestore";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
 import { log } from "./lib/logger";
+import {
+  registerSceneTab,
+  listSceneTabs,
+  setActiveSceneTab,
+  unregisterSceneTab,
+} from "./agent/sceneBridge";
+import { resetTurns } from "./agent/scene/turns";
 
 const OPEN_FILTERS = [
   { name: "Excalidraw", extensions: ["excalidraw", "png"] },
@@ -94,6 +104,8 @@ export function App() {
   const endCollabForTab = useCollabStore((s) => s.endSessionForTab);
   const libraryEnabled = useSettingsStore((s) => s.library);
   const aiEnabled = useSettingsStore((s) => s.ai);
+  const agentPanelOpen = useAgentStore((s) => s.panelOpen);
+  const toggleAgentPanel = useAgentStore((s) => s.togglePanel);
   // The official Excalidraw web app uses its own URL as the library return
   // target. For our desktop wrapper there's no callback URL — we just need
   // a non-empty value to let Excalidraw render the library UI. Keep it
@@ -276,11 +288,40 @@ export function App() {
   // Bumped when a tab's Excalidraw API (re)mounts so the collab binding can
   // pick it up — apisRef alone doesn't trigger a render.
   const [apiTick, setApiTick] = useState(0);
+  // Agent scene bridge (docs/ai-integration.md): refs keep the registered
+  // callbacks current without re-registering on every render.
+  const agentViewerTabRef = useRef<string | null>(null);
+  const agentMarkDirtyRef = useRef<(id: string) => void>(() => {});
   const handleApi = useCallback((id: string, api: ExcalidrawImperativeAPI) => {
     if (apisRef.current.get(id) === api) return;
     apisRef.current.set(id, api);
+    registerSceneTab(id, {
+      api,
+      title: () => {
+        const tab = useTabsStore.getState().tabs.find((t) => t.id === id);
+        return tab?.path ? displayName(tab.path) : "Untitled";
+      },
+      isViewer: () => agentViewerTabRef.current === id,
+      markDirty: () => agentMarkDirtyRef.current(id),
+    });
     setApiTick((t) => t + 1);
   }, []);
+  useEffect(() => {
+    agentMarkDirtyRef.current = (id) => {
+      markDirtyAction(id);
+      scheduleAutosave(id);
+    };
+  }, [markDirtyAction, scheduleAutosave]);
+  useEffect(() => setActiveSceneTab(activeTabId), [activeTabId]);
+  useEffect(() => {
+    const open = new Set(tabs.map((t) => t.id));
+    for (const { tabId } of listSceneTabs()) {
+      if (!open.has(tabId)) {
+        unregisterSceneTab(tabId);
+        resetTurns(tabId);
+      }
+    }
+  }, [tabs]);
 
   // --- Live collaboration binding (docs/collab-protocol.md) -----------------
   // The host's own webview always talks to the loopback relay; guests use the
@@ -328,6 +369,10 @@ export function App() {
       scheduleAutosave(collabTabId);
     },
   });
+  useEffect(() => {
+    agentViewerTabRef.current =
+      collabSession?.role === "guest" && collab.role === "viewer" ? collabTabId : null;
+  }, [collabSession?.role, collab.role, collabTabId]);
   // A guest never keeps the shared drawing: when its session goes away (Leave,
   // host ended, removed), wipe that tab. The engine is already stopped by then,
   // so the reset can't reach the room.
@@ -623,6 +668,11 @@ export function App() {
         case "excalidraw:view:zoomReset":
           dispatchShortcut({ key: "0" });
           return;
+        case "excalidraw:view:aiPanel":
+          // With AI off there's no panel to show; send the user to the opt-in toggle.
+          if (useSettingsStore.getState().ai) useAgentStore.getState().togglePanel();
+          else setSettingsOpen(true);
+          return;
         case "excalidraw:help:about":
           setError(
             "Excalidraw Desktop — a local-first wrapper around the official Excalidraw editor.",
@@ -653,6 +703,30 @@ export function App() {
     menuActionRef.current = handleMenuAction;
   }, [handleMenuAction]);
 
+  useEffect(() => installAgentStore(), []);
+  useEffect(() => installAgentRuntime(), []);
+
+  // ⌘/Ctrl+Shift+A toggles the AI panel (only while AI is on). Capture phase
+  // so Excalidraw's own key handling doesn't see it.
+  useEffect(() => {
+    if (!aiEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === "KeyA") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleAgentPanel();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [aiEnabled, toggleAgentPanel]);
+
+  const activeTabIsViewer =
+    !!activeTabId &&
+    collabTabId === activeTabId &&
+    collabSession?.role === "guest" &&
+    collab.role === "viewer";
+
   useEffect(() => {
     if (!error) return;
     const id = window.setTimeout(() => setError(null), 6000);
@@ -675,6 +749,8 @@ export function App() {
           collabSession && collabTabId === activeTabId ? collab.peers.length + 1 : null
         }
         liveElsewhere={!!collabSession && collabTabId !== activeTabId}
+        onToggleAgent={aiEnabled ? toggleAgentPanel : undefined}
+        agentOpen={aiEnabled && agentPanelOpen}
       >
         <RecentMenu
           paths={recentPaths}
@@ -703,35 +779,47 @@ export function App() {
         collab.role === "viewer" ? (
         <ViewerBar state={collab.editRequest} onRequest={collab.requestEdit} />
       ) : null}
-      <div className="app-shell__canvas">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className="canvas-slot"
-            data-active={tab.id === activeTabId || undefined}
-            aria-hidden={tab.id === activeTabId ? undefined : true}
-          >
-            <ExcalidrawCanvas
-              initialData={tab.initialData}
-              onApi={(api) => handleApi(tab.id, api)}
-              onSceneChange={() => {
-                markDirtyAction(tab.id);
-                scheduleAutosave(tab.id);
-              }}
-              aiEnabled={aiEnabled}
-              isCollaborating={collabTabId === tab.id}
-              viewOnly={
-                collabTabId === tab.id &&
-                collabSession?.role === "guest" &&
-                collab.role === "viewer"
-              }
-              onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
-              onPointerUpdate={collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined}
-              libraryReturnUrl={libraryReturnUrl}
-              theme={resolvedTheme}
-            />
-          </div>
-        ))}
+      <div className="app-shell__workspace">
+        <div className="app-shell__canvas">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className="canvas-slot"
+              data-active={tab.id === activeTabId || undefined}
+              aria-hidden={tab.id === activeTabId ? undefined : true}
+            >
+              <ExcalidrawCanvas
+                initialData={tab.initialData}
+                onApi={(api) => handleApi(tab.id, api)}
+                onSceneChange={() => {
+                  markDirtyAction(tab.id);
+                  scheduleAutosave(tab.id);
+                }}
+                aiEnabled={aiEnabled}
+                isCollaborating={collabTabId === tab.id}
+                viewOnly={
+                  collabTabId === tab.id &&
+                  collabSession?.role === "guest" &&
+                  collab.role === "viewer"
+                }
+                onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
+                onPointerUpdate={
+                  collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined
+                }
+                libraryReturnUrl={libraryReturnUrl}
+                theme={resolvedTheme}
+              />
+            </div>
+          ))}
+        </div>
+        <AgentPanel
+          tabId={activeTabId}
+          collabParticipants={
+            collabSession && collabTabId === activeTabId ? collab.peers.length : 0
+          }
+          readOnly={activeTabIsViewer}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       </div>
       <ConfirmCloseDialog
         open={pendingClose !== null}

@@ -7,10 +7,15 @@ import {
   SaveAsIcon,
   SaveIcon,
   SettingsIcon,
+  SparklesIcon,
   UsersIcon,
 } from "./icons";
 import { ThemeToggle } from "./ThemeToggle";
 import { displayName } from "../lib/fileFormat";
+
+function isMac(): boolean {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+}
 
 export interface ToolbarProps {
   documentPath: string | null;
@@ -31,6 +36,10 @@ export interface ToolbarProps {
   livePeerCount?: number | null;
   /** A live session is bound to a different tab than the active one. */
   liveElsewhere?: boolean;
+  /** Toggles the AI agent panel. Omit to hide the button (AI setting off). */
+  onToggleAgent?: () => void;
+  /** AI agent panel is open. */
+  agentOpen?: boolean;
   /** Slot rendered between Open and Save — used for the Recent menu. */
   children?: ReactNode;
 }
@@ -57,6 +66,8 @@ export function Toolbar({
   onJoin,
   livePeerCount,
   liveElsewhere = false,
+  onToggleAgent,
+  agentOpen = false,
   children,
 }: ToolbarProps) {
   const live = livePeerCount !== null && livePeerCount !== undefined;
@@ -166,6 +177,21 @@ export function Toolbar({
           </button>
         ) : null}
         <span className="toolbar__divider" aria-hidden="true" />
+        {onToggleAgent ? (
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onToggleAgent}
+            data-testid="toolbar-agent"
+            data-pressed={agentOpen || undefined}
+            aria-pressed={agentOpen}
+            aria-label="AI agent"
+            title={`${agentOpen ? "Hide" : "Show"} AI agent (${isMac() ? "⌘⇧A" : "Ctrl+Shift+A"})`}
+          >
+            <SparklesIcon />
+            <span>AI</span>
+          </button>
+        ) : null}
         <ThemeToggle />
         {onOpenSettings ? (
           <button

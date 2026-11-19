@@ -11,6 +11,13 @@
  * web preview usable for E2E without polluting production code paths.
  */
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  AgentStartOptions,
+  EngineInfo,
+  EngineOverride,
+  PermissionDecision,
+  ToolCallResult,
+} from "../agent/types";
 
 /** True iff we're running inside a Tauri webview. */
 export function isTauri(): boolean {
@@ -271,4 +278,54 @@ export function isAppError(value: unknown): value is AppError {
     ["io", "invalid_file", "other"].includes(record.kind) &&
     typeof record.message === "string"
   );
+}
+
+// ---------------------------------------------------------------------------
+// AI agent (docs/ai-integration.md). Mirrors `src-tauri/src/commands/agent.rs`.
+// ---------------------------------------------------------------------------
+
+export const AGENT_EVENT = "agent://event";
+export const AGENT_TOOL_CALL_EVENT = "agent://tool-call";
+
+/** Probe installed engines (binary, version, login). Never runs a model turn. */
+export function agentDetect(overrides: EngineOverride[] = []): Promise<EngineInfo[]> {
+  if (!isTauri()) return Promise.resolve([]);
+  return invoke<EngineInfo[]>("agent_detect", { overrides });
+}
+
+/** Start an engine session for a tab; resolves to the app session id. */
+export function agentStart(options: AgentStartOptions): Promise<string> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_start"));
+  return invoke<string>("agent_start", { options });
+}
+
+/** Send a prompt; resolves to the turn id. Progress arrives on `agent://event`. */
+export function agentPrompt(sessionId: string, text: string): Promise<string> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_prompt"));
+  return invoke<string>("agent_prompt", { sessionId, text });
+}
+
+export function agentCancel(sessionId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("agent_cancel", { sessionId });
+}
+
+export function agentPermissionRespond(
+  sessionId: string,
+  requestId: string,
+  decision: PermissionDecision,
+): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_permission_respond"));
+  return invoke<void>("agent_permission_respond", { sessionId, requestId, decision });
+}
+
+export function agentStop(sessionId: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("agent_stop", { sessionId });
+}
+
+/** Return a canvas tool result to the MCP server. */
+export function agentToolResult(result: ToolCallResult): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_tool_result"));
+  return invoke<void>("agent_tool_result", { result });
 }

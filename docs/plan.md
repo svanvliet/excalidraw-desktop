@@ -182,7 +182,7 @@ excalidraw-app/
 
 **Done. Final design:**
 
-- `src/stores/settingsStore.ts`: Zustand store of three booleans (`collab`, `library`, `ai`) and two secrets (`openAiKey`, `firebaseConfig`). Persisted via `tauri-plugin-store` to `<appData>/settings.json`. A `sanitize()` step on load ignores wrong-typed values so a tampered file degrades to defaults. `resetAll()` is exposed for the dialog and tests.
+- `src/stores/settingsStore.ts`: Zustand store of three booleans (`collab`, `library`, `ai`) and two secrets (`openAiKey`, `firebaseConfig`). Persisted via `tauri-plugin-store` to `<appData>/settings.json`. A `sanitize()` step on load ignores wrong-typed values so a tampered file degrades to defaults. `resetAll()` is exposed for the dialog and tests. _(`openAiKey` is removed in AI-1; see D-AI7.)_
 - `src/components/SettingsDialog.tsx`: modal with one toggle per feature, a hint describing what data leaves the device, two password/textarea secret fields, a loud "values stored unencrypted on disk" warning, plus Done and Reset-all buttons. Closes on Esc or backdrop click.
 - `src/components/ExcalidrawCanvas.tsx`: now accepts `aiEnabled` / `isCollaborating` / `libraryReturnUrl`. All three default to off / undefined so the editor stays fully offline unless a flag is true.
 - `src/App.tsx`: `loadSettings()` runs on mount; toggle values are read each render and passed into every `ExcalidrawCanvas`. Dialog opens from the toolbar `Settings` button or from the native `excalidraw:file:settings` menu item.
@@ -281,6 +281,8 @@ continue to pass.
 
 The updater (M12) adds **no** capability: the webview never calls the plugin's JS API; it uses the app's own `update_status` / `update_check` / `update_install` commands, which run the plugin from Rust.
 
+The AI agent (AI-1…AI-6) adds **no** capability either. Engine processes are spawned by Rust using fixed argument builders, through the app's own `agent_*` commands. No `shell` plugin or webview process access is granted. Attach-folder reuses `dialog:allow-open`, and read access is enforced on the engine side (the folder is passed as the agent's read-only working directory or `--add-dir`).
+
 ## 6. CSP
 
 Static allow-list in `src-tauri/tauri.conf.json` (decision D-C3 — chosen over runtime widening because Tauri 2 can't change CSP per-toggle without a reload; the collab origins stay unused unless a session is started, which is itself gated by the `collab` setting):
@@ -296,6 +298,8 @@ frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'
 Excalidraw fonts are self-hosted (copied to `dist/fonts`, `window.EXCALIDRAW_ASSET_PATH = "/"`) so text never fetches from esm.sh. Tradeoffs: no `'unsafe-eval'` (peers send untrusted scene data), so SVG export embeds full fonts instead of subsets; a desktop guest can only join hosts on `*.devtunnels.ms` or loopback (browser guests are unaffected). `e2e/csp-privacy.spec.ts` guards both. The relay-served guest page sends its own self-only CSP header.
 
 The updater (M12) needs **no CSP change**: `latest.json` and the update artifact are fetched by `tauri-plugin-updater` (reqwest) in Rust, outside the webview. `e2e/csp-privacy.spec.ts` asserts the webview makes no update traffic.
+
+The AI agent needs **no CSP change**. All AI traffic comes from the user's agent process, outside the webview. The MCP server is reached by the engine, not by the webview. Mermaid import (already bundled by Excalidraw) runs without `unsafe-eval`; AI-0 confirms this.
 
 ### M10 — Live collaboration (embedded relay + DevTunnels)
 
@@ -322,36 +326,79 @@ Modeled on tunnel-bar's updater.
 - Feed: `https://github.com/svanvliet/excalidraw-desktop/releases/latest/download/latest.json` with `darwin-aarch64` + `darwin-x86_64` (both → the universal `.app.tar.gz`, made from the stapled app) and `windows-x86_64` (NSIS setup.exe). Signed with `tauri signer sign --app-version`; `requireSignedVersion: true`; Windows `installMode: passive`.
 - Key: `~/repos/certs/excalidraw-desktop-updater.key` (password in Keychain, service `excalidraw-desktop-updater-key-password`); CI uses the `TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]` secrets. Release scripts / runbooks: `docs/signing-macos.md`, `docs/signing-windows.md`.
 
+### AI-0…AI-6 — AI agent, bring your own engine
+
+Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contract, canonical event model, UX). Replaces the original "OpenAI key + text-to-diagram" idea: the app drives the user's locally installed, signed-in **Copilot CLI** (`copilot --acp`), **Claude Code** (`claude -p` stream-json), or **Codex** (`codex app-server`, falling back to `exec --json`). It serves canvas tools to whichever engine is used through a loopback MCP server plus a stdio shim (the app's own binary run with `--mcp-shim`).
+
+- **AI-0 Spikes** (no product code):
+  - Port the T3 Code pieces listed in `docs/ai-integration.md` § "Reuse from T3 Code" (generated ACP/Codex schemas → Rust types, PATH discovery, fake ACP agent) and add `THIRD_PARTY_NOTICES.md`.
+  - A headless driver per engine on macOS and Windows, with recorded event fixtures.
+  - MCP shim round-trip.
+  - Binding arrows to existing elements (`repairBindings`).
+  - Mermaid import under the release CSP.
+  - Minimum engine versions.
+- **AI-1 Foundation:**
+  - Settings migration: drop `openAiKey`; add the `ai` master toggle plus per-engine `{enabled, path?, useHostConfig, model?}` and `defaultEngine`.
+  - `src-tauri/src/agent/` with `detect`, a process manager with kill-tree, canonical events, and an `AcpAdapter` tested against a fake ACP agent.
+  - The loopback MCP server and `--mcp-shim`.
+  - `src/agent/sceneBridge.ts` and the read-only tools.
+- **AI-2 Engines:**
+  - Copilot ACP, Claude stream-json, and Codex app-server adapters.
+  - Fixed sandbox flags, the "use my MCPs/skills/plugins" toggle, permission routing, and error classification.
+- **AI-3 Edit tools:**
+  - add/update/delete/connect/add_mermaid/arrange/apply_ops/set_viewport.
+  - `expectedRevision` checks, the viewer guard, version bumps and tombstones, `markDirty` plus autosave, and Revert-turn snapshots.
+- **AI-4 Panel UX:**
+  - Docked per-tab panel, transcript, tool chips, approval cards, Stop/Revert, context chips, Attach folder (read-only), and quick actions.
+  - Settings → AI engine cards, the first-use disclosure, and View → AI Panel (⌘/Ctrl+Shift+A).
+- **AI-5 Polish:**
+  - `TTDDialog` backed by the agent, engine session resume, a collab indicator, and redacted prompt logging.
+- **AI-6 Validation gate:**
+  - `docs/ai-testing.md`: 3 engines × 2 OSes, plus a terms/legal review before public release.
+
 ## 7. Decisions log
 
-| #    | Decision                                                  | Why                                                                                                           |
-| ---- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| D1   | Embed `@excalidraw/excalidraw` React component            | Self-contained npm package, no server needed, easy upstream bumps.                                            |
-| D2   | Tauri 2.x                                                 | Current stable; better plugin ecosystem; first-class file associations.                                       |
-| D3   | JSON + PNG-with-scene formats                             | Covers the common roundtrip; PNG shareable while still editable.                                              |
-| D4   | Single window with tabs                                   | Matches user expectation; simpler state than multi-window.                                                    |
-| D5   | Recent files + autosave + session restore                 | Standard native-app expectation.                                                                              |
-| D-C1 | Collab via embedded Rust relay + DevTunnels, not Firebase | Firebase is persistence only; relay needed anyway. No third-party account, E2E encrypted, data stays on host. |
-| D-C2 | Own tiny JSON relay protocol (not socket.io)              | Trivial to implement in Rust and on Cloudflare DO later; no socket.io client dep.                             |
-| D-R1 | Notarize locally, Windows in CI                           | Apple credentials stay in the local keychain; no secrets in GitHub.                                           |
-| D-C3 | Static CSP allow-list incl. loopback + `*.devtunnels.ms`  | Runtime CSP widening needs a reload in Tauri 2; origins are inert unless a session starts (gated by setting). |
-| D6   | npm + Vite + React + TS                                   | User preference; React is required by Excalidraw.                                                             |
-| D7   | Vitest + cargo test + Playwright via tauri-driver         | Layered coverage from units to full app smoke.                                                                |
-| D8   | Online features opt-in via settings, off by default       | User wants the capability but no data leaving the box by default.                                             |
-| D9   | Signing/notarization documented, deferred                 | User asked for docs without implementation in v1.                                                             |
-| D-U1 | Auto-update asks once on first launch; never auto-restart | Keeps the offline-first promise explicit; user decides when to restart (unsaved work, live sessions).         |
-| D-U2 | Updater runs in Rust, frontend owns the schedule          | No CSP/capability change; consent lives in one setting; Rust never checks on its own.                         |
-| D-U3 | Updater key local + GitHub secrets; signed versions       | Mac artifacts signed locally like notarization; Windows in CI; `requireSignedVersion` blocks downgrades.      |
+| #     | Decision                                                                                                                  | Why                                                                                                                                |
+| ----- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| D1    | Embed `@excalidraw/excalidraw` React component                                                                            | Self-contained npm package, no server needed, easy upstream bumps.                                                                 |
+| D2    | Tauri 2.x                                                                                                                 | Current stable; better plugin ecosystem; first-class file associations.                                                            |
+| D3    | JSON + PNG-with-scene formats                                                                                             | Covers the common roundtrip; PNG shareable while still editable.                                                                   |
+| D4    | Single window with tabs                                                                                                   | Matches user expectation; simpler state than multi-window.                                                                         |
+| D5    | Recent files + autosave + session restore                                                                                 | Standard native-app expectation.                                                                                                   |
+| D-C1  | Collab via embedded Rust relay + DevTunnels, not Firebase                                                                 | Firebase is persistence only; relay needed anyway. No third-party account, E2E encrypted, data stays on host.                      |
+| D-C2  | Own tiny JSON relay protocol (not socket.io)                                                                              | Trivial to implement in Rust and on Cloudflare DO later; no socket.io client dep.                                                  |
+| D-R1  | Notarize locally, Windows in CI                                                                                           | Apple credentials stay in the local keychain; no secrets in GitHub.                                                                |
+| D-C3  | Static CSP allow-list incl. loopback + `*.devtunnels.ms`                                                                  | Runtime CSP widening needs a reload in Tauri 2; origins are inert unless a session starts (gated by setting).                      |
+| D6    | npm + Vite + React + TS                                                                                                   | User preference; React is required by Excalidraw.                                                                                  |
+| D7    | Vitest + cargo test + Playwright via tauri-driver                                                                         | Layered coverage from units to full app smoke.                                                                                     |
+| D8    | Online features opt-in via settings, off by default                                                                       | User wants the capability but no data leaving the box by default.                                                                  |
+| D9    | Signing/notarization documented, deferred                                                                                 | User asked for docs without implementation in v1.                                                                                  |
+| D-U1  | Auto-update asks once on first launch; never auto-restart                                                                 | Keeps the offline-first promise explicit; user decides when to restart (unsaved work, live sessions).                              |
+| D-U2  | Updater runs in Rust, frontend owns the schedule                                                                          | No CSP/capability change; consent lives in one setting; Rust never checks on its own.                                              |
+| D-U3  | Updater key local + GitHub secrets; signed versions                                                                       | Mac artifacts signed locally like notarization; Windows in CI; `requireSignedVersion` blocks downgrades.                           |
+| D-AI1 | Copilot CLI + Claude Code + Codex in v1 behind one `EngineAdapter` trait and one canonical event model                    | Users bring whichever subscription they already have; adding an engine means adding one adapter.                                   |
+| D-AI2 | Docked per-tab chat panel                                                                                                 | Conversations relate to a specific diagram; the panel leaves the canvas visible while editing.                                     |
+| D-AI3 | Live-apply, one undo step per turn, plus Revert turn                                                                      | Fast feedback; standard undo still works; collab-safe revert.                                                                      |
+| D-AI4 | Canvas-only by default; optional read-only Attach folder; engine shell/write always off                                   | Smallest blast radius; still enables "diagram this repo".                                                                          |
+| D-AI5 | Per-engine "Use my MCPs, skills & plugins" (default on) with in-app approvals                                             | Users keep their agent's power; tools that act outside the canvas still need consent.                                              |
+| D-AI6 | Claude Code as bring-your-own-binary: if it is installed and signed in, use it; never touch credentials                   | Matches prior art (T3 Code). Anthropic's terms are ambiguous for wrappers, so legal review is a release gate.                      |
+| D-AI7 | No API keys; remove `openAiKey`                                                                                           | The key was never used; storing it in plaintext violated SEC-3.                                                                    |
+| D-AI8 | Canvas tools served via a loopback MCP server + stdio shim instead of engine-specific tool APIs                           | One tool implementation works for every engine and transport.                                                                      |
+| D-AI9 | Port concepts, schemas and test tooling from T3 Code (MIT) into our Rust core; don't embed its Node server or Tailwind UI | It already drives Copilot ACP, Claude and Codex app-server. A Node sidecar would add a bundled runtime and a second process model. |
 
 ## 8. Risks & mitigations
 
-| Risk                                                                              | Mitigation                                                                    |
-| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `@excalidraw/excalidraw` API changes between minor versions                       | Pin exact version; bump via `/bump-excalidraw` skill which runs smoke tests.  |
-| Windows file association requires deep-link plumbing + single-instance            | Use both plugins together; covered by Playwright smoke test for double-click. |
-| PNG-with-scene metadata fragile (stripped by some tools)                          | Keep `.excalidraw` JSON as authoritative; PNG is a sharing convenience only.  |
-| Tauri webview differences (WKWebView vs WebView2) cause Excalidraw rendering bugs | Run vitest + playwright on both runners in CI before tagging a release.       |
-| User enables collab/AI then leaks data unintentionally                            | Toggles default off; warning copy in settings; CSP only widened when enabled. |
+| Risk                                                                              | Mitigation                                                                                                |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `@excalidraw/excalidraw` API changes between minor versions                       | Pin exact version; bump via `/bump-excalidraw` skill which runs smoke tests.                              |
+| Windows file association requires deep-link plumbing + single-instance            | Use both plugins together; covered by Playwright smoke test for double-click.                             |
+| PNG-with-scene metadata fragile (stripped by some tools)                          | Keep `.excalidraw` JSON as authoritative; PNG is a sharing convenience only.                              |
+| Tauri webview differences (WKWebView vs WebView2) cause Excalidraw rendering bugs | Run vitest + playwright on both runners in CI before tagging a release.                                   |
+| User enables collab/AI then leaks data unintentionally                            | Toggles default off; warning copy in settings; CSP only widened when enabled.                             |
+| Agent protocols are preview/experimental (Copilot ACP, Codex app-server)          | Pin minimum versions, probe capabilities at detect time, fixture tests per adapter, generic-ACP fallback. |
+| Subscription terms for third-party use (esp. Claude)                              | BYO binary only, never read credentials, terms note in Settings, legal review as AI-6 gate.               |
+| User MCPs/plugins act outside the canvas                                          | Per-engine toggle, approval cards, engine shell/write always disabled.                                    |
+| Agent quota/cost surprises                                                        | Panel footer states which plan/quota is used; per-turn usage shown when the engine reports it.            |
 
 ## 9. Skills & agents (Claude Code)
 
