@@ -179,6 +179,7 @@ pub fn run() {
                 app.handle(),
                 profile.as_deref(),
             ));
+            app.manage(commands::agent::create_manager(app.handle()));
 
             // First-launch CLI args. On macOS the file path arrives via
             // RunEvent::Opened instead so we just look for it on win/linux.
@@ -237,6 +238,13 @@ pub fn run() {
                 let m = m.inner().clone();
                 tauri::async_runtime::block_on(async move {
                     m.stop().await;
+                });
+            }
+            // Stop every agent session and kill its engine process tree.
+            if let Some(m) = _app_handle.try_state::<commands::agent::AgentState>() {
+                let m = m.inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    m.kill_all(std::time::Duration::from_secs(3)).await;
                 });
             }
         }
