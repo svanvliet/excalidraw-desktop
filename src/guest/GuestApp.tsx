@@ -12,7 +12,8 @@ import "./GuestApp.css";
 import type { CollabPeer, CollabSession, CollabStatus } from "../collab/CollabSession";
 import type { RoomLink } from "../collab/protocol";
 import { useCollabSession } from "../collab/useCollabSession";
-import { CloseIcon, UsersIcon } from "../components/icons";
+import { CloseIcon, LiveIcon, UsersIcon } from "../components/icons";
+import { ParticipantList } from "../components/ParticipantList";
 import { log } from "../lib/logger";
 
 export const GUEST_NAME_KEY = "excalidraw-desktop:guest-name";
@@ -58,6 +59,7 @@ const BANNERS: Partial<Record<CollabStatus, { text: string; tone: BannerTone }>>
   reconnecting: { text: "Connection lost — reconnecting…", tone: "warn" },
   ended: { text: "The host ended this session.", tone: "error" },
   failed: { text: "Couldn't join this session.", tone: "error" },
+  removed: { text: "The host removed you from this session.", tone: "error" },
 };
 
 export interface GuestAppProps {
@@ -111,7 +113,7 @@ export function GuestApp({ link }: GuestAppProps) {
   }, []);
 
   const banner = BANNERS[status];
-  const ended = status === "ended" || status === "failed";
+  const ended = status === "ended" || status === "failed" || status === "removed";
   const offline = ended || left;
   const participants = peers.length + 1;
 
@@ -120,13 +122,14 @@ export function GuestApp({ link }: GuestAppProps) {
       username ? (
         <button
           type="button"
-          className={`icon-btn guest-live${offline ? " guest-live--off" : ""}`}
+          className={`sidebar-trigger guest-live${offline ? " guest-live--off" : ""}`}
           data-testid="guest-session-btn"
           title={offline ? "Not connected" : `${participants} in session`}
           onClick={() => setPanelOpen(true)}
         >
-          <span className="guest-live__dot" aria-hidden="true" />
-          {offline ? "Offline" : `Live · ${participants}`}
+          <LiveIcon className="guest-live__icon" />
+          <span>{offline ? "Offline" : "Live"}</span>
+          {offline ? null : <span className="guest-live__count">{participants}</span>}
         </button>
       ) : null,
     [offline, participants, username],
@@ -307,17 +310,7 @@ function SessionPanel({ username, peers, offline, onRename, onLeave, onClose }: 
               <h3 className="guest-name__label">
                 <UsersIcon /> In this session ({peers.length + 1})
               </h3>
-              <ul className="guest-people" data-testid="guest-people">
-                <li>
-                  {username} <span className="guest-people__tag">you</span>
-                </li>
-                {peers.map((p) => (
-                  <li key={p.clientId}>
-                    {p.username || "Anonymous"}
-                    {p.isHost ? <span className="guest-people__tag">host</span> : null}
-                  </li>
-                ))}
-              </ul>
+              <ParticipantList selfName={username} selfIsHost={false} peers={peers} />
             </>
           )}
           <label className="guest-name__label" htmlFor="guest-session-name">

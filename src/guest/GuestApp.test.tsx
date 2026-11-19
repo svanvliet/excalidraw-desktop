@@ -65,7 +65,7 @@ describe("GuestApp", () => {
     render(<GuestApp link={LINK} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(lastCall().link).toEqual(LINK);
-    expect(screen.getByTestId("guest-session-btn").textContent).toBe("Live · 2");
+    expect(screen.getByTestId("guest-session-btn").textContent).toBe("Live2");
   });
 
   it("session panel lists people, renames, and leaves/rejoins", () => {
@@ -75,7 +75,7 @@ describe("GuestApp", () => {
     };
     render(<GuestApp link={LINK} />);
     fireEvent.click(screen.getByTestId("guest-session-btn"));
-    expect(screen.getByTestId("guest-people").textContent).toMatch(/Bob.*you.*Ann.*host/);
+    expect(screen.getByTestId("participants").textContent).toMatch(/Bob.*you.*Ann.*host/);
 
     fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Bobby" } });
     fireEvent.click(screen.getByRole("button", { name: "Save name" }));

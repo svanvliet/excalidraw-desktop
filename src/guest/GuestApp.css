@@ -63,19 +63,35 @@
   outline-offset: -1px;
 }
 
-.guest-live {
-  gap: var(--space-2);
+/* Builds on Excalidraw's .sidebar-trigger so it matches the Library button. */
+.excalidraw .guest-live {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.guest-live__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
+.excalidraw .guest-live .guest-live__icon {
+  width: 16px;
+  height: 16px;
+  color: var(--color-primary);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
-.guest-live--off .guest-live__dot {
-  background: var(--fg-muted);
+.excalidraw .guest-live--off .guest-live__icon {
+  color: var(--color-gray-50, currentColor);
+}
+
+.guest-live__count {
+  min-width: 16px;
+  padding: 0 var(--space-1);
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-surface-lowest, #fff);
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
 }
 
 .guest-banner__action {
@@ -89,22 +105,8 @@
   cursor: pointer;
 }
 
-.guest-people {
-  list-style: none;
-  margin: 0 0 var(--space-5);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.guest-people__tag {
-  margin-left: var(--space-2);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  color: var(--fg-muted);
-  font-size: var(--font-size-xs);
+.guest-app .people {
+  margin-bottom: var(--space-5);
 }
 
 .guest-name__label svg {
