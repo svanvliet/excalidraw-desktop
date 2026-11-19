@@ -81,10 +81,60 @@ test.describe("live collaboration — browser guests", () => {
         (c) => c.username === "Alice" && c.pointer !== undefined,
       ),
     );
-    await expect(bob.locator(".UserList__collaborator").first()).toBeVisible();
+    await expect(bob.getByTestId("guest-session-btn")).toHaveText(/Live\s*2/);
 
     await alice.context().close();
     await bob.waitForFunction(() => window.__guest?.api.getAppState().collaborators.size === 0);
+    await bob.context().close();
+  });
+
+  test("a demoted guest becomes view-only until promoted again", async ({ browser, request }) => {
+    const alice = await openGuest(browser, "Alice");
+    const bob = await openGuest(browser, "Bob");
+    await expect.poll(() => peerCount(alice)).toBe(1);
+    const bobId = await alice.evaluate(() => window.__guest!.session!.peers[0].clientId);
+
+    const setRole = async (role: "editor" | "viewer") =>
+      expect((await request.post(`${CONTROL}/__role/${ROOM}/${bobId}/${role}`)).status()).toBe(204);
+
+    await setRole("viewer");
+    await expect(bob.getByTestId("viewer-bar")).toBeVisible();
+    await expect(bob.getByTestId("ask-to-edit")).toBeVisible();
+    await expect
+      .poll(() => bob.evaluate(() => window.__guest!.api.getAppState().viewModeEnabled))
+      .toBe(true);
+    await expect
+      .poll(() => alice.evaluate(() => window.__guest!.session!.peers[0].role))
+      .toBe("viewer");
+
+    // A viewer's scene changes never reach other peers.
+    await bob.evaluate(() =>
+      window.__guest!.session!.onSceneChange([
+        {
+          id: "forged",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+          angle: 0,
+          version: 1,
+          versionNonce: 1,
+          isDeleted: false,
+          index: "a0",
+        } as never,
+      ]),
+    );
+    await alice.waitForTimeout(500);
+    expect(await alice.evaluate(() => window.__guest!.api.getSceneElements().length)).toBe(0);
+
+    await setRole("editor");
+    await expect(bob.getByTestId("viewer-bar")).toBeHidden();
+    await expect
+      .poll(() => bob.evaluate(() => window.__guest!.api.getAppState().viewModeEnabled))
+      .toBe(false);
+
+    await alice.context().close();
     await bob.context().close();
   });
 

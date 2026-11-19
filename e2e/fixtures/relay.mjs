@@ -8,6 +8,8 @@
  *
  * Without `--room` (or RELAY_ROOMS) any well-formed room id is accepted.
  * Test-only admin endpoint: `POST /__end/<room>` closes the room with 4000.
+ * Test-only admin endpoint: `POST /__role/<room>/<client>/<editor|viewer>` sets a role.
+ * Guests join as `--guest-role` (default `editor`); `--host-token` identifies the host.
  */
 import { randomBytes } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
@@ -59,11 +61,26 @@ function send(ws, frame) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
 }
 
+const GUEST_ROLE = arg("guest-role", "editor");
+const HOST_TOKEN = arg("host-token", "");
+/** clientId -> role, across rooms (clientIds are random). */
+const roles = new Map();
+/** resumeToken -> role */
+const resumeRoles = new Map();
+const resumeOf = new Map();
+
+function rolesIn(room) {
+  const out = {};
+  for (const id of rooms.get(room)?.keys() ?? []) out[id] = roles.get(id) ?? "viewer";
+  return out;
+}
+
 function broadcastPeers(room) {
   const members = rooms.get(room);
   if (!members) return;
   const peers = [...members.keys()];
-  for (const ws of members.values()) send(ws, { type: "peers", peers });
+  const r = rolesIn(room);
+  for (const ws of members.values()) send(ws, { type: "peers", peers, roles: r });
 }
 
 function serveStatic(req, res) {
@@ -75,6 +92,20 @@ function serveStatic(req, res) {
   const end = url.pathname.match(/^\/__end\/([0-9a-f]{20})$/);
   if (end && req.method === "POST") {
     for (const ws of rooms.get(end[1])?.values() ?? []) ws.close(SESSION_ENDED, "session ended");
+    res.writeHead(204).end();
+    return;
+  }
+  const role = url.pathname.match(/^\/__role\/([0-9a-f]{20})\/([0-9a-f]+)\/(editor|viewer)$/);
+  if (role && req.method === "POST") {
+    const [, r, id, next] = role;
+    if (!rooms.get(r)?.has(id) || roles.get(id) === "host") {
+      res.writeHead(404).end();
+      return;
+    }
+    roles.set(id, next);
+    const token = resumeOf.get(id);
+    if (token) resumeRoles.set(token, next);
+    broadcastPeers(r);
     res.writeHead(204).end();
     return;
   }
@@ -137,9 +168,28 @@ wss.on("connection", (ws) => {
       room = frame.room;
       const firstInRoom = members.size === 0;
       const peers = [...members.keys()];
+      let role = GUEST_ROLE;
+      let resumeToken = randomBytes(16).toString("hex");
+      if (HOST_TOKEN && frame.hostToken === HOST_TOKEN) role = "host";
+      else if (typeof frame.resume === "string" && resumeRoles.has(frame.resume)) {
+        resumeToken = frame.resume;
+        role = resumeRoles.get(resumeToken);
+      }
+      roles.set(clientId, role);
+      if (role !== "host") {
+        resumeRoles.set(resumeToken, role);
+        resumeOf.set(clientId, resumeToken);
+      }
       members.set(clientId, ws);
       rooms.set(room, members);
-      send(ws, { type: "welcome", clientId, peers, firstInRoom });
+      send(ws, {
+        type: "welcome",
+        clientId,
+        peers,
+        firstInRoom,
+        roles: rolesIn(room),
+        resumeToken,
+      });
       broadcastPeers(room);
       return;
     }
@@ -176,6 +226,8 @@ wss.on("connection", (ws) => {
     if (room === null) return;
     const members = rooms.get(room);
     members?.delete(clientId);
+    roles.delete(clientId);
+    resumeOf.delete(clientId);
     if (members && members.size === 0) rooms.delete(room);
     else broadcastPeers(room);
   });

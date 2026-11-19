@@ -7,7 +7,8 @@
 //! There is no host here, so guests default to `editor` unless
 //! `--guest-role viewer` is given.
 //!
-//! The optional control port exposes test-only `POST /__end/<room>`, which
+//! The optional control port exposes test-only `POST /__end/<room>` and
+//! `POST /__role/<room>/<client>/<editor|viewer>`; `/__end`
 //! closes the room with 4000 like a host pressing "Stop session".
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -62,6 +63,24 @@ async fn main() -> std::io::Result<()> {
                     |State(r): State<Arc<RelayServer>>, Path(room): Path<String>| async move {
                         r.close_room(&room);
                         axum::http::StatusCode::NO_CONTENT
+                    },
+                ),
+            )
+            .route(
+                "/__role/{room}/{client}/{role}",
+                post(
+                    |State(r): State<Arc<RelayServer>>,
+                     Path((room, client, role)): Path<(String, String, String)>| async move {
+                        let role = match role.as_str() {
+                            "editor" => Role::Editor,
+                            "viewer" => Role::Viewer,
+                            _ => return axum::http::StatusCode::BAD_REQUEST,
+                        };
+                        if r.set_role(&room, &client, role) {
+                            axum::http::StatusCode::NO_CONTENT
+                        } else {
+                            axum::http::StatusCode::NOT_FOUND
+                        }
                     },
                 ),
             )
