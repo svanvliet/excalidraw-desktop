@@ -103,7 +103,7 @@
 
 - [x] Update checks only run after consent (unit) and the webview makes no update traffic (Playwright).
 - [x] Update state machine, menu item, Settings → Updates; cargo + Vitest coverage.
-- [ ] Local vN → vN+1 update against a test feed (macOS).
+- [x] Local vN → vN+1 update against a test feed (macOS): 0.1.90 → 0.1.91 verified.
 - [ ] Real 0.1.1 → 0.1.2 update on macOS and Windows from GitHub Releases.
 
 ## Changelog of status changes
