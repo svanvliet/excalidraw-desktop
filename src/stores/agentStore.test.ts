@@ -228,6 +228,19 @@ describe("agentStore privacy gate", () => {
   });
 });
 
+describe("agentStore availableEngines", () => {
+  it("offers engines whose sign-in is only verified at session start", async () => {
+    await enableAi();
+    useAgentStore.setState({
+      engines: [
+        { ...READY[0], status: "unknown" },
+        { ...READY[1], status: "notLoggedIn" },
+      ],
+    });
+    expect(useAgentStore.getState().availableEngines()).toEqual(["copilot"]);
+  });
+});
+
 describe("agentStore session flow", () => {
   it("starts a session with per-engine settings, prompts, and reduces events", async () => {
     await enableAi();

@@ -458,7 +458,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const { aiEngines } = useSettingsStore.getState();
       const ready = new Set(
         get()
-          .engines.filter((i) => i.status === "ready")
+          // `unknown` = installed but sign-in can only be checked by starting a
+          // session (Copilot); a not-signed-in error surfaces in the panel then.
+          .engines.filter((i) => i.status === "ready" || i.status === "unknown")
           .map((i) => i.engine),
       );
       return ENGINE_KINDS.filter((e) => aiEngines[e].enabled && ready.has(e));

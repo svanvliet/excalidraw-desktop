@@ -539,6 +539,39 @@ pub fn candidate_dirs(env: &[(String, String)]) -> Vec<PathBuf> {
     dirs
 }
 
+/// Copilot CLI runtimes bundled by the GitHub Copilot desktop app, newest first. Used when no
+/// standalone `copilot` is installed. Layout: `<cache>/github-copilot-sdk/cli/copilot-sdk-runtime-<ver>/`.
+pub fn copilot_app_runtime_dirs(env: &[(String, String)]) -> Vec<PathBuf> {
+    let root = if cfg!(windows) {
+        env_lookup(env, "LOCALAPPDATA").map(|d| Path::new(d).join("github-copilot-sdk").join("cli"))
+    } else if cfg!(target_os = "macos") {
+        env_lookup(env, "HOME").map(|h| Path::new(h).join("Library/Caches/github-copilot-sdk/cli"))
+    } else {
+        env_lookup(env, "HOME").map(|h| Path::new(h).join(".cache/github-copilot-sdk/cli"))
+    };
+    let Some(root) = root else {
+        return Vec::new();
+    };
+    let Ok(rd) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|f| f.to_string_lossy().starts_with("copilot-sdk-runtime-"))
+        })
+        .collect();
+    let ver = |p: &PathBuf| {
+        p.file_name()
+            .and_then(|f| parse_version(&f.to_string_lossy()))
+    };
+    let mtime = |p: &PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    dirs.sort_by_key(|d| std::cmp::Reverse((ver(d), mtime(d))));
+    dirs
+}
+
 // ---------------------------------------------------------------------------------------------
 // Binary resolution
 // ---------------------------------------------------------------------------------------------
@@ -552,6 +585,8 @@ pub struct ProbeEnv {
     pub extra_dirs: Vec<PathBuf>,
     /// Try `npm config get prefix` when nothing else matched.
     pub npm_fallback: bool,
+    /// Last resort for Copilot: CLI runtimes bundled with the GitHub Copilot app.
+    pub copilot_app_dirs: Vec<PathBuf>,
 }
 
 impl ProbeEnv {
@@ -561,6 +596,7 @@ impl ProbeEnv {
         env.extend(shell.vars.iter().cloned());
         Self {
             extra_dirs: candidate_dirs(&env),
+            copilot_app_dirs: copilot_app_runtime_dirs(&env),
             shell,
             npm_fallback: true,
         }
@@ -662,9 +698,18 @@ pub async fn resolve_binary(
         return Some(p);
     }
     if probe.npm_fallback {
-        if let Some(bin) = npm_global_bin(probe).await {
-            return find_in_dir(&bin, name);
+        if let Some(p) = npm_global_bin(probe)
+            .await
+            .and_then(|bin| find_in_dir(&bin, name))
+        {
+            return Some(p);
         }
+    }
+    if engine == EngineKind::Copilot {
+        return probe
+            .copilot_app_dirs
+            .iter()
+            .find_map(|dir| find_in_dir(dir, name));
     }
     None
 }
@@ -929,7 +974,35 @@ mod tests {
                 },
                 extra_dirs: vec![],
                 npm_fallback: false,
+                copilot_app_dirs: vec![],
             }
+        }
+
+        #[tokio::test]
+        async fn falls_back_to_copilot_app_runtime_newest_first() {
+            let home = tempfile::tempdir().unwrap();
+            let root = if cfg!(target_os = "macos") {
+                home.path().join("Library/Caches/github-copilot-sdk/cli")
+            } else {
+                home.path().join(".cache/github-copilot-sdk/cli")
+            };
+            for v in ["1.0.9", "1.0.110", "1.0.65"] {
+                let d = root.join(format!("copilot-sdk-runtime-{v}"));
+                std::fs::create_dir_all(&d).unwrap();
+                write_exe(&d, "copilot", "true");
+            }
+            std::fs::create_dir_all(root.join("unrelated")).unwrap();
+            let env = vec![("HOME".to_string(), home.path().display().to_string())];
+            let dirs = copilot_app_runtime_dirs(&env);
+            assert_eq!(dirs.len(), 3);
+            assert!(dirs[0].ends_with("copilot-sdk-runtime-1.0.110"));
+
+            let empty = tempfile::tempdir().unwrap();
+            let mut p = probe(empty.path());
+            p.copilot_app_dirs = dirs;
+            let found = resolve_binary(EngineKind::Copilot, None, &p).await.unwrap();
+            assert!(found.starts_with(root.join("copilot-sdk-runtime-1.0.110")));
+            assert!(resolve_binary(EngineKind::Codex, None, &p).await.is_none());
         }
 
         #[tokio::test]
