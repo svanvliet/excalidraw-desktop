@@ -42,6 +42,7 @@ fn adapter_factory() -> manager::AdapterFactory {
         |kind| -> Option<Box<dyn crate::agent::adapter::EngineAdapter>> {
             match kind {
                 EngineKind::Claude => Some(Box::new(crate::agent::claude::ClaudeAdapter::new())),
+                EngineKind::Copilot => Some(Box::new(crate::agent::acp::AcpAdapter::copilot())),
                 _ => None,
             }
         },
