@@ -1,0 +1,214 @@
+/**
+ * Browser guest mode (collab-protocol §7). Rendered when the bundle runs
+ * outside Tauri and the URL carries `#room=`. Must never touch Tauri IPC or
+ * the persisted stores — everything here is in-memory or `localStorage`.
+ */
+import { Excalidraw, LiveCollaborationTrigger } from "@excalidraw/excalidraw";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+
+import "@excalidraw/excalidraw/index.css";
+import "./GuestApp.css";
+import type { CollabSession, CollabStatus } from "../collab/CollabSession";
+import type { RoomLink } from "../collab/protocol";
+import { useCollabSession } from "../collab/useCollabSession";
+import { log } from "../lib/logger";
+
+export const GUEST_NAME_KEY = "excalidraw-desktop:guest-name";
+export const E2E_FLAG_KEY = "excalidraw-desktop:e2e";
+const MAX_NAME = 40;
+
+declare global {
+  interface Window {
+    __guest?: { api: ExcalidrawImperativeAPI; session: CollabSession | null };
+  }
+}
+
+function readStoredName(): string {
+  try {
+    return localStorage.getItem(GUEST_NAME_KEY)?.trim().slice(0, MAX_NAME) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+/** Guest has no persisted theme preference: follow the OS. */
+function useSystemTheme(): "light" | "dark" {
+  const [dark, setDark] = useState(() => window.matchMedia?.(DARK_QUERY).matches ?? false);
+  useEffect(() => {
+    const mql = window.matchMedia?.(DARK_QUERY);
+    if (!mql) return;
+    const onChange = (e: MediaQueryListEvent) => setDark(e.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  const theme = dark ? "dark" : "light";
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  return theme;
+}
+
+type BannerTone = "info" | "warn" | "error";
+const BANNERS: Partial<Record<CollabStatus, { text: string; tone: BannerTone }>> = {
+  connecting: { text: "Connecting to the session…", tone: "info" },
+  reconnecting: { text: "Connection lost — reconnecting…", tone: "warn" },
+  ended: { text: "The host ended this session.", tone: "error" },
+  failed: { text: "Couldn't join this session.", tone: "error" },
+};
+
+export interface GuestAppProps {
+  link: RoomLink;
+}
+
+export function GuestApp({ link }: GuestAppProps) {
+  const theme = useSystemTheme();
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [username, setUsername] = useState(readStoredName);
+  const [promptOpen, setPromptOpen] = useState(() => username === "");
+
+  const { status, error, peers, handlers, session } = useCollabSession({
+    api,
+    // Hold off joining until the guest has a name so peers never see a blank one.
+    link: username ? link : null,
+    username,
+    isHost: false,
+  });
+
+  useEffect(() => {
+    log.info(`guest: status=${status}${error ? ` error=${error.code}` : ""}`);
+  }, [status, error]);
+
+  useEffect(() => {
+    let enabled = false;
+    try {
+      enabled = localStorage.getItem(E2E_FLAG_KEY) === "1";
+    } catch {
+      // storage unavailable
+    }
+    if (enabled && api) window.__guest = { api, session };
+  }, [api, session]);
+
+  const saveName = useCallback((name: string) => {
+    const clean = name.trim().slice(0, MAX_NAME) || "Guest";
+    try {
+      localStorage.setItem(GUEST_NAME_KEY, clean);
+    } catch {
+      // storage unavailable; keep the in-memory name
+    }
+    setUsername(clean);
+    setPromptOpen(false);
+  }, []);
+
+  const banner = BANNERS[status];
+  const ended = status === "ended" || status === "failed";
+  const participants = peers.length + 1;
+
+  const renderTopRightUI = useCallback(
+    () => (
+      <LiveCollaborationTrigger
+        isCollaborating={!ended}
+        onSelect={() => setPromptOpen(true)}
+        title={`${participants} in session — click to change your name`}
+      />
+    ),
+    [ended, participants],
+  );
+
+  const initialData = useMemo(() => ({ appState: { name: "Shared drawing" } }), []);
+
+  return (
+    <div className="guest-app">
+      {banner && (
+        <div className={`guest-banner guest-banner--${banner.tone}`} role="status">
+          {status === "failed" && error?.message
+            ? `${banner.text} (${error.message})`
+            : banner.text}
+        </div>
+      )}
+      <div className="guest-app__canvas">
+        <Excalidraw
+          excalidrawAPI={setApi}
+          initialData={initialData}
+          onChange={handlers.onChange}
+          onPointerUpdate={handlers.onPointerUpdate}
+          isCollaborating={!ended}
+          viewModeEnabled={ended}
+          theme={theme}
+          renderTopRightUI={renderTopRightUI}
+        />
+      </div>
+      {promptOpen && (
+        <NamePrompt initial={username} onSubmit={saveName} onCancel={() => saveName(username)} />
+      )}
+    </div>
+  );
+}
+
+interface NamePromptProps {
+  initial: string;
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}
+
+function NamePrompt({ initial, onSubmit, onCancel }: NamePromptProps) {
+  const [value, setValue] = useState(initial);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    onSubmit(value);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <form
+        className="modal guest-name"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guest-name-title"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+      >
+        <div className="modal__header">
+          <div>
+            <h2 className="modal__title" id="guest-name-title">
+              Join live session
+            </h2>
+            <p className="modal__subtitle">
+              Your name is shown next to your cursor. Drawings are end-to-end encrypted.
+            </p>
+          </div>
+        </div>
+        <div className="modal__body">
+          <label className="guest-name__label" htmlFor="guest-name-input">
+            Your name
+          </label>
+          <input
+            id="guest-name-input"
+            className="guest-name__input"
+            autoFocus
+            maxLength={MAX_NAME}
+            value={value}
+            placeholder="Guest"
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
+        <div className="modal__actions">
+          <button type="submit" className="modal__primary">
+            Join
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

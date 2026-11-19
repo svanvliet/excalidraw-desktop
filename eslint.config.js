@@ -31,6 +31,16 @@ export default [
     },
   },
   {
+    // Node-side e2e fixtures (e.g. the reference collab relay).
+    files: ["e2e/fixtures/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        URL: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,

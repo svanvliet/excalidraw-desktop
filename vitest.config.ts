@@ -8,6 +8,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    server: { deps: { inline: ["@excalidraw/excalidraw"] } },
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
