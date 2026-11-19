@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::collab::manager::{CollabManager, CollabStartArgs, CollabStatus, EmitFn};
+use crate::collab::protocol::Role;
 use crate::collab::relay::{Asset, AssetSource};
 use crate::error::AppError;
 
@@ -72,6 +73,19 @@ pub async fn collab_remove_peer(
     log::info!("collab_remove_peer: {client_id}");
     manager
         .remove_peer(&client_id)
+        .await
+        .map_err(AppError::Other)
+}
+
+#[tauri::command]
+pub async fn collab_set_role(
+    manager: State<'_, Arc<CollabManager>>,
+    client_id: String,
+    role: Role,
+) -> Result<(), AppError> {
+    log::info!("collab_set_role: {client_id} -> {role:?}");
+    manager
+        .set_role(&client_id, role)
         .await
         .map_err(AppError::Other)
 }

@@ -2,7 +2,10 @@
 //! browser guests against it (see `npm run e2e:rust-relay`).
 //!
 //! `cargo run --example relay_standalone -- --port 4174 --dist ../dist \
-//!     --room <20 hex> [--control-port 4175]`
+//!     --room <20 hex> [--control-port 4175] [--guest-role editor|viewer]`
+//!
+//! There is no host here, so guests default to `editor` unless
+//! `--guest-role viewer` is given.
 //!
 //! The optional control port exposes test-only `POST /__end/<room>`, which
 //! closes the room with 4000 like a host pressing "Stop session".
@@ -12,6 +15,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::routing::post;
 use axum::Router;
+use excalidraw_desktop_lib::collab::protocol::Role;
 use excalidraw_desktop_lib::collab::relay::{Asset, AssetSource, RelayServer};
 
 struct DirAssets(PathBuf);
@@ -40,8 +44,13 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or(4174);
     let dist = PathBuf::from(arg(&args, "--dist").unwrap_or_else(|| "../dist".into()));
     let relay = Arc::new(RelayServer::bind(port, Some(Arc::new(DirAssets(dist))), None).await?);
+    let guest_role = match arg(&args, "--guest-role").as_deref() {
+        Some("viewer") => Role::Viewer,
+        _ => Role::Editor,
+    };
     for room in args.windows(2).filter(|w| w[0] == "--room").map(|w| &w[1]) {
-        relay.register_room(room);
+        relay.register_room(room, None);
+        relay.set_guest_default_role(room, guest_role);
     }
     println!("relay_standalone: listening on 127.0.0.1:{}", relay.port());
 

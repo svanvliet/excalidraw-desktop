@@ -2,6 +2,8 @@
 //!
 //! Pure data + parsing so it can be unit-tested without sockets.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u64 = 1;
@@ -27,6 +29,10 @@ pub enum ClientFrame {
     Join {
         room: String,
         protocol: u64,
+        /// Secret from `collab_start`; proves the socket is the host webview.
+        host_token: Option<String>,
+        /// `resumeToken` from an earlier `welcome`; restores that client's role.
+        resume: Option<String>,
     },
     Broadcast {
         volatile: bool,
@@ -34,6 +40,18 @@ pub enum ClientFrame {
         data: String,
     },
 }
+
+/// Relay-assigned participant role (§3 "Roles"). The relay is the authority:
+/// clients drop scene/file payloads whose `from` isn't `host`/`editor`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Host,
+    Editor,
+    Viewer,
+}
+
+pub type RolesMap<'a> = BTreeMap<&'a str, Role>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -63,9 +81,12 @@ pub enum ServerFrame<'a> {
         client_id: &'a str,
         peers: Vec<&'a str>,
         first_in_room: bool,
+        roles: RolesMap<'a>,
+        resume_token: &'a str,
     },
     Peers {
         peers: Vec<&'a str>,
+        roles: RolesMap<'a>,
     },
     Message {
         from: &'a str,
@@ -94,9 +115,14 @@ pub enum ParseError {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct JoinFields {
     room: String,
     protocol: u64,
+    #[serde(default)]
+    host_token: Option<String>,
+    #[serde(default)]
+    resume: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -122,6 +148,8 @@ pub fn parse_client_frame(text: &str) -> Result<ClientFrame, ParseError> {
             Ok(ClientFrame::Join {
                 room: f.room,
                 protocol: f.protocol,
+                host_token: f.host_token,
+                resume: f.resume,
             })
         }
         "broadcast" => {
@@ -147,6 +175,11 @@ pub fn new_client_id() -> String {
     format!("{:016x}", rand::random::<u64>())
 }
 
+/// 128-bit random secret (host token / resume token), 32 lowercase hex chars.
+pub fn new_secret() -> String {
+    format!("{:032x}", rand::random::<u128>())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,7 +190,20 @@ mod tests {
             parse_client_frame(r#"{"type":"join","room":"abc","protocol":1}"#),
             Ok(ClientFrame::Join {
                 room: "abc".into(),
-                protocol: 1
+                protocol: 1,
+                host_token: None,
+                resume: None,
+            })
+        );
+        assert_eq!(
+            parse_client_frame(
+                r#"{"type":"join","room":"abc","protocol":1,"hostToken":"h","resume":"r"}"#
+            ),
+            Ok(ClientFrame::Join {
+                room: "abc".into(),
+                protocol: 1,
+                host_token: Some("h".into()),
+                resume: Some("r".into()),
             })
         );
         assert_eq!(
@@ -190,11 +236,13 @@ mod tests {
             client_id: "c1",
             peers: vec!["c0"],
             first_in_room: false,
+            roles: RolesMap::from([("c0", Role::Host), ("c1", Role::Viewer)]),
+            resume_token: "t",
         }
         .to_json();
         assert_eq!(
             json,
-            r#"{"type":"welcome","clientId":"c1","peers":["c0"],"firstInRoom":false}"#
+            r#"{"type":"welcome","clientId":"c1","peers":["c0"],"firstInRoom":false,"roles":{"c0":"host","c1":"viewer"},"resumeToken":"t"}"#
         );
         let err = ServerFrame::Error {
             code: ErrorCode::UnknownRoom,

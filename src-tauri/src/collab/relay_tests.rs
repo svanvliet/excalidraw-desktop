@@ -35,9 +35,11 @@ async fn server() -> RelayServer {
     let s = RelayServer::bind(0, Some(Arc::new(FakeAssets)), None)
         .await
         .unwrap();
-    s.register_room(ROOM);
+    s.register_room(ROOM, Some(HOST_TOKEN));
     s
 }
+
+const HOST_TOKEN: &str = "0123456789abcdef0123456789abcdef";
 
 async fn connect(port: u16) -> Client {
     let (ws, _) = connect_async(format!("ws://127.0.0.1:{port}/ws"))
@@ -82,8 +84,12 @@ async fn recv_close(c: &mut Client) -> u16 {
 }
 
 async fn join(port: u16) -> (Client, String, Value) {
+    join_with(port, json!({"type":"join","room":ROOM,"protocol":1})).await
+}
+
+async fn join_with(port: u16, frame: Value) -> (Client, String, Value) {
     let mut c = connect(port).await;
-    send(&mut c, json!({"type":"join","room":ROOM,"protocol":1})).await;
+    send(&mut c, frame).await;
     let welcome = recv(&mut c).await;
     assert_eq!(welcome["type"], "welcome");
     let id = welcome["clientId"].as_str().unwrap().to_owned();
@@ -104,12 +110,13 @@ async fn join_welcome_and_peer_updates() {
     assert_eq!(wb["firstInRoom"], false);
     assert_eq!(wb["peers"], json!([a_id]));
     let pa = recv(&mut a).await;
-    assert_eq!(pa, json!({"type":"peers","peers":[a_id, b_id]}));
+    assert_eq!(pa["peers"], json!([a_id, b_id]));
+    assert_eq!(pa["roles"], json!({&a_id: "viewer", &b_id: "viewer"}));
     assert_eq!(s.peer_count(ROOM), 2);
 
     b.close(None).await.unwrap();
     let pa = recv(&mut a).await;
-    assert_eq!(pa, json!({"type":"peers","peers":[a_id]}));
+    assert_eq!(pa["peers"], json!([a_id]));
     assert_eq!(s.peer_count(ROOM), 1);
 }
 
@@ -249,8 +256,64 @@ async fn kick_peer_closes_only_that_peer_with_4001() {
     assert!(s.kick_peer(ROOM, &b_id));
     assert_eq!(recv_close(&mut b).await, CLOSE_REMOVED);
     let pa = recv(&mut a).await;
-    assert_eq!(pa, json!({"type":"peers","peers":[a_id]}));
+    assert_eq!(pa["peers"], json!([a_id]));
     assert_eq!(s.peer_count(ROOM), 1);
+}
+
+#[tokio::test]
+async fn host_token_grants_host_and_guests_default_to_viewer() {
+    let s = server().await;
+    let (mut h, h_id, wh) = join_with(
+        s.port(),
+        json!({"type":"join","room":ROOM,"protocol":1,"hostToken":HOST_TOKEN}),
+    )
+    .await;
+    assert_eq!(wh["roles"][&h_id], "host");
+    let (_fake, f_id, wf) = join_with(
+        s.port(),
+        json!({"type":"join","room":ROOM,"protocol":1,"hostToken":"nope"}),
+    )
+    .await;
+    assert_eq!(wf["roles"][&f_id], "viewer");
+    assert_eq!(wf["roles"][&h_id], "host");
+    assert_eq!(recv(&mut h).await["roles"][&f_id], "viewer");
+}
+
+#[tokio::test]
+async fn set_role_rebroadcasts_and_survives_resume() {
+    let s = server().await;
+    let (mut h, h_id, _) = join_with(
+        s.port(),
+        json!({"type":"join","room":ROOM,"protocol":1,"hostToken":HOST_TOKEN}),
+    )
+    .await;
+    let (mut g, g_id, wg) = join(s.port()).await;
+    let token = wg["resumeToken"].as_str().unwrap().to_owned();
+    assert_eq!(token.len(), 32);
+    let _ = recv(&mut h).await;
+
+    assert!(!s.set_role(ROOM, &h_id, Role::Viewer), "host role is fixed");
+    assert!(!s.set_role(ROOM, &g_id, Role::Host));
+    assert!(!s.set_role(ROOM, "0000000000000000", Role::Editor));
+    assert!(s.set_role(ROOM, &g_id, Role::Editor));
+    assert_eq!(recv(&mut h).await["roles"][&g_id], "editor");
+    assert_eq!(recv(&mut g).await["roles"][&g_id], "editor");
+
+    g.close(None).await.unwrap();
+    let _ = recv(&mut h).await;
+    let (_g2, g2_id, wg2) = join_with(
+        s.port(),
+        json!({"type":"join","room":ROOM,"protocol":1,"resume":token}),
+    )
+    .await;
+    assert_eq!(wg2["roles"][&g2_id], "editor");
+    assert_eq!(wg2["resumeToken"], token.as_str());
+    let (_g3, g3_id, wg3) = join_with(
+        s.port(),
+        json!({"type":"join","room":ROOM,"protocol":1,"resume":"bogus"}),
+    )
+    .await;
+    assert_eq!(wg3["roles"][&g3_id], "viewer");
 }
 
 #[tokio::test]
@@ -261,7 +324,7 @@ async fn peer_count_callback_fires() {
         sink.lock().unwrap().push((room.to_owned(), n));
     });
     let s = RelayServer::bind(0, None, Some(cb)).await.unwrap();
-    s.register_room(ROOM);
+    s.register_room(ROOM, None);
     let (a, _, _) = join(s.port()).await;
     let (b, _, _) = join(s.port()).await;
     drop(b);

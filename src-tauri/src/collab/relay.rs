@@ -20,10 +20,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use super::protocol::{
-    is_valid_room_id, new_client_id, parse_client_frame, ClientFrame, ErrorCode, ParseError,
-    ServerFrame, CLOSE_POLICY, CLOSE_REMOVED, CLOSE_SESSION_ENDED, CLOSE_TRY_AGAIN_LATER,
-    CLOSE_UNSUPPORTED_DATA, HARD_FRAME_BYTES, MAX_FRAME_BYTES, MAX_PEERS_PER_ROOM,
-    PROTOCOL_VERSION,
+    is_valid_room_id, new_client_id, new_secret, parse_client_frame, ClientFrame, ErrorCode,
+    ParseError, Role, RolesMap, ServerFrame, CLOSE_POLICY, CLOSE_REMOVED, CLOSE_SESSION_ENDED,
+    CLOSE_TRY_AGAIN_LATER, CLOSE_UNSUPPORTED_DATA, HARD_FRAME_BYTES, MAX_FRAME_BYTES,
+    MAX_PEERS_PER_ROOM, PROTOCOL_VERSION,
 };
 
 /// CSP for the guest web app. `wasm-unsafe-eval` is needed by Excalidraw's
@@ -61,6 +61,8 @@ enum Outgoing {
 #[derive(Clone)]
 struct PeerHandle {
     id: String,
+    role: Role,
+    resume_token: String,
     tx: mpsc::UnboundedSender<Outgoing>,
     queued_msgs: Arc<AtomicUsize>,
     queued_bytes: Arc<AtomicUsize>,
@@ -91,8 +93,41 @@ impl PeerHandle {
     }
 }
 
+#[derive(Default)]
+struct Room {
+    peers: Vec<PeerHandle>,
+    /// Joining with this token makes the socket `host`. `None`: nobody is host.
+    host_token: Option<String>,
+    /// resume token → last role, so reconnecting guests keep their role.
+    resume: HashMap<String, Role>,
+    /// Role for new non-host joins; `Viewer` unless a test harness overrides it.
+    guest_role: Option<Role>,
+}
+
+impl Room {
+    fn roles(&self) -> RolesMap<'_> {
+        self.peers.iter().map(|p| (p.id.as_str(), p.role)).collect()
+    }
+
+    fn peers_frame(&self) -> Utf8Bytes {
+        ServerFrame::Peers {
+            peers: self.peers.iter().map(|p| p.id.as_str()).collect(),
+            roles: self.roles(),
+        }
+        .to_json()
+        .into()
+    }
+
+    fn announce(&self) {
+        let frame = self.peers_frame();
+        for p in &self.peers {
+            p.send(frame.clone(), false);
+        }
+    }
+}
+
 struct RelayState {
-    rooms: Mutex<HashMap<String, Vec<PeerHandle>>>,
+    rooms: Mutex<HashMap<String, Room>>,
     on_peers: Option<PeerCountFn>,
     assets: Option<Arc<dyn AssetSource>>,
     shutdown: watch::Receiver<bool>,
@@ -105,40 +140,55 @@ impl RelayState {
         }
     }
 
-    fn peers_frame(peers: &[PeerHandle]) -> Utf8Bytes {
-        ServerFrame::Peers {
-            peers: peers.iter().map(|p| p.id.as_str()).collect(),
-        }
-        .to_json()
-        .into()
-    }
-
     /// Returns the assigned client id, or the fatal error code.
-    fn join(&self, room: &str, mut peer: PeerHandle) -> Result<String, ErrorCode> {
+    fn join(
+        &self,
+        room: &str,
+        mut peer: PeerHandle,
+        host_token: Option<&str>,
+        resume: Option<&str>,
+    ) -> Result<String, ErrorCode> {
         let count = {
             let mut rooms = self.rooms.lock().unwrap();
-            let peers = rooms.get_mut(room).ok_or(ErrorCode::UnknownRoom)?;
-            if peers.len() >= MAX_PEERS_PER_ROOM {
+            let r = rooms.get_mut(room).ok_or(ErrorCode::UnknownRoom)?;
+            if r.peers.len() >= MAX_PEERS_PER_ROOM {
                 return Err(ErrorCode::RoomFull);
             }
             let mut id = new_client_id();
-            while peers.iter().any(|p| p.id == id) {
+            while r.peers.iter().any(|p| p.id == id) {
                 id = new_client_id();
             }
             peer.id = id;
+            let is_host =
+                matches!((host_token, r.host_token.as_deref()), (Some(a), Some(b)) if a == b);
+            let resumed = resume.and_then(|t| r.resume.get(t).map(|role| (t, *role)));
+            (peer.role, peer.resume_token) = if is_host {
+                (Role::Host, new_secret())
+            } else if let Some((token, role)) = resumed {
+                (role, token.to_owned())
+            } else {
+                (r.guest_role.unwrap_or(Role::Viewer), new_secret())
+            };
+            if peer.role != Role::Host {
+                r.resume.insert(peer.resume_token.clone(), peer.role);
+            }
+            r.peers.push(peer.clone());
             let welcome = ServerFrame::Welcome {
                 client_id: &peer.id,
-                peers: peers.iter().map(|p| p.id.as_str()).collect(),
-                first_in_room: peers.is_empty(),
+                peers: r
+                    .peers
+                    .iter()
+                    .filter(|p| p.id != peer.id)
+                    .map(|p| p.id.as_str())
+                    .collect(),
+                first_in_room: r.peers.len() == 1,
+                roles: r.roles(),
+                resume_token: &peer.resume_token,
             }
             .to_json();
             peer.send(welcome.into(), false);
-            peers.push(peer.clone());
-            let frame = Self::peers_frame(peers);
-            for p in peers.iter() {
-                p.send(frame.clone(), false);
-            }
-            peers.len()
+            r.announce();
+            r.peers.len()
         };
         self.notify(room, count);
         Ok(peer.id)
@@ -147,26 +197,23 @@ impl RelayState {
     fn leave(&self, room: &str, id: &str) {
         let count = {
             let mut rooms = self.rooms.lock().unwrap();
-            let Some(peers) = rooms.get_mut(room) else {
+            let Some(r) = rooms.get_mut(room) else {
                 return;
             };
-            let before = peers.len();
-            peers.retain(|p| p.id != id);
-            if peers.len() == before {
+            let before = r.peers.len();
+            r.peers.retain(|p| p.id != id);
+            if r.peers.len() == before {
                 return;
             }
-            let frame = Self::peers_frame(peers);
-            for p in peers.iter() {
-                p.send(frame.clone(), false);
-            }
-            peers.len()
+            r.announce();
+            r.peers.len()
         };
         self.notify(room, count);
     }
 
     fn broadcast(&self, room: &str, from: &str, volatile: bool, iv: &str, data: &str) {
         let rooms = self.rooms.lock().unwrap();
-        let Some(peers) = rooms.get(room) else {
+        let Some(r) = rooms.get(room) else {
             return;
         };
         let frame: Utf8Bytes = ServerFrame::Message {
@@ -177,7 +224,7 @@ impl RelayState {
         }
         .to_json()
         .into();
-        for p in peers.iter().filter(|p| p.id != from) {
+        for p in r.peers.iter().filter(|p| p.id != from) {
             p.send(frame.clone(), volatile);
         }
     }
@@ -240,23 +287,61 @@ impl RelayServer {
         self.port
     }
 
-    /// Allow peers to join `room`. Idempotent.
-    pub fn register_room(&self, room: &str) {
+    /// Allow peers to join `room`; a join carrying `host_token` gets the
+    /// `host` role. Idempotent (re-registering replaces the host token).
+    pub fn register_room(&self, room: &str, host_token: Option<&str>) {
         self.state
             .rooms
             .lock()
             .unwrap()
             .entry(room.to_owned())
-            .or_default();
+            .or_default()
+            .host_token = host_token.map(str::to_owned);
         log::info!("collab relay: registered room {room}");
+    }
+
+    /// Override the role new guests get in `room` (test harnesses only).
+    pub fn set_guest_default_role(&self, room: &str, role: Role) {
+        if let Some(r) = self.state.rooms.lock().unwrap().get_mut(room) {
+            r.guest_role = Some(role);
+        }
+    }
+
+    /// Change a guest's role to `editor` or `viewer` and re-announce `peers`.
+    /// Returns false if the peer isn't in `room`, is the host, or `role` is `host`.
+    pub fn set_role(&self, room: &str, client_id: &str, role: Role) -> bool {
+        if role == Role::Host {
+            return false;
+        }
+        let mut rooms = self.state.rooms.lock().unwrap();
+        let Some(r) = rooms.get_mut(room) else {
+            return false;
+        };
+        let Some(peer) = r.peers.iter_mut().find(|p| p.id == client_id) else {
+            return false;
+        };
+        if peer.role == Role::Host {
+            return false;
+        }
+        if peer.role != role {
+            log::info!("collab relay: {client_id} in room {room} is now {role:?}");
+            peer.role = role;
+            let token = peer.resume_token.clone();
+            r.resume.insert(token, role);
+            r.announce();
+        }
+        true
     }
 
     /// Close every socket in `room` with code 4000 and unregister it.
     pub fn close_room(&self, room: &str) {
         let peers = self.state.rooms.lock().unwrap().remove(room);
         if let Some(peers) = peers {
-            log::info!("collab relay: closing room {room} ({} peers)", peers.len());
-            for p in &peers {
+            log::info!(
+                "collab relay: closing room {room} ({} peers)",
+                peers.peers.len()
+            );
+            for p in &peers.peers {
                 p.close(CLOSE_SESSION_ENDED, "session ended");
             }
             self.state.notify(room, 0);
@@ -268,7 +353,7 @@ impl RelayServer {
         let rooms = self.state.rooms.lock().unwrap();
         let Some(peer) = rooms
             .get(room)
-            .and_then(|peers| peers.iter().find(|p| p.id == client_id))
+            .and_then(|r| r.peers.iter().find(|p| p.id == client_id))
         else {
             return false;
         };
@@ -283,7 +368,7 @@ impl RelayServer {
             .lock()
             .unwrap()
             .get(room)
-            .map_or(0, Vec::len)
+            .map_or(0, |r| r.peers.len())
     }
 
     /// Close all rooms (4000), disconnect stragglers and stop listening.
@@ -337,6 +422,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<RelayState>) {
     let queued_bytes = Arc::new(AtomicUsize::new(0));
     let me = PeerHandle {
         id: String::new(),
+        role: Role::Viewer,
+        resume_token: String::new(),
         tx,
         queued_msgs: queued_msgs.clone(),
         queued_bytes: queued_bytes.clone(),
@@ -414,7 +501,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<RelayState>) {
                         me.close(CLOSE_UNSUPPORTED_DATA, "malformed json");
                     }
                     Err(ParseError::BadFrame(m)) => send_error(ErrorCode::BadFrame, &m),
-                    Ok(ClientFrame::Join { room, protocol }) => {
+                    Ok(ClientFrame::Join { room, protocol, host_token, resume }) => {
                         if joined.is_some() {
                             closing = true;
                             send_error(ErrorCode::Protocol, "already joined");
@@ -425,7 +512,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<RelayState>) {
                             closing = true;
                             send_error(ErrorCode::UnknownRoom, "unknown room");
                         } else {
-                            match state.join(&room, me.clone()) {
+                            match state.join(&room, me.clone(), host_token.as_deref(), resume.as_deref()) {
                                 Ok(id) => joined = Some((room, id)),
                                 Err(code) => {
                                     closing = true;

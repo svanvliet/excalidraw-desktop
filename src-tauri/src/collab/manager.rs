@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use super::protocol::is_valid_room_id;
+use super::protocol::{is_valid_room_id, new_secret, Role};
 use super::relay::{AssetSource, PeerCountFn, RelayServer};
 use super::tunnel::{self, TunnelMode};
 
@@ -49,6 +49,9 @@ pub struct CollabStatus {
     pub public_base: Option<String>,
     pub tunnel: TunnelStatus,
     pub peer_count: usize,
+    /// Secret the host webview puts in its `join` so the relay grants it the
+    /// `host` role. Only ever sent to this app's own webview.
+    pub host_token: Option<String>,
 }
 
 impl CollabStatus {
@@ -65,6 +68,7 @@ impl CollabStatus {
                 error: None,
             },
             peer_count: 0,
+            host_token: None,
         }
     }
 }
@@ -210,12 +214,14 @@ impl CollabManager {
             if let Some(old) = inner.room.take() {
                 relay.close_room(&old);
             }
-            relay.register_room(&args.room_id);
+            let host_token = new_secret();
+            relay.register_room(&args.room_id, Some(&host_token));
             inner.room = Some(args.room_id.clone());
             let count = relay.peer_count(&args.room_id);
             self.hub.update(|s| {
                 s.room_id = Some(args.room_id.clone());
                 s.peer_count = count;
+                s.host_token = Some(host_token);
             });
         }
 
@@ -306,6 +312,22 @@ impl CollabManager {
         }
     }
 
+    /// Make a guest an `editor` or `viewer` in the active room.
+    pub async fn set_role(&self, client_id: &str, role: Role) -> Result<(), String> {
+        if role == Role::Host {
+            return Err("cannot assign the host role".to_owned());
+        }
+        let inner = self.inner.lock().await;
+        let (Some(relay), Some(room)) = (inner.relay.as_ref(), inner.room.as_deref()) else {
+            return Err("no active session".to_owned());
+        };
+        if relay.set_role(room, client_id, role) {
+            Ok(())
+        } else {
+            Err(format!("unknown peer {client_id}"))
+        }
+    }
+
     pub async fn stop(&self) -> CollabStatus {
         let mut inner = self.inner.lock().await;
         self.stop_locked(&mut inner).await;
@@ -362,7 +384,7 @@ mod tests {
                 "running": false, "roomId": null, "localPort": null, "localBase": null,
                 "publicBase": null,
                 "tunnel": { "mode": null, "state": "off", "error": null },
-                "peerCount": 0
+                "peerCount": 0, "hostToken": null
             })
         );
         let args: CollabStartArgs = serde_json::from_value(serde_json::json!({
