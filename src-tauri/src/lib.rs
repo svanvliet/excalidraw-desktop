@@ -115,6 +115,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        // Inert until `updater::check` runs; checks are gated on the user's
+        // `autoUpdate` consent or an explicit "Check for Updates…" click.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             open_file,
             save_file,

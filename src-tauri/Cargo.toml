@@ -34,6 +34,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "proces
 futures-util = "0.3"
 rand = "0.8"
 mime_guess = "2"
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }
 
 [dev-dependencies]
 tempfile = "3"
