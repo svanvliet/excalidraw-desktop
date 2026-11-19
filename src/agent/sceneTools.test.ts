@@ -362,6 +362,123 @@ describe("edit tools", () => {
     ).rejects.toThrow(/must be one of/);
   });
 
+  it("find_elements filters by label text, regex, type and color", async () => {
+    setup(boxes());
+    expect(
+      (await call("find_elements", { text: "alp" })).elements.map((e: { id: string }) => e.id),
+    ).toEqual(["a"]);
+    expect((await call("find_elements", { text: "^Al.*a$", regex: true })).total).toBe(1);
+    expect((await call("find_elements", { types: ["ellipse", "diamond"] })).total).toBe(2);
+    const red = await call("find_elements", { backgroundColor: "#FFC9C9" });
+    expect(red.elements.map((e: { id: string }) => e.id)).toEqual(["c"]);
+    await expect(runSceneTool("find_elements", { text: "(", regex: true }, TAB)).rejects.toThrow(
+      /Invalid regex/,
+    );
+  });
+
+  it("select_elements sets the user's selection without editing, even for viewers", async () => {
+    setup(boxes());
+    viewer = true;
+    const labelId = api.byId("a").boundElements![0].id;
+    expect((await call("select_elements", { ids: [labelId, "b"] })).selected).toEqual(["a", "b"]);
+    expect((await call("select_elements", { ids: ["c"], mode: "add" })).selected).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect((await call("select_elements", { ids: ["a"], mode: "remove" })).selected).toEqual([
+      "b",
+      "c",
+    ]);
+    expect((await call("get_selection")).ids).toEqual(["b", "c"]);
+    await call("select_elements", { mode: "clear", reveal: true });
+    expect(api.selectedElementIds).toEqual({});
+    expect(api.undoStack).toHaveLength(0);
+    expect(markDirty).not.toHaveBeenCalled();
+  });
+
+  it("get_canvas_state and set_canvas", async () => {
+    setup(boxes());
+    api.appState = { viewBackgroundColor: "#ffffff", currentItemStrokeColor: "#1e1e1e" };
+    const state = await call("get_canvas_state");
+    expect(state).toMatchObject({
+      elementCount: 3,
+      editable: true,
+      viewBackgroundColor: "#ffffff",
+      currentItemStyle: { strokeColor: "#1e1e1e" },
+      viewport: { x: 0, y: 0, width: 1000, height: 800, zoom: 1 },
+    });
+    await call("set_canvas", { viewBackgroundColor: "#fff9db", gridModeEnabled: true });
+    expect(api.appState).toMatchObject({ viewBackgroundColor: "#fff9db", gridModeEnabled: true });
+    expect(markDirty).toHaveBeenCalled();
+    await expect(runSceneTool("set_canvas", {}, TAB)).rejects.toThrow(/Pass/);
+  });
+
+  it("move_elements shifts shapes with their labels and re-routes arrows", async () => {
+    setup(boxes());
+    await call("connect", { from: "a", to: "b" });
+    const arrow = api.elements.find((e) => e.type === "arrow")!;
+    const labelId = api.byId("a").boundElements!.find((b) => b.type === "text")!.id;
+    const labelX = api.byId(labelId).x;
+    await call("move_elements", { ids: ["a"], dx: 0, dy: 100 });
+    expect(api.byId("a").y).toBe(100);
+    expect(api.byId(labelId).x).toBe(labelX);
+    expect(api.byId(labelId).y).toBeGreaterThan(100);
+    expect(api.byId(arrow.id).version).toBeGreaterThan(arrow.version);
+    await expect(runSceneTool("move_elements", { ids: ["a"] }, TAB)).rejects.toThrow(/non-zero/);
+  });
+
+  it("duplicate_elements copies labels, groups and internal arrows with remapped ids", async () => {
+    setup(boxes());
+    await call("connect", { from: "a", to: "b" });
+    await call("connect", { from: "b", to: "c" });
+    const { groupId } = await call("arrange", { ids: ["a", "b"], action: "group" });
+    const { created } = await call("duplicate_elements", { ids: ["a", "b"], dx: 0, dy: 500 });
+    const na = api.byId(created.a);
+    const nb = api.byId(created.b);
+    expect([na.x, na.y]).toEqual([api.byId("a").x, api.byId("a").y + 500]);
+    expect(na.groupIds).toHaveLength(1);
+    expect(na.groupIds[0]).not.toBe(groupId);
+    expect(nb.groupIds).toEqual(na.groupIds);
+    // Label copied and bound to the copy.
+    const label = api.byId(na.boundElements!.find((b) => b.type === "text")!.id);
+    expect((label as { containerId: string }).containerId).toBe(created.a);
+    // Only the a→b arrow comes along (b→c has an end outside the copy).
+    const arrows = Object.values(created as Record<string, string>)
+      .map((id) => api.byId(id))
+      .filter((e) => e.type === "arrow");
+    expect(arrows).toHaveLength(1);
+    const copied = arrows[0] as unknown as {
+      startBinding: { elementId: string };
+      endBinding: { elementId: string };
+    };
+    expect([copied.startBinding.elementId, copied.endBinding.elementId]).toEqual([
+      created.a,
+      created.b,
+    ]);
+    expect(nb.boundElements!.map((b) => b.id)).toContain(arrows[0].id);
+    expect(api.undoStack).toHaveLength(4);
+  });
+
+  it("arrange frame puts elements into a frame and takes them out", async () => {
+    setup([
+      ...boxes(),
+      ...scene([{ type: "frame", id: "f", x: -50, y: -50, width: 600, height: 600, children: [] }]),
+    ]);
+    await call("arrange", { ids: ["a", "b"], action: "frame", value: "f" });
+    expect(api.byId("a").frameId).toBe("f");
+    const labelId = api.byId("a").boundElements![0].id;
+    expect(api.byId(labelId).frameId).toBe("f");
+    expect((await call("find_elements", { frameId: "f" })).total).toBe(2);
+    await call("move_elements", { ids: ["f"], dx: 10, dy: 0 });
+    expect(api.byId("b").x).toBe(310);
+    await call("arrange", { ids: ["a"], action: "frame", value: "none" });
+    expect(api.byId("a").frameId).toBeNull();
+    await expect(
+      runSceneTool("arrange", { ids: ["a"], action: "frame", value: "b" }, TAB),
+    ).rejects.toThrow(/not a frame/);
+  });
+
   it("refuses every edit tool on a viewer tab", async () => {
     setup(boxes());
     viewer = true;
@@ -372,6 +489,9 @@ describe("edit tools", () => {
       ["connect", { from: "a", to: "b" }],
       ["add_mermaid", { mermaid: "flowchart TD\nA-->B" }],
       ["arrange", { ids: ["a"], action: "zorder", value: "front" }],
+      ["move_elements", { ids: ["a"], dx: 5 }],
+      ["duplicate_elements", { ids: ["a"] }],
+      ["set_canvas", { viewBackgroundColor: "#000" }],
       ["apply_ops", { ops: [{ tool: "delete_elements", args: { ids: ["a"] } }] }],
     ] as const) {
       await expect(runSceneTool(tool, args, TAB)).rejects.toThrow(/view-only/);

@@ -132,6 +132,12 @@ export const CANVAS_TOOL_NAMES = [
   "add_mermaid",
   "arrange",
   "set_viewport",
+  "find_elements",
+  "select_elements",
+  "get_canvas_state",
+  "move_elements",
+  "duplicate_elements",
+  "set_canvas",
   "apply_ops",
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];

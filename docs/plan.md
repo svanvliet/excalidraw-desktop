@@ -346,7 +346,7 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
   - Copilot ACP, Claude stream-json, and Codex app-server adapters.
   - Fixed sandbox flags, the "use my MCPs/skills/plugins" toggle, permission routing, and error classification.
 - **AI-3 Edit tools:**
-  - add/update/delete/connect/add_mermaid/arrange/apply_ops/set_viewport.
+  - add/update/delete/connect/add_mermaid/arrange/move/duplicate/apply_ops/set_viewport/select/find/get_canvas_state/set_canvas.
   - `expectedRevision` checks, the viewer guard, version bumps and tombstones, `markDirty` plus autosave, and Revert-turn snapshots.
 - **AI-4 Panel UX:**
   - Docked per-tab panel, transcript, tool chips, approval cards, Stop/Revert, context chips, Attach folder (read-only), and quick actions.

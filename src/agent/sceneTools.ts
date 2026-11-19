@@ -1,5 +1,5 @@
 /**
- * The 13 canvas tools of src/agent/tools.json, executed against a tab's live Excalidraw API
+ * The canvas tools of src/agent/tools.json, executed against a tab's live Excalidraw API
  * (docs/ai-integration.md § Agent tool set). Pure webview code: the Rust MCP server forwards
  * each `tools/call` as an `agent://tool-call` event and toolExecutor.ts routes it here.
  *
@@ -8,6 +8,7 @@
  * failed edit or `apply_ops` batch never leaves a half-applied scene.
  */
 import {
+  CaptureUpdateAction,
   convertToExcalidrawElements,
   exportToBlob,
   FONT_FAMILY,
@@ -59,6 +60,8 @@ const EDIT_TOOLS = new Set([
   "connect",
   "add_mermaid",
   "arrange",
+  "move_elements",
+  "duplicate_elements",
 ]);
 
 // --- arg helpers -------------------------------------------------------------
@@ -370,6 +373,159 @@ function setViewport(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
     ...(zoom !== undefined ? { minZoom: zoom, maxZoom: zoom } : {}),
   });
   return json({ tabId, ok: true, targets: targets.length });
+}
+
+function selectedIds(tab: SceneTab): string[] {
+  return Object.entries(tab.api.getAppState().selectedElementIds ?? {})
+    .filter(([, on]) => on)
+    .map(([id]) => id);
+}
+
+function selectElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
+  const mode =
+    args.mode === undefined
+      ? "replace"
+      : oneOf(args.mode, ["replace", "add", "remove", "clear"] as const, "mode");
+  const draft = new Draft(tab.api.getSceneElementsIncludingDeleted());
+  const ids = mode === "clear" ? [] : reqStrArray(args, "ids");
+  const targets = resolveTargets(draft, ids).map((el) => el.id);
+  let next = new Set(mode === "add" || mode === "remove" ? selectedIds(tab) : []);
+  if (mode === "remove") for (const id of targets) next.delete(id);
+  else for (const id of targets) next.add(id);
+  next = new Set([...next].filter((id) => draft.get(id)));
+  tab.api.updateScene({
+    appState: {
+      selectedElementIds: Object.fromEntries([...next].map((id) => [id, true as const])),
+      selectedGroupIds: {},
+      editingGroupId: null,
+    },
+    captureUpdate: CaptureUpdateAction.NEVER,
+  } as never);
+  if (args.reveal === true && next.size) {
+    tab.api.scrollToContent(
+      [...next].map((id) => draft.get(id)!),
+      { fitToContent: true, animate: true },
+    );
+  }
+  return json({ tabId, revision: revisionOf(draft.toArray()), selected: [...next] });
+}
+
+function findElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
+  const draft = new Draft(tab.api.getSceneElementsIncludingDeleted());
+  const text = optStr(args, "text");
+  let pattern: RegExp | undefined;
+  if (text !== undefined && args.regex === true) {
+    try {
+      pattern = new RegExp(text, "i");
+    } catch (err) {
+      throw new ToolError(`Invalid regex: ${(err as Error).message}`);
+    }
+  }
+  const needle = text?.toLowerCase();
+  const types = strArray(args, "types");
+  const stroke = optStr(args, "strokeColor")?.toLowerCase();
+  const bg = optStr(args, "backgroundColor")?.toLowerCase();
+  const groupId = optStr(args, "groupId");
+  const frameId = optStr(args, "frameId");
+  const limit = Math.min(Math.max(Math.trunc(optNum(args, "limit") ?? 100), 1), 500);
+  let box: Box | undefined;
+  if (args.bbox !== undefined) {
+    if (!isObj(args.bbox)) throw new ToolError(`"bbox" must be {x, y, width, height}`);
+    const [x, y, w, h] = [args.bbox.x, args.bbox.y, args.bbox.width, args.bbox.height].map(Number);
+    if ([x, y, w, h].some((n) => !Number.isFinite(n))) {
+      throw new ToolError(`"bbox" must be {x, y, width, height} numbers`);
+    }
+    box = { minX: x, minY: y, maxX: x + w, maxY: y + h };
+  }
+  const textOf = (el: El) =>
+    isText(el)
+      ? el.text
+      : (draft.boundTextOf(el)?.text ??
+        (el.type === "frame" ? ((el as { name?: string | null }).name ?? "") : ""));
+  const hits = draft.live().filter((el) => {
+    if (isFoldedText(draft, el)) return false;
+    if (types && !types.includes(el.type)) return false;
+    if (stroke && el.strokeColor.toLowerCase() !== stroke) return false;
+    if (bg && el.backgroundColor.toLowerCase() !== bg) return false;
+    if (groupId && !el.groupIds.includes(groupId)) return false;
+    if (frameId && el.frameId !== frameId) return false;
+    if (box && !intersects(boundsOf(el), box)) return false;
+    if (text !== undefined) {
+      const t = textOf(el);
+      if (pattern ? !pattern.test(t) : !t.toLowerCase().includes(needle!)) return false;
+    }
+    return true;
+  });
+  return json({
+    tabId,
+    revision: revisionOf(draft.toArray()),
+    total: hits.length,
+    elements: hits.slice(0, limit).map((el) => rowOf(draft, el)),
+  });
+}
+
+function canvasState(tab: SceneTab, tabId: string): ToolContent[] {
+  const draft = new Draft(tab.api.getSceneElementsIncludingDeleted());
+  const s = tab.api.getAppState() as unknown as Record<string, unknown> &
+    Parameters<typeof getVisibleSceneBounds>[0];
+  const [x1, y1, x2, y2] = getVisibleSceneBounds(s);
+  const live = draft.live();
+  const bounds = unionBounds(live);
+  const box = (b: Box) => ({
+    x: Math.round(b.minX),
+    y: Math.round(b.minY),
+    width: Math.round(b.maxX - b.minX),
+    height: Math.round(b.maxY - b.minY),
+  });
+  const pick = (keys: string[]) =>
+    Object.fromEntries(keys.filter((k) => s[k] !== undefined).map((k) => [k, s[k]]));
+  return json({
+    tabId,
+    revision: revisionOf(draft.toArray()),
+    editable: !tab.isViewer(),
+    elementCount: live.filter((el) => !isFoldedText(draft, el)).length,
+    sceneBounds: bounds && box(bounds),
+    viewport: { ...box({ minX: x1, minY: y1, maxX: x2, maxY: y2 }), zoom: s.zoom?.value ?? 1 },
+    selection: selectedIds(tab),
+    ...pick([
+      "theme",
+      "viewBackgroundColor",
+      "gridModeEnabled",
+      "gridSize",
+      "viewModeEnabled",
+      "zenModeEnabled",
+      "activeTool",
+    ]),
+    currentItemStyle: Object.fromEntries(
+      Object.entries(s)
+        .filter(([k]) => k.startsWith("currentItem"))
+        .map(([k, v]) => [
+          k.slice("currentItem".length, "currentItem".length + 1).toLowerCase() +
+            k.slice("currentItem".length + 1),
+          v,
+        ]),
+    ),
+  });
+}
+
+function setCanvas(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
+  const appState: Args = {};
+  const bg = optStr(args, "viewBackgroundColor");
+  if (bg !== undefined) appState.viewBackgroundColor = bg;
+  if (args.gridModeEnabled !== undefined) {
+    if (typeof args.gridModeEnabled !== "boolean")
+      throw new ToolError(`"gridModeEnabled" must be a boolean`);
+    appState.gridModeEnabled = args.gridModeEnabled;
+  }
+  if (!Object.keys(appState).length) {
+    throw new ToolError(`Pass viewBackgroundColor and/or gridModeEnabled`);
+  }
+  tab.api.updateScene({
+    appState,
+    captureUpdate: bg !== undefined ? CaptureUpdateAction.IMMEDIATELY : CaptureUpdateAction.NEVER,
+  } as never);
+  if (bg !== undefined) tab.markDirty();
+  return json({ tabId, ...appState });
 }
 
 // --- edit tools --------------------------------------------------------------
@@ -770,10 +926,90 @@ function addMermaid(draft: Draft, args: Args, ctx: EditCtx): unknown {
   };
 }
 
+/** Targets plus, for frames, everything inside them. */
+function withFrameChildren(draft: Draft, targets: El[]): El[] {
+  const out = new Map(targets.map((el) => [el.id, el]));
+  for (const t of targets) {
+    if (t.type !== "frame" && t.type !== "magicframe") continue;
+    for (const el of draft.live()) {
+      if (el.frameId === t.id && !isFoldedText(draft, el)) out.set(el.id, el);
+    }
+  }
+  return [...out.values()];
+}
+
+function moveBy(draft: Draft, args: Args): unknown {
+  const dx = optNum(args, "dx") ?? 0;
+  const dy = optNum(args, "dy") ?? 0;
+  if (!dx && !dy) throw new ToolError(`Pass a non-zero dx and/or dy`);
+  const targets = withFrameChildren(draft, resolveTargets(draft, reqStrArray(args, "ids")));
+  moveElements(draft, new Map(targets.map((el) => [el.id, [dx, dy] as [number, number]])));
+  return { moved: targets.map((el) => el.id) };
+}
+
+function duplicate(draft: Draft, args: Args): unknown {
+  const dx = optNum(args, "dx") ?? 20;
+  const dy = optNum(args, "dy") ?? 20;
+  const picked = new Set<string>();
+  for (const el of withFrameChildren(draft, resolveTargets(draft, reqStrArray(args, "ids")))) {
+    picked.add(el.id);
+  }
+  // Arrows whose both ends are being copied come along, as in Excalidraw's own duplicate.
+  for (const el of draft.live()) {
+    if (
+      isLinear(el) &&
+      el.startBinding &&
+      el.endBinding &&
+      picked.has(el.startBinding.elementId) &&
+      picked.has(el.endBinding.elementId)
+    ) {
+      picked.add(el.id);
+    }
+  }
+  for (const id of [...picked]) {
+    const label = draft.boundTextOf(draft.get(id)!);
+    if (label) picked.add(label.id);
+  }
+  const idMap = new Map([...picked].map((id) => [id, newId()]));
+  const groupMap = new Map<string, string>();
+  const remapGroup = (g: string) => {
+    if (!groupMap.has(g)) groupMap.set(g, newId());
+    return groupMap.get(g)!;
+  };
+  const rebind = <B extends { elementId: string } | null>(b: B): B | null =>
+    b && idMap.has(b.elementId) ? { ...b, elementId: idMap.get(b.elementId)! } : null;
+  const rand = () => Math.floor(Math.random() * 2 ** 31);
+  for (const el of draft.live().filter((e) => picked.has(e.id))) {
+    const clone = {
+      ...el,
+      id: idMap.get(el.id)!,
+      x: el.x + dx,
+      y: el.y + dy,
+      seed: rand(),
+      version: 1,
+      versionNonce: rand(),
+      index: null,
+      updated: Date.now(),
+      groupIds: el.groupIds.map(remapGroup),
+      frameId: el.frameId ? (idMap.get(el.frameId) ?? el.frameId) : null,
+      boundElements:
+        el.boundElements
+          ?.filter((b) => idMap.has(b.id))
+          .map((b) => ({ ...b, id: idMap.get(b.id)! })) ?? null,
+      ...(isText(el) && el.containerId ? { containerId: idMap.get(el.containerId) ?? null } : {}),
+      ...(isLinear(el)
+        ? { startBinding: rebind(el.startBinding), endBinding: rebind(el.endBinding) }
+        : {}),
+    } as El;
+    draft.add(clone);
+  }
+  return { created: Object.fromEntries(idMap) };
+}
+
 function arrange(draft: Draft, args: Args): unknown {
   const action = oneOf(
     args.action,
-    ["align", "distribute", "grid", "group", "ungroup", "zorder"] as const,
+    ["align", "distribute", "grid", "group", "ungroup", "zorder", "frame"] as const,
     "action",
   );
   const targets = resolveTargets(draft, reqStrArray(args, "ids"));
@@ -891,6 +1127,21 @@ function arrange(draft: Draft, args: Args): unknown {
       draft.reorder(withLabels(targets), value);
       break;
     }
+    case "frame": {
+      // value = a frame id to put the elements in, or omitted/"none" to take them out.
+      const frameId = args.value === undefined || args.value === "none" ? null : args.value;
+      if (frameId !== null) {
+        const frame = draft.mustGet(frameId);
+        if (frame.type !== "frame" && frame.type !== "magicframe") {
+          throw new ToolError(`"${String(frameId)}" is a ${frame.type}, not a frame`);
+        }
+      }
+      for (const id of withLabels(targets)) {
+        if (id === frameId) throw new ToolError(`A frame can't contain itself`);
+        draft.update(id, { frameId: frameId as string | null });
+      }
+      break;
+    }
   }
   return { arranged: targets.map((el) => el.id) };
 }
@@ -909,6 +1160,10 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return addMermaid(draft, args, ctx);
     case "arrange":
       return arrange(draft, args);
+    case "move_elements":
+      return moveBy(draft, args);
+    case "duplicate_elements":
+      return duplicate(draft, args);
     default:
       throw new ToolError(`"${tool}" can't be used here`);
   }
@@ -1007,6 +1262,14 @@ export async function runSceneTool(
       return renderPng(tab, tabId, args);
     case "set_viewport":
       return setViewport(tab, tabId, args);
+    case "select_elements":
+      return selectElements(tab, tabId, args);
+    case "find_elements":
+      return findElements(tab, tabId, args);
+    case "get_canvas_state":
+      return canvasState(tab, tabId);
+    case "set_canvas":
+      return setCanvas(tab, tabId, args);
     default:
       return runEdit(tool, tab, tabId, args);
   }

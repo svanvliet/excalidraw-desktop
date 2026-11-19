@@ -61,6 +61,8 @@ export class FakeApi implements SceneApi {
   undoStack: Array<Map<string, { before: El | undefined; after: El | undefined }>> = [];
   calls: Array<{ captureUpdate: Capture; ids: string[] }> = [];
   selectedElementIds: Record<string, true> = {};
+  /** Extra appState set through updateScene (background, grid, …). */
+  appState: Record<string, unknown> = {};
   files: Record<string, unknown> = {};
   scrollToContent = vi.fn();
   addFiles = vi.fn();
@@ -80,10 +82,20 @@ export class FakeApi implements SceneApi {
       width: 1000,
       height: 800,
       zoom: { value: 1 },
+      ...this.appState,
     }) as never;
   getFiles = () => this.files as never;
 
-  updateScene = ((data: { elements?: readonly El[]; captureUpdate?: Capture }) => {
+  updateScene = ((data: {
+    elements?: readonly El[];
+    appState?: Record<string, unknown>;
+    captureUpdate?: Capture;
+  }) => {
+    if (data.appState) {
+      const { selectedElementIds, ...rest } = data.appState;
+      if (selectedElementIds) this.selectedElementIds = selectedElementIds as Record<string, true>;
+      Object.assign(this.appState, rest);
+    }
     if (!data.elements) return;
     const next = new Map<string, El>();
     // Like createElementsSnapshot: omitted elements become tombstones via newElementWith.

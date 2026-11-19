@@ -142,22 +142,28 @@ WebFetch,ToolSearch`), `--permission-mode default`, and `--permission-prompt-too
 Every tool takes an optional `tabId` (default: the active tab). Read tools return a `revision`. Edit
 tools accept `expectedRevision` and are rejected if the scene changed since that read.
 
-| Tool                | What it does                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| `list_tabs`         | Lists open tabs                                                                                  |
-| `get_scene_summary` | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                        |
-| `get_selection`     | Returns the current selection                                                                    |
-| `get_elements`      | Returns elements by id                                                                           |
-| `render_canvas_png` | Renders all / viewport / selection as a PNG ≤1280px for the model to look at                     |
-| `add_elements`      | Adds skeleton-format elements; agent-chosen ids are checked for collisions                       |
-| `update_elements`   | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                |
-| `delete_elements`   | Tombstones elements and cascades to bound text and arrows                                        |
-| `connect`           | Draws an arrow between existing shapes using manual bindings                                     |
-| `add_mermaid`       | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
-| `arrange`           | align / distribute / grid / group / z-order                                                      |
-| `set_viewport`      | Moves the viewport, without an undo step                                                         |
-| `apply_ops`         | Batches several edits into one undo step                                                         |
-| `approve`           | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
+| Tool                 | What it does                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `list_tabs`          | Lists open tabs                                                                                  |
+| `get_scene_summary`  | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                        |
+| `get_selection`      | Returns the current selection                                                                    |
+| `get_elements`       | Returns elements by id                                                                           |
+| `render_canvas_png`  | Renders all / viewport / selection as a PNG ≤1280px for the model to look at                     |
+| `add_elements`       | Adds skeleton-format elements; agent-chosen ids are checked for collisions                       |
+| `update_elements`    | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                |
+| `delete_elements`    | Tombstones elements and cascades to bound text and arrows                                        |
+| `connect`            | Draws an arrow between existing shapes using manual bindings                                     |
+| `add_mermaid`        | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
+| `arrange`            | align / distribute / grid / group / z-order / frame (put into or take out of a frame)            |
+| `set_viewport`       | Moves the viewport, without an undo step                                                         |
+| `find_elements`      | Searches by text or regex, type, color, group, frame and bbox                                    |
+| `select_elements`    | Sets the user's selection (replace/add/remove/clear, optional reveal); no undo step              |
+| `get_canvas_state`   | Viewport rect and zoom, scene bounds, selection, theme, background, grid, current item styles    |
+| `move_elements`      | Moves by dx/dy; labels and frame contents follow, bound arrows re-route                          |
+| `duplicate_elements` | Copies with labels, frame contents and internal arrows; returns an old → new id map              |
+| `set_canvas`         | Background color (undoable, saved) and grid mode                                                 |
+| `apply_ops`          | Batches several edits into one undo step                                                         |
+| `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 
 A system prompt (appended) explains the coordinate system, the tool workflow (summary, then render,
 then edit), and the style defaults.

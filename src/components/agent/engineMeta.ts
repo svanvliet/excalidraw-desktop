@@ -106,6 +106,12 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   add_mermaid: "Imported a Mermaid diagram",
   arrange: "Arranged elements",
   set_viewport: "Moved the viewport",
+  find_elements: "Searched the canvas",
+  select_elements: "Selected elements",
+  get_canvas_state: "Read the canvas settings",
+  move_elements: "Moved elements",
+  duplicate_elements: "Duplicated elements",
+  set_canvas: "Changed the canvas settings",
   apply_ops: "Edited the canvas",
 };
 

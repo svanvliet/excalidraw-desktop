@@ -5,7 +5,11 @@
       "name": "list_tabs",
       "readOnly": true,
       "description": "List open canvas tabs with id, title, element count, and whether the agent may edit it (viewer tabs in a live collab session are read-only).",
-      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     {
       "name": "get_scene_summary",
@@ -14,20 +18,41 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "ids": { "type": "array", "items": { "type": "string" } },
+          "tabId": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "bbox": {
             "type": "object",
             "properties": {
-              "x": { "type": "number" },
-              "y": { "type": "number" },
-              "width": { "type": "number" },
-              "height": { "type": "number" }
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
             },
             "required": ["x", "y", "width", "height"]
           },
-          "cursor": { "type": "string" },
-          "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
         },
         "additionalProperties": false
       }
@@ -38,7 +63,11 @@
       "description": "Return the ids and summaries of the user's currently selected elements, plus revision.",
       "inputSchema": {
         "type": "object",
-        "properties": { "tabId": { "type": "string" } },
+        "properties": {
+          "tabId": {
+            "type": "string"
+          }
+        },
         "additionalProperties": false
       }
     },
@@ -49,8 +78,16 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "ids": { "type": "array", "items": { "type": "string" }, "maxItems": 200 }
+          "tabId": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200
+          }
         },
         "required": ["ids"],
         "additionalProperties": false
@@ -63,9 +100,19 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "scope": { "type": "string", "enum": ["all", "viewport", "selection", "ids"] },
-          "ids": { "type": "array", "items": { "type": "string" } }
+          "tabId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["all", "viewport", "selection", "ids"]
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         },
         "additionalProperties": false
       }
@@ -77,11 +124,17 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
           "elements": {
             "type": "array",
-            "items": { "type": "object" },
+            "items": {
+              "type": "object"
+            },
             "minItems": 1,
             "maxItems": 300
           }
@@ -97,13 +150,24 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
           "updates": {
             "type": "array",
             "items": {
               "type": "object",
-              "properties": { "id": { "type": "string" }, "patch": { "type": "object" } },
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "patch": {
+                  "type": "object"
+                }
+              },
               "required": ["id", "patch"]
             },
             "minItems": 1
@@ -120,9 +184,19 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
-          "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
         },
         "required": ["ids"],
         "additionalProperties": false
@@ -135,12 +209,24 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
-          "from": { "type": "string" },
-          "to": { "type": "string" },
-          "label": { "type": "string" },
-          "style": { "type": "object" }
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "style": {
+            "type": "object"
+          }
         },
         "required": ["from", "to"],
         "additionalProperties": false
@@ -153,11 +239,21 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
-          "mermaid": { "type": "string" },
-          "x": { "type": "number" },
-          "y": { "type": "number" }
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "mermaid": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
         },
         "required": ["mermaid"],
         "additionalProperties": false
@@ -166,20 +262,37 @@
     {
       "name": "arrange",
       "readOnly": false,
-      "description": "Arrange elements. action align: value left|center|right|top|middle|bottom. distribute: value horizontal|vertical. grid: columns, gap. group / ungroup. zorder: value front|back. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Arrange elements. action align: value left|center|right|top|middle|bottom. distribute: value horizontal|vertical. grid: columns, gap. group / ungroup. zorder: value front|back. frame: value = a frame id to put the elements in, or \"none\" to take them out. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
-          "ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
           "action": {
             "type": "string",
-            "enum": ["align", "distribute", "grid", "group", "ungroup", "zorder"]
+            "enum": ["align", "distribute", "grid", "group", "ungroup", "zorder", "frame"]
           },
-          "value": { "type": "string" },
-          "columns": { "type": "integer", "minimum": 1 },
-          "gap": { "type": "number" }
+          "value": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "gap": {
+            "type": "number"
+          }
         },
         "required": ["ids", "action"],
         "additionalProperties": false
@@ -192,9 +305,204 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "ids": { "type": "array", "items": { "type": "string" } },
-          "zoom": { "type": "number", "minimum": 0.1, "maximum": 30 }
+          "tabId": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "zoom": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 30
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find_elements",
+      "readOnly": true,
+      "description": "Search the canvas. All filters are optional and combined with AND: text (case-insensitive substring of an element's text, its shape label or a frame name; set regex: true to treat it as a regular expression), types, strokeColor, backgroundColor, groupId, frameId, bbox. Returns compact rows like get_scene_summary (up to limit, default 100) plus the total match count.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "regex": {
+            "type": "boolean"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "strokeColor": {
+            "type": "string"
+          },
+          "backgroundColor": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string"
+          },
+          "frameId": {
+            "type": "string"
+          },
+          "bbox": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            },
+            "required": ["x", "y", "width", "height"]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "select_elements",
+      "readOnly": true,
+      "description": "Set the user's selection on the canvas (highlights elements so the user can see or act on them). mode replace (default) | add | remove | clear. Label ids resolve to their shape. reveal: true also scrolls the view to the selection. Does not change the drawing or create an undo step; works in view-only tabs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["replace", "add", "remove", "clear"]
+          },
+          "reveal": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_canvas_state",
+      "readOnly": true,
+      "description": "Canvas-level state: visible viewport rectangle and zoom, scene bounds, element count, selected ids, theme, background color, grid, view/zen mode, active tool, and the current default styles for new elements (currentItemStyle). Use it to place new content in view or next to existing content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_elements",
+      "readOnly": false,
+      "description": "Move elements by a relative offset (dx, dy in scene px). Labels follow their shapes, frames bring their contents, and bound arrows are re-routed. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "dx": {
+            "type": "number"
+          },
+          "dy": {
+            "type": "number"
+          }
+        },
+        "required": ["ids"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "duplicate_elements",
+      "readOnly": false,
+      "description": "Copy elements, offset by dx/dy (default 20/20). Copies labels, frame contents, and arrows whose both ends are copied; bindings and groups among the copies are preserved. Returns created: {originalId: newId}. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "dx": {
+            "type": "number"
+          },
+          "dy": {
+            "type": "number"
+          }
+        },
+        "required": ["ids"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_canvas",
+      "readOnly": false,
+      "description": "Change canvas settings: viewBackgroundColor (saved with the drawing, undoable) and/or gridModeEnabled (view-only preference).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "viewBackgroundColor": {
+            "type": "string"
+          },
+          "gridModeEnabled": {
+            "type": "boolean"
+          }
         },
         "additionalProperties": false
       }
@@ -202,17 +510,28 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, or arrange (omit tabId/expectedRevision inside ops). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, arrange, move_elements, or duplicate_elements (omit tabId/expectedRevision inside ops). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tabId": { "type": "string" },
-          "expectedRevision": { "type": "string" },
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
           "ops": {
             "type": "array",
             "items": {
               "type": "object",
-              "properties": { "tool": { "type": "string" }, "args": { "type": "object" } },
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "args": {
+                  "type": "object"
+                }
+              },
               "required": ["tool", "args"]
             },
             "minItems": 1,
@@ -231,9 +550,15 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "tool_name": { "type": "string" },
-          "input": { "type": "object" },
-          "tool_use_id": { "type": "string" }
+          "tool_name": {
+            "type": "string"
+          },
+          "input": {
+            "type": "object"
+          },
+          "tool_use_id": {
+            "type": "string"
+          }
         },
         "required": ["tool_name", "input"]
       }

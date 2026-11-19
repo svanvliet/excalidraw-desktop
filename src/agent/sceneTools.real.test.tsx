@@ -105,3 +105,41 @@ it("collapses an agent turn into one undo step and reverts it", async () => {
   expect(result?.ok).toBe(true);
   expect(positions(ex)).toEqual([["a", 0]]);
 });
+
+it("select_elements drives the real selection and duplicates become real elements", async () => {
+  let api: ExcalidrawImperativeAPI | null = null;
+  render(<Excalidraw excalidrawAPI={(a) => (api = a)} />);
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  const ex = api as unknown as ExcalidrawImperativeAPI;
+  registerSceneTab(TAB, {
+    api: ex,
+    title: () => "Real",
+    isViewer: () => false,
+    markDirty: () => {},
+  });
+  const seed = convertToExcalidrawElements(
+    [
+      { type: "rectangle", id: "a", x: 0, y: 0, width: 100, height: 50, label: { text: "A" } },
+      { type: "ellipse", id: "b", x: 300, y: 0, width: 80, height: 80 },
+    ] as ExcalidrawElementSkeleton[],
+    { regenerateIds: false },
+  );
+  act(() => ex.updateScene({ elements: seed, captureUpdate: CaptureUpdateAction.IMMEDIATELY }));
+
+  await act(async () => {
+    await runSceneTool("select_elements", { tabId: TAB, ids: ["a", "b"] });
+  });
+  expect(Object.keys(ex.getAppState().selectedElementIds).sort()).toEqual(["a", "b"]);
+
+  let created: Record<string, string> = {};
+  await act(async () => {
+    const [res] = await runSceneTool("duplicate_elements", { tabId: TAB, ids: ["a"], dy: 200 });
+    created = JSON.parse((res as { text: string }).text).created;
+  });
+  const copy = ex.getSceneElements().find((e) => e.id === created.a)!;
+  expect(copy.y).toBe(200);
+  const label = ex.getSceneElements().find((e) => e.type === "text" && e.containerId === copy.id);
+  expect(label && "text" in label && label.text).toBe("A");
+});
