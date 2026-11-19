@@ -97,9 +97,11 @@ export function UpdateController({ onBeforeRestart }: UpdateControllerProps) {
             aria-labelledby="update-consent-title"
             className="modal"
           >
-            <h2 id="update-consent-title" className="modal__title">
-              Keep Excalidraw Desktop up to date?
-            </h2>
+            <div className="modal__header">
+              <h2 id="update-consent-title" className="modal__title">
+                Keep Excalidraw Desktop up to date?
+              </h2>
+            </div>
             <p className="modal__body">
               The app can check GitHub for new releases a few times a day and download them in the
               background. Only the app version and platform are sent — never your drawings. You can

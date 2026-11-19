@@ -50,9 +50,11 @@ export function ConfirmCloseDialog({
         className="modal"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="confirm-close-title" className="modal__title">
-          {tabLabel} has unsaved changes
-        </h2>
+        <div className="modal__header">
+          <h2 id="confirm-close-title" className="modal__title">
+            {tabLabel} has unsaved changes
+          </h2>
+        </div>
         <p className="modal__body">Save your changes before closing?</p>
         <div className="modal__actions">
           <button type="button" onClick={onDiscard}>
