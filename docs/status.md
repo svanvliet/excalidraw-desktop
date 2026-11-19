@@ -20,6 +20,7 @@
 | M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1. Release portion superseded by M11.                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | M10 | Live collaboration (embedded relay + DevTunnels + browser guests)      | 🟡     | Implemented (lanes A–C merged). Awaiting validation gates A–C.                                                                                                                                                                                                                                                                                                                                                                                                    |
 | M11 | Local notarized macOS release + CI Windows                             | 🟡     | Script + CI done; dry-run signed universal DMG verified. Blocked on M10 gates + Apple agreement (notarytool 403).                                                                                                                                                                                                                                                                                                                                                 |
+| M12 | Signed auto-update (macOS universal + Windows)                         | 🟡     | Updater, consent prompt, Settings → Updates, signed feed + release scripts done. Awaiting first published release (0.1.1) and a real 0.1.1 → 0.1.2 update.                                                                                                                                                                                                                                                                                                        |
 
 ## Acceptance checks (per milestone)
 
@@ -98,6 +99,13 @@
 - [x] CI builds Windows only and attaches to the same draft (tauri-action reuses draft by tag).
 - [ ] Gatekeeper accepts downloaded DMG (`spctl -a -vv -t install`).
 
+### M12
+
+- [x] Update checks only run after consent (unit) and the webview makes no update traffic (Playwright).
+- [x] Update state machine, menu item, Settings → Updates; cargo + Vitest coverage.
+- [x] Local vN → vN+1 update against a test feed (macOS): 0.1.90 → 0.1.91 verified.
+- [ ] Real 0.1.1 → 0.1.2 update on macOS and Windows from GitHub Releases.
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone | From → To | Note                                                                                                                                   |
@@ -112,3 +120,4 @@
 | 2026-06-15 | M7        | ⬜ → ✅   | Playwright web-build smoke incl. zero-outbound-requests test. tauri-driver E2E deferred to M9.                                         |
 | 2026-06-15 | M8        | ⬜ → ✅   | Comprehensive README + macOS / Windows signing runbooks. Signing pipeline impl deferred to M9.                                         |
 | 2026-06-15 | UI polish | — → ✅    | Design tokens, SVG icons, polished toolbar/dialog/popover, system/light/dark theme toggle. 135 tests green (120 JS + 15 Rust) + 3 e2e. |
+| 2026-06-16 | M12       | — → 🟡    | Signed auto-update implemented (updater, consent prompt, Settings → Updates, signed feed + release scripts).                           |

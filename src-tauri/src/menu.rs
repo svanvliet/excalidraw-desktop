@@ -41,6 +41,7 @@ pub mod ids {
 
     pub const HELP_ABOUT: &str = "excalidraw:help:about";
     pub const HELP_DOCS: &str = "excalidraw:help:docs";
+    pub const HELP_CHECK_UPDATES: &str = "excalidraw:help:checkUpdates";
 }
 
 /// Platform-aware accelerator string.
@@ -67,6 +68,13 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             .unwrap_or_else(|| "Excalidraw".to_string());
         let app_menu = SubmenuBuilder::new(app, &app_name)
             .about(None)
+            .item(&MenuItem::with_id(
+                app,
+                ids::HELP_CHECK_UPDATES,
+                "Check for Updates…",
+                true,
+                None::<&str>,
+            )?)
             .separator()
             .item(&MenuItem::with_id(
                 app,
@@ -235,8 +243,17 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             "Documentation",
             true,
             None::<&str>,
-        )?)
-        .build()?;
+        )?);
+    // macOS lists "Check for Updates…" in the app menu instead.
+    #[cfg(not(target_os = "macos"))]
+    let help = help.separator().item(&MenuItem::with_id(
+        app,
+        ids::HELP_CHECK_UPDATES,
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?);
+    let help = help.build()?;
     menu = menu.item(&help);
 
     menu.build()
@@ -290,5 +307,6 @@ mod tests {
         assert_eq!(ids::VIEW_ZOOM_RESET, "excalidraw:view:zoomReset");
         assert_eq!(ids::HELP_ABOUT, "excalidraw:help:about");
         assert_eq!(ids::HELP_DOCS, "excalidraw:help:docs");
+        assert_eq!(ids::HELP_CHECK_UPDATES, "excalidraw:help:checkUpdates");
     }
 }

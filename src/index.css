@@ -983,3 +983,35 @@ button {
   line-height: 18px;
   text-align: center;
 }
+
+/* ----------------------------- Update toast ----------------------------- */
+
+.update-toast {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  /* Above Excalidraw's own UI, below modals (1000). */
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 480px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  color: var(--fg-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+}
+
+.update-toast__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.update-toast__error {
+  color: var(--danger);
+}

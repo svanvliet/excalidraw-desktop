@@ -154,4 +154,23 @@ test.describe("CSP + offline fonts", () => {
     await page.waitForTimeout(1_000);
     expect(remote, remote.join("\n")).toEqual([]);
   });
+
+  test("updates: no consent prompt or update traffic from the webview", async ({ page }) => {
+    // Update checks run natively in Rust (not subject to the CSP) and only
+    // after consent; this guards the webview side of that promise.
+    const remote = trackRemoteRequests(page);
+    await page.goto("/");
+    await expect(page.locator(".excalidraw")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("update-consent")).toHaveCount(0);
+
+    await page.getByTestId("toolbar-settings").click();
+    const toggle = page.getByTestId("toggle-auto-update");
+    await expect(toggle).not.toBeChecked();
+    await expect(page.getByTestId("update-check-now")).toBeDisabled();
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+
+    await page.waitForTimeout(1_000);
+    expect(remote, remote.join("\n")).toEqual([]);
+  });
 });

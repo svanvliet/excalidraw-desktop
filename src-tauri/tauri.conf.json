@@ -58,5 +58,17 @@
         "mimeType": "application/vnd.excalidraw+json"
       }
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzMkZGMjNFQkJCQTA3QzcKUldUSEI3cTdQdkl2czllakozQlE5Zlk0WFM1UHR2MlQ2aTZQVmhaaVA3ZkpMRlVPTS95b0NyalcK",
+      "endpoints": [
+        "https://github.com/svanvliet/excalidraw-desktop/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

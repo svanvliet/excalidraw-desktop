@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { TunnelMode } from "../ipc/commands";
 import { isHttpUrl, isValidPort, useSettingsStore } from "../stores/settingsStore";
+import { UpdatesSection } from "./UpdatesSection";
 import { CloseIcon } from "./icons";
 
 export interface SettingsDialogProps {
@@ -251,6 +252,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               )}
             </label>
           </section>
+
+          <UpdatesSection />
 
           <section className="settings__section">
             <h3>Secrets</h3>

@@ -3,6 +3,7 @@ mod commands;
 mod error;
 mod menu;
 mod profile;
+mod updater;
 
 use commands::collab::{
     app_profile, collab_remove_peer, collab_set_role, collab_start, collab_status, collab_stop,
@@ -10,6 +11,7 @@ use commands::collab::{
 };
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
+use commands::updater::{update_check, update_install, update_status};
 
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
@@ -118,6 +120,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        // Inert until `updater::check` runs; checks are gated on the user's
+        // `autoUpdate` consent or an explicit "Check for Updates…" click.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             open_file,
             save_file,
@@ -132,9 +137,13 @@ pub fn run() {
             collab_remove_peer,
             collab_set_role,
             collab_status,
-            app_profile
+            app_profile,
+            update_status,
+            update_check,
+            update_install
         ])
         .manage(AppProfile(profile.clone()))
+        .manage(updater::Updates::default())
         .setup(move |app| {
             log::info!(
                 "setup: bootstrapping Excalidraw Desktop v{} on {}",

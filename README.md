@@ -72,7 +72,7 @@ npm run e2e:install   # downloads chromium
 | `npm run build`          | `tsc` + `vite build` → `dist/`. Pre-step for `tauri build`.                           |
 | `npm run tauri build`    | Produces a signed-or-unsigned `.app` / `.exe` / `.msi`.                               |
 | `npm run check`          | `typecheck` → `lint` → `format:check` → `vitest` → `cargo fmt:check` / clippy / test. |
-| `npm test`               | Vitest unit + component tests (`src/**/*.test.{ts,tsx}`).                             |
+| `npm test`               | Vitest unit + component tests (`src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`).     |
 | `npm run e2e`            | Playwright web-build smoke tests against `vite preview`.                              |
 | `npm run e2e:install`    | One-time chromium download for Playwright.                                            |
 | `npm run lint`           | ESLint (`--max-warnings 0`).                                                          |
@@ -112,21 +112,32 @@ src-tauri/
 
 ## Releasing
 
-Releases are cut from a Mac that holds the Developer ID certificate and a
-`notarytool` keychain profile. One command builds the universal DMG, signs,
-notarizes, staples, creates a **draft** GitHub Release, uploads the DMG, and
-pushes the `v<version>` tag; CI then builds the (unsigned) Windows installers
-and attaches them to the same draft. Review the draft and publish it by hand.
+Releases are cut from a Mac that holds the Developer ID certificate, a
+`notarytool` keychain profile, and the auto-update signing key. One command
+builds the universal DMG and the signed updater tarball, notarizes and
+staples both, writes `latest.json`, creates a **draft** GitHub Release,
+uploads everything, and pushes the `v<version>` tag. CI then builds the
+(Authenticode-unsigned) Windows installers, signs the setup `.exe` for the
+updater, attaches them to the same draft, and merges `windows-x86_64` into
+`latest.json`. Review the draft (three platforms in `latest.json`) and
+publish it by hand; installed apps only see an update once it is published.
 
 ```bash
-npm run release:mac -- 0.2.0 --dry-run          # build + sign + notarize, no publish
-npm run release:mac -- 0.2.0 --bump --publish   # bump versions, release for real
+npm run release:mac -- 0.2.0 --dry-run                          # build + sign + notarize, no publish
+NOTES_FILE=notes.md npm run release:mac -- 0.2.0 --bump --publish   # bump versions, release for real
 ```
 
-- **macOS (signed + notarized):** [`docs/signing-macos.md`](docs/signing-macos.md) —
-  full runbook, one-time setup, troubleshooting.
+0.1.0 has no updater, so the first in-app update is 0.1.1 → 0.1.2. The
+updater key lives outside the repo (`~/repos/certs/`), its password in the
+login Keychain, and CI copies in the `TAURI_SIGNING_PRIVATE_KEY*` repo
+secrets. **Losing the key means installed apps can never update again**,
+so keep a backup.
+
+- **macOS (signed + notarized) and auto-update:** [`docs/signing-macos.md`](docs/signing-macos.md) —
+  full runbook, one-time setup, updater key and secrets (§7), local
+  update test (§8), troubleshooting.
 - **Windows (unsigned for now):** [`docs/signing-windows.md`](docs/signing-windows.md) —
-  code-signing cert options, `signtool`, timestamping.
+  code-signing cert options, `signtool`, timestamping, release CI + updater signing (§8).
 
 ---
 

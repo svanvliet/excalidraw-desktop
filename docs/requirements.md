@@ -73,12 +73,16 @@
   - **Library browser** (`libraries.excalidraw.com`) — default **off**. When enabled, the app opens the library page in the system browser.
   - **AI text-to-diagram** (OpenAI) — default **off**. When enabled, the user supplies their own API key, stored in the OS keychain.
 - **FR-17** Toggles MUST persist across launches and survive app updates.
-- **FR-18** With all toggles off, the app MUST make zero outbound network requests during normal use (verified by Playwright + a network blocker in CI smoke tests).
+- **FR-18** With all toggles off, the app MUST make zero outbound network requests during normal use (verified by Playwright + a network blocker in CI smoke tests). The only exception is the update check (FR-20), which runs only after the user opts in or explicitly clicks "Check for Updates…".
 
 ### 4.7 Updates & telemetry
 
 - **FR-19** No telemetry. No analytics. No crash-reporter that phones home in v1.
-- **FR-20** Auto-update is **out of scope for v1** (manually download new releases). Wired-up update plumbing is fine if disabled.
+- **FR-20** Auto-update (M12) for macOS (universal) and Windows via `tauri-plugin-updater` against a signed `latest.json` on GitHub Releases:
+  - **Consent:** on first launch of an installed build, the app asks once whether to check for updates automatically and remembers the answer (`autoUpdate` setting; `null` = not asked). Settings → Updates has the toggle, the current version, and "Check now". "Check for Updates…" (macOS app menu / Windows Help menu) always works.
+  - **Behavior:** with consent, checks ~20 s after launch and every 6 h; downloads and signature-verifies in the background, then shows "Restart to update / Later". The app never restarts on its own. Pending autosaves are flushed before restarting.
+  - **Privacy:** the request sends only the app version / platform (no diagram data) and is made natively from Rust, not from the webview. Dev builds never check.
+  - **Integrity:** every artifact is minisign-signed with the updater key; `requireSignedVersion` binds the signature to the version so a downgrade can't be replayed. Only published (non-draft) releases are served.
 
 ### 4.8 Live collaboration (M10)
 
@@ -117,7 +121,6 @@ Protocol & component contract: `docs/collab-protocol.md`.
 ## 8. Out of Scope (v1)
 
 - Linux builds as a release target.
-- Auto-update.
 - Telemetry / analytics.
 - Custom Excalidraw extensions beyond what the upstream component exposes.
 - Mobile (iOS/iPadOS/Android).

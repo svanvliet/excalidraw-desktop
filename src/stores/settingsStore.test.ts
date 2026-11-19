@@ -51,6 +51,18 @@ describe("settingsStore", () => {
     expect(s.collabTunnelMode).toBe("auto");
     expect(s.collabManualUrl).toBe("");
     expect(s.collabPort).toBe(4780);
+    // Not "on": update checks wait for explicit consent.
+    expect(s.autoUpdate).toBeNull();
+  });
+
+  it("setAutoUpdate persists consent, and junk on disk means 'not asked'", async () => {
+    await useSettingsStore.getState().load();
+    await useSettingsStore.getState().setAutoUpdate(false);
+    useSettingsStore.setState({ autoUpdate: null, loaded: false });
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().autoUpdate).toBe(false);
+    expect(sanitize({ autoUpdate: "yes" }).autoUpdate).toBeNull();
+    expect(sanitize({ autoUpdate: true }).autoUpdate).toBe(true);
   });
 
   it("load() marks loaded=true even when the store has no prior data", async () => {
