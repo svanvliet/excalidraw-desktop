@@ -1,0 +1,16 @@
+{"jsonrpc":"2.0","method":"github.com/copilot/sessionEvent","params":{"sessionId":"s1","type":"assistant.turn_start","data":{}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Planning the diagram"}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Drawing "}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"plan","entries":[{"content":"Add boxes","priority":"medium","status":"in_progress"},{"content":"Connect arrows","priority":"low"}]}}}
+{"jsonrpc":"2.0","method":"github.com/copilot/sessionEvent","params":{"sessionId":"s1","type":"tool.execution_start","data":{"toolCallId":"tc1","mcpServerName":"excalidraw","mcpToolName":"add_elements"}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"tc1","title":"excalidraw-add_elements","kind":"other","status":"pending","rawInput":{"elements":[{"type":"rectangle"}]}}}}
+{"jsonrpc":"2.0","id":100,"method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"tc1","title":"excalidraw-add_elements"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"},{"optionId":"always","name":"Always","kind":"allow_always"},{"optionId":"reject","name":"Reject","kind":"reject_once"}]}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call_update","toolCallId":"tc1","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Added 1 element"}}]}}}
+{"jsonrpc":"2.0","method":"github.com/copilot/sessionEvent","params":{"sessionId":"s1","type":"tool.execution_start","data":{"toolCallId":"tc2","toolName":"web_fetch"}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"tc2","title":"Fetching https://example.com","kind":"fetch","status":"pending","rawInput":{"url":"https://example.com"}}}}
+{"jsonrpc":"2.0","id":101,"method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"tc2","title":"Fetching https://example.com","rawInput":{"url":"https://example.com"}},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"},{"optionId":"always","name":"Always","kind":"allow_always"},{"optionId":"reject","name":"Reject","kind":"reject_once"}]}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"other","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ignored"}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done."}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"usage_update","used":10,"size":100}}}
+{"jsonrpc":"2.0","method":"github.com/copilot/sessionEvent","params":{"sessionId":"s1","type":"assistant.idle","data":{}}}
+{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":120,"outputTokens":45,"totalTokens":165}}}
