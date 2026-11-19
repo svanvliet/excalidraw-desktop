@@ -173,4 +173,20 @@ test.describe("CSP + offline fonts", () => {
     await page.waitForTimeout(1_000);
     expect(remote, remote.join("\n")).toEqual([]);
   });
+
+  test("AI off: no agent UI, shortcut is inert, zero outbound requests", async ({ page }) => {
+    const remote = trackRemoteRequests(page);
+    await page.goto("/");
+    await expect(page.locator(".excalidraw")).toBeVisible({ timeout: 15_000 });
+
+    await expect(page.getByTestId("toolbar-agent")).toHaveCount(0);
+    await page.keyboard.press("ControlOrMeta+Shift+A");
+    await expect(page.getByTestId("agent-panel")).toHaveCount(0);
+
+    await page.getByTestId("toolbar-settings").click();
+    await expect(page.getByTestId("ai-off-hint")).toBeVisible();
+
+    await page.waitForTimeout(1_000);
+    expect(remote, remote.join("\n")).toEqual([]);
+  });
 });
