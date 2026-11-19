@@ -100,6 +100,68 @@ export function listScratch(): Promise<ScratchEntry[]> {
   return invoke<ScratchEntry[]>("list_scratch");
 }
 
+// ---------------------------------------------------------------------------
+// Live collaboration (see docs/collab-protocol.md §5)
+// ---------------------------------------------------------------------------
+
+export type TunnelMode = "auto" | "manual" | "local";
+
+export interface CollabStartArgs {
+  roomId: string;
+  port: number;
+  tunnel: TunnelMode;
+  manualUrl?: string;
+}
+
+export interface CollabStatus {
+  running: boolean;
+  roomId: string | null;
+  localPort: number | null;
+  localBase: string | null;
+  publicBase: string | null;
+  tunnel: {
+    mode: TunnelMode | null;
+    state: "off" | "starting" | "ready" | "error";
+    error: string | null;
+  };
+  peerCount: number;
+}
+
+export const COLLAB_STATUS_EVENT = "collab://status";
+
+export const COLLAB_STATUS_OFF: CollabStatus = {
+  running: false,
+  roomId: null,
+  localPort: null,
+  localBase: null,
+  publicBase: null,
+  tunnel: { mode: null, state: "off", error: null },
+  peerCount: 0,
+};
+
+/** Start the local relay, register `roomId`, and (optionally) a tunnel. */
+export function collabStart(args: CollabStartArgs): Promise<CollabStatus> {
+  if (!isTauri()) return Promise.reject(unavailable("collab_start"));
+  return invoke<CollabStatus>("collab_start", { args });
+}
+
+/** End the session: closes peers (code 4000), stops tunnel + relay. */
+export function collabStop(): Promise<CollabStatus> {
+  if (!isTauri()) return Promise.resolve(COLLAB_STATUS_OFF);
+  return invoke<CollabStatus>("collab_stop");
+}
+
+export function collabStatus(): Promise<CollabStatus> {
+  if (!isTauri()) return Promise.resolve(COLLAB_STATUS_OFF);
+  return invoke<CollabStatus>("collab_status");
+}
+
+/** Test-profile name (`--profile` / `EXCALIDRAW_DESKTOP_PROFILE`), or null. */
+export async function appProfile(): Promise<string | null> {
+  if (!isTauri()) return null;
+  return (await invoke<string | null>("app_profile")) ?? null;
+}
+
 /**
  * Type guard for the shaped error coming back from a failed `invoke`.
  * Tauri rejects with the serialized form when a command returns `Err(...)`.

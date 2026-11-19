@@ -86,6 +86,9 @@ export default [
       ...reactHooks.configs.recommended.rules,
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
+      // tsc already reports undefined identifiers; ESLint's no-undef can't see
+      // DOM lib types and only produces false positives in TS files.
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },

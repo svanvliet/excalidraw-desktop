@@ -287,21 +287,39 @@ Default `Content-Security-Policy`:
 default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: https://ipc.localhost
 ```
 
-When AI is enabled at runtime, append `https://api.openai.com` to `connect-src`. When collab is enabled, append the user's Firebase region domain.
+When AI is enabled at runtime, append `https://api.openai.com` to `connect-src`. When collab is enabled, append `ws://127.0.0.1:*`, `https://*.devtunnels.ms`, `wss://*.devtunnels.ms`, and the manual-override origin (if any). The relay-served guest page uses its own CSP header (`connect-src 'self'`).
+
+### M10 — Live collaboration (embedded relay + DevTunnels)
+
+Contract: `docs/collab-protocol.md`. Firebase dropped: on excalidraw.com Firebase only _persists_ scenes; realtime goes through a separate socket relay, so Firebase alone never enabled co-editing. Instead:
+
+- `src-tauri/src/collab/` — axum WebSocket relay bound to 127.0.0.1 (room fan-out of opaque encrypted frames, host-registered rooms only, size/peer limits) that also serves the embedded app assets for browser guests; `devtunnel` CLI orchestration (auto) or manual public URL; commands `collab_start/stop/status`, event `collab://status`.
+- `src/collab/` — AES-GCM crypto, link encode/decode, WebSocket transport, `CollabSession` sync engine (reconcile, throttled diffs, cursors, files), browser `GuestApp`.
+- Share / Join dialogs, settings (display name, tunnel mode, manual URL, port), CSP widening only when enabled.
+- Test profiles (`--profile`) let two desktop instances run on one machine.
+- **Validation gate before any release:** (A) desktop build ↔ local browser, (B) desktop build ↔ remote browser over DevTunnel, (C) desktop ↔ second desktop instance. Checklist: `docs/collab-testing.md`.
+- Future: same wire protocol on a Cloudflare Worker + Durable Object for always-on links.
+
+### M11 — Local notarized macOS release
+
+`scripts/release-macos.sh` builds the universal DMG locally, signs with the Developer ID cert, notarizes (`notarytool --keychain-profile`), staples, verifies, and uploads to a draft GitHub Release. CI builds only Windows and attaches to the same draft. Runs only after the M10 validation gate passes.
 
 ## 7. Decisions log
 
-| #   | Decision                                            | Why                                                                     |
-| --- | --------------------------------------------------- | ----------------------------------------------------------------------- |
-| D1  | Embed `@excalidraw/excalidraw` React component      | Self-contained npm package, no server needed, easy upstream bumps.      |
-| D2  | Tauri 2.x                                           | Current stable; better plugin ecosystem; first-class file associations. |
-| D3  | JSON + PNG-with-scene formats                       | Covers the common roundtrip; PNG shareable while still editable.        |
-| D4  | Single window with tabs                             | Matches user expectation; simpler state than multi-window.              |
-| D5  | Recent files + autosave + session restore           | Standard native-app expectation.                                        |
-| D6  | npm + Vite + React + TS                             | User preference; React is required by Excalidraw.                       |
-| D7  | Vitest + cargo test + Playwright via tauri-driver   | Layered coverage from units to full app smoke.                          |
-| D8  | Online features opt-in via settings, off by default | User wants the capability but no data leaving the box by default.       |
-| D9  | Signing/notarization documented, deferred           | User asked for docs without implementation in v1.                       |
+| #    | Decision                                                  | Why                                                                                                           |
+| ---- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| D1   | Embed `@excalidraw/excalidraw` React component            | Self-contained npm package, no server needed, easy upstream bumps.                                            |
+| D2   | Tauri 2.x                                                 | Current stable; better plugin ecosystem; first-class file associations.                                       |
+| D3   | JSON + PNG-with-scene formats                             | Covers the common roundtrip; PNG shareable while still editable.                                              |
+| D4   | Single window with tabs                                   | Matches user expectation; simpler state than multi-window.                                                    |
+| D5   | Recent files + autosave + session restore                 | Standard native-app expectation.                                                                              |
+| D-C1 | Collab via embedded Rust relay + DevTunnels, not Firebase | Firebase is persistence only; relay needed anyway. No third-party account, E2E encrypted, data stays on host. |
+| D-C2 | Own tiny JSON relay protocol (not socket.io)              | Trivial to implement in Rust and on Cloudflare DO later; no socket.io client dep.                             |
+| D-R1 | Notarize locally, Windows in CI                           | Apple credentials stay in the local keychain; no secrets in GitHub.                                           |
+| D6   | npm + Vite + React + TS                                   | User preference; React is required by Excalidraw.                                                             |
+| D7   | Vitest + cargo test + Playwright via tauri-driver         | Layered coverage from units to full app smoke.                                                                |
+| D8   | Online features opt-in via settings, off by default       | User wants the capability but no data leaving the box by default.                                             |
+| D9   | Signing/notarization documented, deferred                 | User asked for docs without implementation in v1.                                                             |
 
 ## 8. Risks & mitigations
 

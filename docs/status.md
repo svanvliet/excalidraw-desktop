@@ -17,7 +17,9 @@
 | M7  | Test coverage (Vitest + cargo test + Playwright/tauri-driver)          | ✅     | Vitest (110 unit + integration tests) and cargo test (15) green via `npm run check`; Playwright web-build smoke (3 tests) green via `npm run e2e`, including a zero-outbound-requests privacy regression test. Tauri-driver native automation deferred post-v1 (M9).                                                                                                                                                                                              |
 | M8  | Docs polish + signing/notarization documentation                       | ✅     | New `README.md` with privacy contract, features, quickstart, scripts, layout, signing pointers. `docs/signing-macos.md` (Developer ID + notarytool + stapler runbook). `docs/signing-windows.md` (Azure Trusted Signing + signtool runbook). Implementation of signing/release pipeline deferred to M9.                                                                                                                                                           |
 | UX  | UI polish + theme toggle (system / light / dark)                       | ✅     | Token-driven CSS (`src/styles/tokens.css`), lucide-style inline SVG icon set, polished toolbar (icon-first with text for primary actions), tabs, popover, modal with sticky header/footer + scrollable body + animated entry, styled toggle switches. `themeStore` (Zustand + plugin-store) with live `prefers-color-scheme` watching; `ThemeToggle` cycles system → light → dark; resolved theme passed to `<Excalidraw theme>`. 120 JS + 15 Rust + 3 e2e green. |
-| M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| M9  | CI release pipeline + auto-update + Linux build                        | 🗓     | Post-v1. Release portion superseded by M11.                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| M10 | Live collaboration (embedded relay + DevTunnels + browser guests)      | 🟡     | Contract in `docs/collab-protocol.md`. In progress.                                                                                                                                                                                                                                                                                                                                                                                                               |
+| M11 | Local notarized macOS release + CI Windows                             | 🟡     | In progress. Blocked on M10 validation gate + Apple agreement.                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## Acceptance checks (per milestone)
 
@@ -77,6 +79,24 @@
 - [x] `docs/signing-macos.md` complete with commands a developer can copy/paste.
 - [x] `docs/signing-windows.md` complete with commands a developer can copy/paste.
 - [x] README quickstart walks a fresh contributor from clone → running dev build in under 5 minutes of reading.
+
+### M10
+
+- [ ] Relay: host-registered rooms only, 127.0.0.1 bind, limits; cargo tests.
+- [ ] DevTunnel auto + manual URL + local modes.
+- [ ] Sync engine: edits, cursors, selections, avatars, images; Vitest.
+- [ ] Browser guest mode served by relay.
+- [ ] CSP widened only when collab enabled (Playwright, network-blocked).
+- [ ] Playwright: host + 2 browser guests.
+- [ ] Gate A: desktop build ↔ local browser.
+- [ ] Gate B: desktop build ↔ remote browser over DevTunnel (user).
+- [ ] Gate C: desktop ↔ 2nd desktop instance (`--profile`).
+
+### M11
+
+- [ ] `scripts/release-macos.sh` signs, notarizes, staples, uploads DMG to draft release.
+- [ ] CI builds Windows only and attaches to the same draft.
+- [ ] Gatekeeper accepts downloaded DMG (`spctl -a -vv -t install`).
 
 ## Changelog of status changes
 
