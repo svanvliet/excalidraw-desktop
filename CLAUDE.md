@@ -13,12 +13,13 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
 
 ## 2. Source of truth (read these before changing things)
 
-| File                    | Purpose                                                                |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `docs/requirements.md`  | What the app must do. Treat as a contract.                             |
-| `docs/plan.md`          | How we're building it. Architecture, stack, milestones, decisions log. |
-| `docs/status.md`        | Where we are. Update when a milestone moves.                           |
-| `CLAUDE.md` (this file) | How to work in this repo. Conventions, commands, skills.               |
+| File                     | Purpose                                                                |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `docs/requirements.md`   | What the app must do. Treat as a contract.                             |
+| `docs/plan.md`           | How we're building it. Architecture, stack, milestones, decisions log. |
+| `docs/status.md`         | Where we are. Update when a milestone moves.                           |
+| `docs/ai-integration.md` | AI agent design contract (engines, sandbox, MCP tools, UX).            |
+| `CLAUDE.md` (this file)  | How to work in this repo. Conventions, commands, skills.               |
 
 **If you change scope, behavior, or stack:** update `docs/requirements.md` and/or `docs/plan.md` in the same change. **If you complete a milestone or acceptance check:** update `docs/status.md`.
 
@@ -30,6 +31,7 @@ See `docs/requirements.md` for the full spec and `docs/plan.md` for the architec
   1. Be gated behind an explicit setting toggle (default off).
   2. Be covered by a Playwright smoke test under a network-blocked profile that verifies the toggle works.
   3. Be reflected in the runtime CSP (see `docs/plan.md` § "CSP").
+- **AI agent** (`docs/ai-integration.md`): the app never holds AI credentials and the webview never calls an AI provider. AI traffic comes only from the user's own agent process (Copilot CLI / Claude Code / Codex), spawned from Rust behind the `ai` toggle with built-in shell/write tools always disabled. Canvas access goes only through the app's loopback, token-authenticated MCP tools.
 
 ### Tauri capabilities
 

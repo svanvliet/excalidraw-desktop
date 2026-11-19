@@ -71,7 +71,7 @@
 - **FR-16** A Settings window/dialog MUST expose toggles for:
   - **Real-time collaboration** — default **off**. See §4.8.
   - **Library browser** (`libraries.excalidraw.com`) — default **off**. When enabled, the app opens the library page in the system browser.
-  - **AI text-to-diagram** (OpenAI) — default **off**. When enabled, the user supplies their own API key, stored in the OS keychain.
+  - **AI agent** — default **off**. Drives the user's own locally installed, signed-in agent (GitHub Copilot CLI, Claude Code, or OpenAI Codex). No API keys. See §4.9.
 - **FR-17** Toggles MUST persist across launches and survive app updates.
 - **FR-18** With all toggles off, the app MUST make zero outbound network requests during normal use (verified by Playwright + a network blocker in CI smoke tests). The only exception is the update check (FR-20), which runs only after the user opts in or explicitly clicks "Check for Updates…".
 
@@ -95,6 +95,19 @@ Protocol & component contract: `docs/collab-protocol.md`.
 - **FR-25** All session content is **end-to-end encrypted** (AES-GCM, key only in URL fragment). The relay and tunnel see ciphertext only. Relay accepts only host-registered rooms.
 - **FR-26** The host's file on disk remains the source of truth; remote edits mark the tab dirty and save through the normal path. Stopping the session disconnects everyone (close 4000) and tears down the tunnel.
 
+### 4.9 AI agent — bring your own engine (AI-0…AI-6)
+
+Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.md`.
+
+- **FR-27** With the AI toggle on, Settings → AI MUST detect GitHub Copilot CLI, Claude Code, and OpenAI Codex. Detection covers GUI-launch PATH issues and Windows `.cmd` shims. For each engine it shows path, version, and signed-in state, and lets the user override the binary path and enable/disable the engine.
+- **FR-28** The app MUST use the engine's **existing local sign-in**. It MUST NOT ask for, read, store, or proxy API keys, OAuth tokens, or other AI credentials. When an engine is not signed in, the app shows that engine's own sign-in command.
+- **FR-29** A docked, resizable **agent panel** MUST provide one conversation per tab, with streaming responses, tool-activity chips, Stop, and a selectable engine and model.
+- **FR-30** The agent reads and edits the canvas only through tools the app serves over a loopback, token-authenticated MCP server: summary, selection, rendered PNG, add/update/delete/connect, Mermaid import, arrange, and viewport. Each agent turn MUST be applied live as **one undoable step**. Each turn MUST offer **Revert turn**. Agent edits sync to collaborators like local edits and are refused in collab viewer tabs.
+- **FR-31** The engine's built-in shell and file-write tools MUST always be disabled. The agent is canvas-only by default. The user may **attach a folder** per conversation, which grants read-only access to that folder only.
+- **FR-32** A per-engine setting **"Use my agent's MCPs, skills & plugins"** (default on) loads the user's own harness configuration. Any permission request for a tool that isn't one of our canvas tools and isn't known to be read-only MUST show an in-app approval card: Allow once / Allow for this conversation / Deny.
+- **FR-33** The first use of each engine MUST show a disclosure of what is sent to which provider under the user's account. Network traffic for AI comes only from the user's agent process, after the toggle is on and the user sends a prompt.
+- **FR-34** Excalidraw's built-in "Text to diagram" dialog MUST be backed by the default engine when AI is enabled.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.
@@ -108,7 +121,8 @@ Protocol & component contract: `docs/collab-protocol.md`.
 
 - **SEC-1** Tauri allowlist MUST be minimal: only `fs` (scoped), `dialog`, `path`, `os`, `store`, `single-instance`, `deep-link`, `opener`.
 - **SEC-2** Filesystem scope MUST default to user-selected files; no broad read of `$HOME`.
-- **SEC-3** Secrets (OpenAI API key) MUST be stored via OS keychain (`tauri-plugin-keyring` or `tauri-plugin-stronghold`), never in plaintext config files.
+- **SEC-3** Secrets MUST be stored via OS keychain (`tauri-plugin-keyring` or `tauri-plugin-stronghold`), never in plaintext config files. The app stores **no AI credentials at all** (FR-28). The legacy `openAiKey` setting is removed and scrubbed from `settings.json` on migration.
+- **SEC-6** Agent engines are spawned only from Rust, with fixed argument builders that always disable the engine's built-in shell and write tools. The webview gets no shell or process capability. The MCP server binds 127.0.0.1 only and requires a per-session random token. Child process trees are killed on tab close and on quit.
 - **SEC-4** Webview CSP MUST forbid remote scripts unless an online feature is explicitly enabled.
 - **SEC-5** Distribution builds MUST be signed and notarized (see `docs/plan.md` §"Signing & Notarization" — documented, deferred for v1 implementation).
 
