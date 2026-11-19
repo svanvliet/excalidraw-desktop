@@ -293,6 +293,59 @@ impl TunnelHost {
     }
 }
 
+/// PIDs of `devtunnel host <tunnel_id>` processes in a `<pid> <command line>`
+/// listing. Matches the tunnel id exactly so `excalidraw-desktop` never
+/// matches `excalidraw-desktop-guest`.
+pub fn stale_host_pids(listing: &str, tunnel_id: &str) -> Vec<u32> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let (pid, cmd) = line.trim().split_once(char::is_whitespace)?;
+            let pid: u32 = pid.parse().ok()?;
+            let args: Vec<&str> = cmd.split_whitespace().collect();
+            let exe = args.first()?.trim_matches('"').to_ascii_lowercase();
+            let name = exe.rsplit(['/', '\\']).next().unwrap_or(&exe);
+            let is_devtunnel = name == "devtunnel" || name == "devtunnel.exe";
+            let hosts_id = args.windows(2).any(|w| w[0] == "host" && w[1] == tunnel_id);
+            (is_devtunnel && hosts_id && pid != std::process::id()).then_some(pid)
+        })
+        .collect()
+}
+
+/// Kill `devtunnel host` processes for this tunnel left behind by a crash
+/// or SIGTERM (when `kill_on_drop` never ran). Best-effort.
+async fn kill_stale_hosts(tunnel_id: &str) {
+    #[cfg(unix)]
+    let listing = Command::new("ps")
+        .args(["-axo", "pid=,command="])
+        .output()
+        .await;
+    #[cfg(windows)]
+    let listing = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process -Filter \"Name='devtunnel.exe'\" | \
+             ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }",
+        ])
+        .output()
+        .await;
+    let Ok(out) = listing else { return };
+    for pid in stale_host_pids(&String::from_utf8_lossy(&out.stdout), tunnel_id) {
+        log::warn!("devtunnel: killing stale host pid {pid} for {tunnel_id}");
+        #[cfg(unix)]
+        let killed = Command::new("kill").arg(pid.to_string()).status().await;
+        #[cfg(windows)]
+        let killed = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status()
+            .await;
+        if let Err(e) = killed {
+            log::warn!("devtunnel: kill {pid} failed: {e}");
+        }
+    }
+}
+
 /// Create/ensure the persistent tunnel, then start hosting it. Errors are
 /// the exact `status.tunnel.error` strings from the contract.
 pub async fn start_devtunnel(tunnel_id: &str, port: u16) -> Result<TunnelHost, String> {
@@ -351,6 +404,7 @@ pub async fn start_devtunnel(tunnel_id: &str, port: u16) -> Result<TunnelHost, S
         }
     }
 
+    kill_stale_hosts(tunnel_id).await;
     let mut child = cli(&bin)
         .args(["host", tunnel_id])
         .spawn()
@@ -418,6 +472,24 @@ pub async fn start_devtunnel(tunnel_id: &str, port: u16) -> Result<TunnelHost, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_host_pids_matches_exact_tunnel_id() {
+        let listing = "  101 /opt/homebrew/bin/devtunnel host excalidraw-desktop\n\
+  102 /opt/homebrew/bin/devtunnel host excalidraw-desktop-guest\n\
+  103 /usr/bin/vim notes about devtunnel host excalidraw-desktop\n\
+  104 devtunnel user show\n\
+  105 \"C:\\Tools\\devtunnel.exe\" host excalidraw-desktop\n\
+garbage line\n";
+        assert_eq!(
+            stale_host_pids(listing, "excalidraw-desktop"),
+            vec![101, 105]
+        );
+        assert_eq!(
+            stale_host_pids(listing, "excalidraw-desktop-guest"),
+            vec![102]
+        );
+    }
 
     const HOST_OUTPUT: &str = "Connection to host tunnel relay restored.\n\
 Hosting port: 4780\n\
