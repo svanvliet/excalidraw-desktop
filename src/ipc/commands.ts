@@ -100,6 +100,137 @@ export function listScratch(): Promise<ScratchEntry[]> {
   return invoke<ScratchEntry[]>("list_scratch");
 }
 
+// ---------------------------------------------------------------------------
+// Live collaboration (see docs/collab-protocol.md §5)
+// ---------------------------------------------------------------------------
+
+export type TunnelMode = "auto" | "manual" | "local";
+
+export interface CollabStartArgs {
+  roomId: string;
+  port: number;
+  tunnel: TunnelMode;
+  manualUrl?: string;
+}
+
+export interface CollabStatus {
+  running: boolean;
+  roomId: string | null;
+  localPort: number | null;
+  localBase: string | null;
+  publicBase: string | null;
+  tunnel: {
+    mode: TunnelMode | null;
+    state: "off" | "starting" | "ready" | "error";
+    error: string | null;
+  };
+  peerCount: number;
+  /** Sent in the host webview's `join` so the relay grants it the host role. */
+  hostToken: string | null;
+}
+
+export const COLLAB_STATUS_EVENT = "collab://status";
+
+export const COLLAB_STATUS_OFF: CollabStatus = {
+  running: false,
+  roomId: null,
+  localPort: null,
+  localBase: null,
+  publicBase: null,
+  tunnel: { mode: null, state: "off", error: null },
+  peerCount: 0,
+  hostToken: null,
+};
+
+/** Start the local relay, register `roomId`, and (optionally) a tunnel. */
+export function collabStart(args: CollabStartArgs): Promise<CollabStatus> {
+  if (!isTauri()) return Promise.reject(unavailable("collab_start"));
+  return invoke<CollabStatus>("collab_start", { args });
+}
+
+/** End the session: closes peers (code 4000), stops tunnel + relay. */
+export function collabStop(): Promise<CollabStatus> {
+  if (!isTauri()) return Promise.resolve(COLLAB_STATUS_OFF);
+  return invoke<CollabStatus>("collab_stop");
+}
+
+/** Disconnect one peer from the hosted room (close 4001). */
+export function collabRemovePeer(clientId: string): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("collab_remove_peer"));
+  return invoke<void>("collab_remove_peer", { clientId });
+}
+
+/** Make a guest an editor or a viewer in the active room. */
+export function collabSetRole(clientId: string, role: "editor" | "viewer"): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("collab_set_role"));
+  return invoke<void>("collab_set_role", { clientId, role });
+}
+
+export function collabStatus(): Promise<CollabStatus> {
+  if (!isTauri()) return Promise.resolve(COLLAB_STATUS_OFF);
+  return invoke<CollabStatus>("collab_status");
+}
+
+/** Test-profile name (`--profile` / `EXCALIDRAW_DESKTOP_PROFILE`), or null. */
+export async function appProfile(): Promise<string | null> {
+  if (!isTauri()) return null;
+  return (await invoke<string | null>("app_profile")) ?? null;
+}
+
+// ---------- Updates (src-tauri/src/updater.rs) ----------
+
+export type UpdateStatusKind =
+  | "idle"
+  | "checking"
+  | "upToDate"
+  | "downloading"
+  | "ready"
+  | "installing"
+  | "error";
+
+export interface UpdateState {
+  status: UpdateStatusKind;
+  currentVersion: string;
+  version: string | null;
+  notes: string | null;
+  progress: number | null;
+  error: string | null;
+  lastChecked: string | null;
+  /** False in dev builds and the web preview. */
+  enabled: boolean;
+}
+
+/** Mirror of `updater::UPDATE_STATUS_EVENT`. */
+export const UPDATE_STATUS_EVENT = "excalidraw://update-status";
+
+export const UPDATE_STATE_UNAVAILABLE: UpdateState = {
+  status: "idle",
+  currentVersion: "",
+  version: null,
+  notes: null,
+  progress: null,
+  error: null,
+  lastChecked: null,
+  enabled: false,
+};
+
+export function updateStatus(): Promise<UpdateState> {
+  if (!isTauri()) return Promise.resolve(UPDATE_STATE_UNAVAILABLE);
+  return invoke<UpdateState>("update_status");
+}
+
+/** Check GitHub Releases and download a newer version in the background. */
+export function updateCheck(manual: boolean): Promise<UpdateState> {
+  if (!isTauri()) return Promise.resolve(UPDATE_STATE_UNAVAILABLE);
+  return invoke<UpdateState>("update_check", { manual });
+}
+
+/** Install the downloaded update and restart the app. */
+export function updateInstall(): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("update_install"));
+  return invoke<void>("update_install");
+}
+
 /**
  * Type guard for the shaped error coming back from a failed `invoke`.
  * Tauri rejects with the serialized form when a command returns `Err(...)`.

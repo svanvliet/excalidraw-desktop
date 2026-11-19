@@ -10,6 +10,7 @@
 import { create } from "zustand";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { log } from "../lib/logger";
+import { storeFile } from "../lib/storeFile";
 
 const STORE_FILE = "recent-files.json";
 const STORE_KEY = "paths";
@@ -44,7 +45,7 @@ let storeSingleton: PersistedKV | null = null;
 /** Open (or reuse) the persisted store. Lazy so tests can swap it out. */
 async function getStore(): Promise<PersistedKV> {
   if (!storeSingleton) {
-    storeSingleton = new LazyStore(STORE_FILE) as unknown as PersistedKV;
+    storeSingleton = new LazyStore(await storeFile(STORE_FILE)) as unknown as PersistedKV;
   }
   return storeSingleton;
 }

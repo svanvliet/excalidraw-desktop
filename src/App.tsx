@@ -8,6 +8,14 @@ import { TabBar } from "./components/TabBar";
 import { ConfirmCloseDialog } from "./components/ConfirmCloseDialog";
 import { RecentMenu } from "./components/RecentMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { ShareDialog } from "./components/ShareDialog";
+import { EditRequestBar, ViewerBar } from "./components/RoleBar";
+import { JoinDialog } from "./components/JoinDialog";
+import { UpdateController } from "./components/UpdateController";
+import { useCollabStore } from "./stores/collabStore";
+import { collabSetRole, collabStop } from "./ipc/commands";
+import type { RoomLink } from "./collab/protocol";
+import { useCollabSession } from "./collab/useCollabSession";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -29,6 +37,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   formatFromExtension,
+  displayName,
 } from "./lib/fileFormat";
 import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
@@ -59,6 +68,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const loadSettings = useSettingsStore((s) => s.load);
   const loadTheme = useThemeStore((s) => s.load);
@@ -70,7 +81,10 @@ export function App() {
   const removeRecent = useRecentFilesStore((s) => s.remove);
   const clearRecent = useRecentFilesStore((s) => s.clear);
 
-  const collabEnabled = useSettingsStore((s) => s.collab);
+  const collabSession = useCollabStore((s) => s.session);
+  const initCollab = useCollabStore((s) => s.init);
+  const joinCollab = useCollabStore((s) => s.joinSession);
+  const endCollabForTab = useCollabStore((s) => s.endSessionForTab);
   const libraryEnabled = useSettingsStore((s) => s.library);
   const aiEnabled = useSettingsStore((s) => s.ai);
   // The official Excalidraw web app uses its own URL as the library return
@@ -159,7 +173,8 @@ export function App() {
       void loadRecent();
       void loadSettings();
       void loadTheme();
-      log.info("App: stores loaded (recent, settings, theme)");
+      void initCollab();
+      log.info("App: stores loaded (recent, settings, theme, collab)");
       // Subscribe to OS file-open events (double-click, drag-onto-icon,
       // single-instance reroute) and route them through the latest openPath.
       // Each subscription is wrapped so a missing Tauri runtime (web preview
@@ -199,26 +214,114 @@ export function App() {
         log.info("App: mount effect ready");
       }
     })();
+    // Best-effort: tear down a hosted collab session when the window goes
+    // away. The Rust side also kills the relay/tunnel on exit.
+    const handleUnload = () => {
+      if (useCollabStore.getState().session?.role === "host") void collabStop().catch(() => {});
+    };
+    window.addEventListener("beforeunload", handleUnload);
     // Persist session on every tabs-store change.
     const unsubscribe = useTabsStore.subscribe(() => {
       void persistSession();
     });
     return () => {
       cancelled = true;
+      window.removeEventListener("beforeunload", handleUnload);
       unsubscribe();
       unlistenFileOpen?.();
       unlistenDrop?.();
       unlistenMenu?.();
       autosaver.cancelAll();
     };
-  }, [loadRecent, loadSettings, loadTheme, autosaver]);
+  }, [loadRecent, loadSettings, loadTheme, initCollab, autosaver]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
   const activeDirty = activeTab?.dirty ?? false;
 
+  // Bumped when a tab's Excalidraw API (re)mounts so the collab binding can
+  // pick it up — apisRef alone doesn't trigger a render.
+  const [apiTick, setApiTick] = useState(0);
   const handleApi = useCallback((id: string, api: ExcalidrawImperativeAPI) => {
+    if (apisRef.current.get(id) === api) return;
     apisRef.current.set(id, api);
+    setApiTick((t) => t + 1);
+  }, []);
+
+  // --- Live collaboration binding (docs/collab-protocol.md) -----------------
+  // The host's own webview always talks to the loopback relay; guests use the
+  // public base from the pasted link.
+  const relayRunning = useCollabStore((s) => s.status.running);
+  const relayRoomId = useCollabStore((s) => s.status.roomId);
+  const relayLocalBase = useCollabStore((s) => s.status.localBase);
+  const relayHostToken = useCollabStore((s) => s.status.hostToken);
+  const leaveCollab = useCollabStore((s) => s.leaveSession);
+  const collabDisplayName = useSettingsStore((s) => s.collabDisplayName);
+  const collabTabId = collabSession?.tabId ?? null;
+  const collabTab = collabTabId ? tabs.find((t) => t.id === collabTabId) : undefined;
+  const collabTabLabel = collabTab?.path ? displayName(collabTab.path) : "Untitled";
+  const collabLink = useMemo<RoomLink | null>(() => {
+    if (!collabSession) return null;
+    if (collabSession.role === "guest") {
+      return collabSession.publicBase
+        ? {
+            publicBase: collabSession.publicBase,
+            roomId: collabSession.roomId,
+            key: collabSession.key,
+          }
+        : null;
+    }
+    if (!relayRunning || !relayLocalBase || relayRoomId !== collabSession.roomId) return null;
+    return { publicBase: relayLocalBase, roomId: collabSession.roomId, key: collabSession.key };
+  }, [collabSession, relayRunning, relayLocalBase, relayRoomId]);
+  const collabApi = useMemo(
+    () => (collabTabId ? (apisRef.current.get(collabTabId) ?? null) : null),
+    // apiTick re-reads the ref once the bound tab's canvas mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [collabTabId, apiTick],
+  );
+  const collabUsername =
+    collabDisplayName.trim() || (collabSession?.role === "host" ? "Host" : "Guest");
+  const collab = useCollabSession({
+    api: collabApi,
+    link: collabLink,
+    username: collabUsername,
+    isHost: collabSession?.role === "host",
+    hostToken: collabSession?.role === "host" ? relayHostToken : null,
+    onRemoteChange: () => {
+      if (!collabTabId) return;
+      markDirtyAction(collabTabId);
+      scheduleAutosave(collabTabId);
+    },
+  });
+  // A guest never keeps the shared drawing: when its session goes away (Leave,
+  // host ended, removed), wipe that tab. The engine is already stopped by then,
+  // so the reset can't reach the room.
+  const guestTabRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = guestTabRef.current;
+    guestTabRef.current = collabSession?.role === "guest" ? collabSession.tabId : null;
+    if (prev && prev !== guestTabRef.current) apisRef.current.get(prev)?.resetScene();
+  }, [collabSession]);
+
+  useEffect(() => {
+    if (collab.status === "ended") {
+      leaveCollab();
+      setError("The host ended the live session.");
+    } else if (collab.status === "removed") {
+      leaveCollab();
+      setError("The host removed you from the live session.");
+    } else if (collab.status === "failed" && collab.error) {
+      log.warn("collab: session failed", collab.error);
+      setError(`Live session error: ${collab.error.message}`);
+    }
+  }, [collab.status, collab.error, leaveCollab]);
+
+  const allowEdit = useCallback((clientId: string) => {
+    collabSetRole(clientId, "editor").catch((e) => {
+      log.warn("collab: set role failed", e);
+      setError(`Couldn't change that person's role: ${String(e)}`);
+    });
   }, []);
 
   const openPath = useCallback(
@@ -368,6 +471,25 @@ export function App() {
 
   const handleNew = useCallback(() => newTab(), [newTab]);
 
+  // Closing a tab ends any live session bound to it.
+  const closeTab = useCallback(
+    (id: string) => {
+      void endCollabForTab(id);
+      closeTabAction(id);
+    },
+    [endCollabForTab, closeTabAction],
+  );
+
+  const handleJoin = useCallback(
+    (link: RoomLink) => {
+      const tabId = newTab();
+      if (!joinCollab(link, tabId)) {
+        setError("Couldn't join: live collaboration is off or a session is already active.");
+      }
+    },
+    [newTab, joinCollab],
+  );
+
   const requestCloseTab = useCallback(
     (id: string) => {
       const tab = tabs.find((t) => t.id === id);
@@ -378,14 +500,18 @@ export function App() {
         autosaver.cancel(id);
         if (!tab.path) void deleteScratch(id).catch(() => {});
         apisRef.current.delete(id);
-        closeTabAction(id);
+        closeTab(id);
       }
     },
-    [tabs, closeTabAction, autosaver],
+    [tabs, closeTab, autosaver],
   );
 
   const pendingTab = pendingClose ? (tabs.find((t) => t.id === pendingClose) ?? null) : null;
-  const pendingLabel = pendingTab ? (pendingTab.path ? basename(pendingTab.path) : "Untitled") : "";
+  const pendingLabel = pendingTab
+    ? pendingTab.path
+      ? displayName(pendingTab.path)
+      : "Untitled"
+    : "";
 
   const handleConfirmSave = useCallback(async () => {
     if (!pendingClose) return;
@@ -395,10 +521,10 @@ export function App() {
     if (saved) {
       autosaver.cancel(pendingClose);
       apisRef.current.delete(pendingClose);
-      closeTabAction(pendingClose);
+      closeTab(pendingClose);
       setPendingClose(null);
     }
-  }, [pendingClose, selectTab, handleSave, closeTabAction, autosaver]);
+  }, [pendingClose, selectTab, handleSave, closeTab, autosaver]);
 
   const handleConfirmDiscard = useCallback(() => {
     if (!pendingClose) return;
@@ -406,11 +532,17 @@ export function App() {
     autosaver.cancel(pendingClose);
     if (tab && !tab.path) void deleteScratch(pendingClose).catch(() => {});
     apisRef.current.delete(pendingClose);
-    closeTabAction(pendingClose);
+    closeTab(pendingClose);
     setPendingClose(null);
-  }, [pendingClose, closeTabAction, autosaver]);
+  }, [pendingClose, closeTab, autosaver]);
 
   const handleConfirmCancel = useCallback(() => setPendingClose(null), []);
+
+  // Write pending autosaves before restarting into an update.
+  const flushBeforeUpdate = useCallback(async () => {
+    await Promise.all(useTabsStore.getState().tabs.map((t) => autosaver.flush(t.id)));
+    await persistSession();
+  }, [autosaver]);
 
   const handleMenuAction = useCallback(
     (id: MenuItemId) => {
@@ -498,6 +630,12 @@ export function App() {
         onSaveAs={handleSaveAs}
         onExportPng={handleExportPng}
         onOpenSettings={() => setSettingsOpen(true)}
+        onShare={() => setShareOpen(true)}
+        onJoin={() => setJoinOpen(true)}
+        livePeerCount={
+          collabSession && collabTabId === activeTabId ? collab.peers.length + 1 : null
+        }
+        liveElsewhere={!!collabSession && collabTabId !== activeTabId}
       >
         <RecentMenu
           paths={recentPaths}
@@ -511,11 +649,20 @@ export function App() {
         onSelect={selectTab}
         onClose={requestCloseTab}
         onNew={handleNew}
+        liveTabId={collabTabId}
       />
       {error ? (
         <div className="app-shell__error" role="alert">
           {error}
         </div>
+      ) : null}
+      {collabSession?.role === "host" ? (
+        <EditRequestBar peers={collab.peers} onAllow={allowEdit} onDeny={collab.denyEdit} />
+      ) : collabSession?.role === "guest" &&
+        collabTabId === activeTabId &&
+        collab.status === "connected" &&
+        collab.role === "viewer" ? (
+        <ViewerBar state={collab.editRequest} onRequest={collab.requestEdit} />
       ) : null}
       <div className="app-shell__canvas">
         {tabs.map((tab) => (
@@ -533,7 +680,14 @@ export function App() {
                 scheduleAutosave(tab.id);
               }}
               aiEnabled={aiEnabled}
-              isCollaborating={collabEnabled}
+              isCollaborating={collabTabId === tab.id}
+              viewOnly={
+                collabTabId === tab.id &&
+                collabSession?.role === "guest" &&
+                collab.role === "viewer"
+              }
+              onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
+              onPointerUpdate={collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined}
               libraryReturnUrl={libraryReturnUrl}
               theme={resolvedTheme}
             />
@@ -548,13 +702,27 @@ export function App() {
         onCancel={handleConfirmCancel}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <UpdateController onBeforeRestart={flushBeforeUpdate} />
+      <ShareDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        tabId={activeTabId}
+        onOpenSettings={() => setSettingsOpen(true)}
+        peers={collabSession ? collab.peers : []}
+        selfName={collabUsername}
+        selfRole={collab.role}
+        onDenyEdit={collab.denyEdit}
+        sessionTabLabel={collabTabLabel}
+        onGoToSessionTab={() => collabTabId && selectTab(collabTabId)}
+      />
+      <JoinDialog
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        onJoin={handleJoin}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
     </main>
   );
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }
 
 function formatError(e: unknown): string {

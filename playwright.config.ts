@@ -30,10 +30,25 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "npm run preview -- --strictPort --port 4173 --host 127.0.0.1",
-    url: "http://127.0.0.1:4173",
-    timeout: 60_000,
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      command: "npm run preview -- --strictPort --port 4173 --host 127.0.0.1",
+      url: "http://127.0.0.1:4173",
+      timeout: 60_000,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      // Reference collab relay (docs/collab-protocol.md §3) that also serves
+      // dist/ so browser guests in e2e/collab.spec.ts load from its origin.
+      // COLLAB_RELAY=rust swaps in the production Rust relay
+      // (src-tauri/examples/relay_standalone.rs) — see `npm run e2e:rust-relay`.
+      command:
+        process.env.COLLAB_RELAY === "rust"
+          ? "cargo run -q --manifest-path src-tauri/Cargo.toml --example relay_standalone -- --port 4174 --dist dist --room 0123456789abcdef0123 --control-port 4175"
+          : "node e2e/fixtures/relay.mjs --port 4174 --host 127.0.0.1 --dist dist --room 0123456789abcdef0123",
+      url: "http://127.0.0.1:4174/healthz",
+      timeout: process.env.COLLAB_RELAY === "rust" ? 300_000 : 30_000,
+      reuseExistingServer: !process.env.CI,
+    },
+  ],
 });

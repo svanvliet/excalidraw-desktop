@@ -168,6 +168,35 @@ publisher" until reputation builds.
 
 ---
 
+## 8. Release CI and the auto-updater
+
+`.github/workflows/release.yml` builds the Windows installers on every
+`v*.*.*` tag (or **Run workflow** with an existing tag). Authenticode
+signing is not wired in yet (Options A–C above); the **updater** signature
+is separate and always present:
+
+1. Preflight fails clearly if `TAURI_SIGNING_PRIVATE_KEY` or
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is missing, if the test-only
+   `EXCALIDRAW_UPDATE_ENDPOINT` is set, or if the tag doesn't match
+   `tauri.conf.json`'s version. Adding the secrets: see
+   [`signing-macos.md` §7](signing-macos.md#7-auto-update-updater-key-latestjson).
+2. `npx tauri build --bundles nsis,msi --config <{"bundle":{"createUpdaterArtifacts":true}}>`
+   with the signing secrets in the environment.
+3. The NSIS installer is copied to `Excalidraw-Desktop_<v>_x64-setup.exe`
+   (no spaces, so GitHub doesn't rename it) and re-signed with
+   `tauri signer sign --app-version <v>` (`requireSignedVersion`), then
+   checked with `scripts/verify-updater-sig.mjs`.
+4. The setup `.exe` + `.sig` and `Excalidraw-Desktop_<v>_x64_en-US.msi`
+   are uploaded to the draft (created if missing).
+5. `scripts/publish-updater-manifest.sh` merges `windows-x86_64` into the
+   draft's `latest.json`, waiting for the macOS entries first if needed.
+
+If you add Authenticode signing, sign the `.exe` **before** step 3's
+updater re-sign; the updater signature covers the exact bytes users
+download.
+
+---
+
 ## Troubleshooting
 
 | Symptom                                                                       | Likely cause / fix                                                                                                                                                 |

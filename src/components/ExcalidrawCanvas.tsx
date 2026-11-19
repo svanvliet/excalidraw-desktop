@@ -2,6 +2,7 @@ import { Excalidraw } from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
+  ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -32,6 +33,8 @@ export interface ExcalidrawCanvasProps {
    */
   aiEnabled?: boolean;
   isCollaborating?: boolean;
+  /** Force read-only (collab viewers). */
+  viewOnly?: boolean;
   libraryReturnUrl?: string;
   /**
    * Resolved theme to apply to the editor chrome. The host app already
@@ -39,6 +42,13 @@ export interface ExcalidrawCanvasProps {
    * in — Excalidraw only understands the two terminal values.
    */
   theme?: "light" | "dark";
+  /**
+   * Live-collaboration passthroughs. Receive every raw Excalidraw callback
+   * (no mount guard) so the collab session can broadcast scene and pointer
+   * updates. Omit when the tab isn't in a session.
+   */
+  onCollabChange?: ExcalidrawProps["onChange"];
+  onPointerUpdate?: ExcalidrawProps["onPointerUpdate"];
 }
 
 /**
@@ -52,8 +62,11 @@ export function ExcalidrawCanvas({
   onSceneChange,
   aiEnabled,
   isCollaborating,
+  viewOnly,
   libraryReturnUrl,
   theme,
+  onCollabChange,
+  onPointerUpdate,
 }: ExcalidrawCanvasProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -74,13 +87,17 @@ export function ExcalidrawCanvas({
     // re-arm whenever a new scene is loaded
   }, [initialData]);
 
-  const handleChange = useCallback(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
-    onSceneChange();
-  }, [onSceneChange]);
+  const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
+    (elements, appState, files) => {
+      onCollabChange?.(elements, appState, files);
+      if (!hasMountedRef.current) {
+        hasMountedRef.current = true;
+        return;
+      }
+      onSceneChange();
+    },
+    [onSceneChange, onCollabChange],
+  );
 
   useEffect(() => {
     const root = canvasRef.current;
@@ -96,6 +113,9 @@ export function ExcalidrawCanvas({
         onChange={handleChange}
         aiEnabled={aiEnabled ?? false}
         isCollaborating={isCollaborating ?? false}
+        // `undefined` (not false) hands view mode back to the user when promoted.
+        viewModeEnabled={viewOnly ? true : undefined}
+        {...(onPointerUpdate ? { onPointerUpdate } : {})}
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
         {...(theme ? { theme } : {})}
       />

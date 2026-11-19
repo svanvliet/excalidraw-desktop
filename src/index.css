@@ -364,6 +364,17 @@ button {
   margin: auto var(--space-2);
 }
 
+.tabbar__live {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.toolbar__live-elsewhere {
+  display: inline-flex;
+  color: var(--accent);
+}
+
 .tabbar__dirty {
   width: 6px;
   height: 6px;
@@ -623,6 +634,36 @@ button {
   border-radius: 3px;
 }
 
+.settings__radio-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings__radio-group legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--fg-default);
+}
+
+.settings__radio-group .settings__row {
+  padding: var(--space-2) 0;
+}
+
+.settings__field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.settings__error {
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-default);
+}
+
 /* ----------------------------- Switch (toggle) ----------------------------- */
 
 .switch {
@@ -768,4 +809,209 @@ button {
 .modal__body::-webkit-scrollbar-track,
 .popover__panel::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ----------------------------- Share / Join dialogs ----------------------------- */
+
+.modal__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.share__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.share__text {
+  margin: 0;
+  font-size: var(--font-size-md);
+  line-height: var(--line-default);
+  color: var(--fg-default);
+}
+
+.share__status {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.share__status dt {
+  color: var(--fg-muted);
+}
+
+.share__status dd {
+  margin: 0;
+  color: var(--fg-default);
+}
+
+.share__error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--danger-tint);
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-default);
+}
+
+.share__code {
+  display: block;
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  user-select: all;
+}
+
+.share__link-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.share__link-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.share__people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.share__people-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+/* Participant list shared by the host Share dialog and the guest panel. */
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.people__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  font-size: var(--font-size-sm);
+  color: var(--fg-default);
+}
+
+.people__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__tag {
+  flex-shrink: 0;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: var(--font-size-xs);
+}
+
+.people__tag--accent {
+  background: var(--accent-tint);
+  color: var(--accent-active);
+}
+
+.people__actions {
+  margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+/* Role notices above the canvas (viewer "Ask to edit", host "wants to edit"). */
+.role-bars {
+  display: flex;
+  flex-direction: column;
+}
+
+.role-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-6);
+  background: var(--accent-tint);
+  color: var(--accent-active);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.role-bar__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+/* Live badge on the toolbar Share button while hosting. */
+.toolbar__live-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-1);
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ----------------------------- Update toast ----------------------------- */
+
+.update-toast {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  /* Above Excalidraw's own UI, below modals (1000). */
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 480px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  color: var(--fg-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+}
+
+.update-toast__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.update-toast__error {
+  color: var(--danger);
 }

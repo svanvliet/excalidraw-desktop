@@ -7,7 +7,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/__tests__/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.test.ts"],
+    server: { deps: { inline: ["@excalidraw/excalidraw"] } },
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

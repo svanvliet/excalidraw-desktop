@@ -31,6 +31,18 @@ export default [
     },
   },
   {
+    // Node-side e2e fixtures (e.g. the reference collab relay) and release scripts.
+    files: ["e2e/fixtures/**/*.mjs", "scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        URL: "readonly",
+        Buffer: "readonly",
+        console: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,
@@ -86,6 +98,9 @@ export default [
       ...reactHooks.configs.recommended.rules,
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
+      // tsc already reports undefined identifiers; ESLint's no-undef can't see
+      // DOM lib types and only produces false positives in TS files.
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },

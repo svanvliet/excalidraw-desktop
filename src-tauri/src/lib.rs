@@ -1,9 +1,17 @@
+pub mod collab;
 mod commands;
 mod error;
 mod menu;
+mod profile;
+mod updater;
 
+use commands::collab::{
+    app_profile, collab_remove_peer, collab_set_role, collab_start, collab_status, collab_stop,
+    AppProfile,
+};
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
+use commands::updater::{update_check, update_install, update_status};
 
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
@@ -41,11 +49,18 @@ fn log_dir() -> Option<PathBuf> {
 pub fn run() {
     let mut builder = tauri::Builder::default();
 
+    // Test profile (docs/collab-protocol.md §6): lets a second instance run
+    // side by side, so it must be resolved before single-instance.
+    let argv: Vec<String> = std::env::args().collect();
+    let profile =
+        profile::resolve_profile(&argv, std::env::var(profile::PROFILE_ENV).ok().as_deref());
+
     // Single-instance must be the *first* plugin so a second invocation
     // shuts itself down before any other plugin initialization runs.
-    // Desktop-only; mobile targets don't support it.
+    // Desktop-only; mobile targets don't support it. Skipped for test
+    // profiles so two instances can co-exist.
     #[cfg(desktop)]
-    {
+    if profile.is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // The 2nd invocation typically passes the file path in argv.
             // Forward each .excalidraw / .png path to the running window.
@@ -95,7 +110,7 @@ pub fn run() {
         } else {
             log_builder = log_builder.target(Target::new(TargetKind::Folder {
                 path: dir,
-                file_name: Some(LOG_FILE_NAME.to_string()),
+                file_name: Some(profile::suffixed(LOG_FILE_NAME, profile.as_deref())),
             }));
         }
     }
@@ -105,6 +120,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        // Inert until `updater::check` runs; checks are gated on the user's
+        // `autoUpdate` consent or an explicit "Check for Updates…" click.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             open_file,
             save_file,
@@ -113,9 +131,20 @@ pub fn run() {
             write_scratch,
             read_scratch,
             delete_scratch,
-            list_scratch
+            list_scratch,
+            collab_start,
+            collab_stop,
+            collab_remove_peer,
+            collab_set_role,
+            collab_status,
+            app_profile,
+            update_status,
+            update_check,
+            update_install
         ])
-        .setup(|app| {
+        .manage(AppProfile(profile.clone()))
+        .manage(updater::Updates::default())
+        .setup(move |app| {
             log::info!(
                 "setup: bootstrapping Excalidraw Desktop v{} on {}",
                 app.package_info().version,
@@ -124,6 +153,20 @@ pub fn run() {
             if let Some(dir) = log_dir() {
                 log::info!("setup: log dir = {}", dir.display());
             }
+            if let Some(name) = profile.as_deref() {
+                log::info!(
+                    "setup: test profile '{name}' (single-instance off, default relay port {})",
+                    profile::default_relay_port(Some(name))
+                );
+                if let Some(w) = app.get_webview_window("main") {
+                    let title = w.title().unwrap_or_else(|_| "Excalidraw Desktop".into());
+                    let _ = w.set_title(&format!("{title} — {name}"));
+                }
+            }
+            app.manage(commands::collab::create_manager(
+                app.handle(),
+                profile.as_deref(),
+            ));
 
             // First-launch CLI args. On macOS the file path arrives via
             // RunEvent::Opened instead so we just look for it on win/linux.
@@ -174,6 +217,18 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|_app_handle, _event| {
+        // Tear down the relay and kill any `devtunnel host` child on exit.
+        if let tauri::RunEvent::Exit = _event {
+            if let Some(m) =
+                _app_handle.try_state::<std::sync::Arc<collab::manager::CollabManager>>()
+            {
+                let m = m.inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    m.stop().await;
+                });
+            }
+        }
+
         // macOS Finder double-click while running, and "Open With" on launch,
         // both arrive here. `RunEvent::Opened` is only emitted on macOS; on
         // Windows the same flow is handled by the single-instance plugin

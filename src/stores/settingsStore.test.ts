@@ -25,7 +25,7 @@ vi.mock("@tauri-apps/plugin-store", () => {
   return { LazyStore: FakeStore };
 });
 
-import { useSettingsStore, __resetSettingsForTests } from "./settingsStore";
+import { useSettingsStore, __resetSettingsForTests, sanitize } from "./settingsStore";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
 describe("settingsStore", () => {
@@ -46,8 +46,23 @@ describe("settingsStore", () => {
     expect(s.library).toBe(false);
     expect(s.ai).toBe(false);
     expect(s.openAiKey).toBe("");
-    expect(s.firebaseConfig).toBe("");
     expect(s.loaded).toBe(false);
+    expect(s.collabDisplayName).toBe("");
+    expect(s.collabTunnelMode).toBe("auto");
+    expect(s.collabManualUrl).toBe("");
+    expect(s.collabPort).toBe(4780);
+    // Not "on": update checks wait for explicit consent.
+    expect(s.autoUpdate).toBeNull();
+  });
+
+  it("setAutoUpdate persists consent, and junk on disk means 'not asked'", async () => {
+    await useSettingsStore.getState().load();
+    await useSettingsStore.getState().setAutoUpdate(false);
+    useSettingsStore.setState({ autoUpdate: null, loaded: false });
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().autoUpdate).toBe(false);
+    expect(sanitize({ autoUpdate: "yes" }).autoUpdate).toBeNull();
+    expect(sanitize({ autoUpdate: true }).autoUpdate).toBe(true);
   });
 
   it("load() marks loaded=true even when the store has no prior data", async () => {
@@ -98,7 +113,9 @@ describe("settingsStore", () => {
       library: null as unknown as boolean,
       ai: 1 as unknown as boolean,
       openAiKey: 42 as unknown as string,
-      firebaseConfig: { not: "a string" } as unknown as string,
+      collabTunnelMode: "cloud",
+      collabManualUrl: "ftp://example.com",
+      collabPort: 80,
     });
     await direct.save();
     // Re-construct the store so we pick up the same shared fake.
@@ -109,6 +126,46 @@ describe("settingsStore", () => {
     expect(s.library).toBe(false);
     expect(s.ai).toBe(false);
     expect(s.openAiKey).toBe("");
-    expect(s.firebaseConfig).toBe("");
+    expect(s.collabTunnelMode).toBe("auto");
+    expect(s.collabManualUrl).toBe("");
+    expect(s.collabPort).toBe(4780);
+  });
+
+  it("drops the legacy firebaseConfig key on load and on the next persist", async () => {
+    const direct = new LazyStore("settings.json");
+    await direct.set("settings", { collab: true, firebaseConfig: '{"apiKey":"x"}' });
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().collab).toBe(true);
+    expect("firebaseConfig" in useSettingsStore.getState()).toBe(false);
+    await useSettingsStore.getState().setFlag("ai", true);
+    const persisted = await direct.get<Record<string, unknown>>("settings");
+    expect(persisted).not.toHaveProperty("firebaseConfig");
+    expect(persisted?.ai).toBe(true);
+  });
+
+  it("setCollab persists valid collab preferences across reloads", async () => {
+    await useSettingsStore.getState().load();
+    const { setCollab } = useSettingsStore.getState();
+    await setCollab("collabDisplayName", "Ada");
+    await setCollab("collabTunnelMode", "manual");
+    await setCollab("collabManualUrl", "https://my-tunnel.example.com");
+    await setCollab("collabPort", 5000);
+    useSettingsStore.setState({ collabPort: 1, collabDisplayName: "", loaded: false });
+    await useSettingsStore.getState().load();
+    const s = useSettingsStore.getState();
+    expect(s.collabDisplayName).toBe("Ada");
+    expect(s.collabTunnelMode).toBe("manual");
+    expect(s.collabManualUrl).toBe("https://my-tunnel.example.com");
+    expect(s.collabPort).toBe(5000);
+  });
+
+  it("sanitize validates port range/integers and http(s) URLs", () => {
+    expect(sanitize({ collabPort: 1023 }).collabPort).toBe(4780);
+    expect(sanitize({ collabPort: 65536 }).collabPort).toBe(4780);
+    expect(sanitize({ collabPort: 5000.5 }).collabPort).toBe(4780);
+    expect(sanitize({ collabPort: 65535 }).collabPort).toBe(65535);
+    expect(sanitize({ collabManualUrl: "http://x.test" }).collabManualUrl).toBe("http://x.test");
+    expect(sanitize({ collabManualUrl: "javascript:alert(1)" }).collabManualUrl).toBe("");
+    expect(sanitize({ collabManualUrl: "not a url" }).collabManualUrl).toBe("");
   });
 });

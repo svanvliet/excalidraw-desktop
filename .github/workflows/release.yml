@@ -1,12 +1,27 @@
 name: release
 
-# Build platform installers on every push of a v*.*.* tag and attach
-# them to a GitHub Release. The release is created in draft mode so a
-# human can write notes before publishing.
+# Windows half of the release pipeline. macOS is built, signed,
+# notarized, and uploaded LOCALLY by scripts/release-macos.sh (Apple
+# credentials never leave the release Mac's keychain), which creates the
+# draft GitHub Release, uploads the DMG + updater tarball + latest.json, and
+# then pushes the v*.*.* tag. This job builds the (unsigned) Windows
+# installers, re-signs the NSIS setup .exe for the updater, attaches them to
+# that same draft, and merges a windows-x86_64 entry into its latest.json.
+# If the tag is pushed by hand, this job creates the draft and a
+# Windows-only latest.json; the macOS script later merges into both.
 #
-# To cut a release:
-#   git tag v0.1.0
-#   git push origin v0.1.0
+# We don't use tauri-action here: we need deterministic asset names (to put
+# the setup .exe's URL in latest.json), an --app-version re-sign before
+# upload, and a latest.json merge that preserves the macOS entries —
+# tauri-action's own updater JSON would describe its build-time signature
+# and asset names instead.
+#
+# Requires repository secrets TAURI_SIGNING_PRIVATE_KEY (contents of the
+# updater .key file) and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. See
+# docs/signing-macos.md § Auto-update.
+#
+# To cut a release (see docs/signing-macos.md):
+#   npm run release:mac -- <version> --bump --publish
 
 on:
   push:
@@ -15,32 +30,56 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish (e.g. v0.1.0). Created if it doesn't exist."
+        description: "Existing tag to build Windows installers for (e.g. v0.2.0)."
         required: true
-        default: "v0.1.0"
 
 permissions:
   contents: write
 
-jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Universal macOS binary (Intel + Apple Silicon in one .dmg).
-          - platform: macos-latest
-            target: universal-apple-darwin
-            args: "--target universal-apple-darwin"
-          # Standard MSVC x64 Windows installer (.msi + .exe).
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            args: ""
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
-    runs-on: ${{ matrix.platform }}
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Preflight (secrets, version, no test overrides)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [[ -n "$TAURI_SIGNING_PRIVATE_KEY" ]] || missing+=" TAURI_SIGNING_PRIVATE_KEY"
+          [[ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]] || missing+=" TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          if [[ -n "$missing" ]]; then
+            echo "::error::Missing repository secret(s):$missing. Add them as described in docs/signing-macos.md § Auto-update."
+            exit 1
+          fi
+          if [[ -n "${EXCALIDRAW_UPDATE_ENDPOINT:-}" ]]; then
+            echo "::error::EXCALIDRAW_UPDATE_ENDPOINT is a test-only override and must not be set for releases."
+            exit 1
+          fi
+          version="${TAG#v}"
+          conf_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [[ "$conf_version" != "$version" ]]; then
+            echo "::error::tauri.conf.json version is $conf_version but the tag is $TAG."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -51,9 +90,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          # universal-apple-darwin needs both arches present so cargo can
-          # lipo them together into a fat binary.
-          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+          targets: x86_64-pc-windows-msvc
 
       - name: Cache cargo
         uses: swatinem/rust-cache@v2
@@ -63,34 +100,88 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build installers (with updater artifacts)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # NOTE: code signing is intentionally omitted for v0.1.0. See
-          # docs/signing-macos.md and docs/signing-windows.md for the
-          # full runbook when we're ready to publish a signed build.
-        with:
-          tagName: ${{ github.ref_name || github.event.inputs.tag }}
-          releaseName: "Excalidraw Desktop ${{ github.ref_name || github.event.inputs.tag }}"
-          releaseBody: |
-            First public build of Excalidraw Desktop.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # Kept out of tauri.conf.json: the macOS script builds without the
+          # key and signs its own tarball.
+          echo '{"bundle":{"createUpdaterArtifacts":true}}' > "$RUNNER_TEMP/updater-artifacts.json"
+          npx tauri build --bundles nsis,msi --config "$RUNNER_TEMP/updater-artifacts.json"
 
-            **Note:** these binaries are **unsigned**. macOS will quarantine
-            the .dmg (Right-click → Open the first time) and Windows
-            SmartScreen will warn ("More info" → "Run anyway"). Signed
-            release pipeline is tracked as post-v1 work; see
-            `docs/signing-macos.md` / `docs/signing-windows.md`.
+      - name: Stage, re-sign, and verify
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/release/bundle"
+          out="release-artifacts"
+          mkdir -p "$out"
+          # Tauri names bundles after productName ("Excalidraw Desktop"); the
+          # release assets use hyphens, like the macOS DMG and tarball.
+          setup="Excalidraw-Desktop_${VERSION}_x64-setup.exe"
+          msi="Excalidraw-Desktop_${VERSION}_x64_en-US.msi"
+          cp "$bundle/nsis/Excalidraw Desktop_${VERSION}_x64-setup.exe" "$out/$setup"
+          cp "$bundle/msi/Excalidraw Desktop_${VERSION}_x64_en-US.msi" "$out/$msi"
+          # requireSignedVersion needs version:X.Y.Z in the trusted comment;
+          # re-sign explicitly rather than rely on the build-time signature.
+          npx tauri signer sign --app-version "$VERSION" "$out/$setup" > /dev/null
+          node scripts/verify-updater-sig.mjs "$out/$setup" "$out/$setup.sig" "$VERSION"
+          (cd "$out" && sha256sum "$setup" "$msi" | tee SHA256SUMS-windows.txt)
+          echo "SETUP=$setup" >> "$GITHUB_ENV"
+          echo "MSI=$msi" >> "$GITHUB_ENV"
 
-            ### Install
-            - **macOS:** download the `.dmg`, drag to Applications.
-            - **Windows:** download the `.msi` or `.exe` installer.
+      - name: Ensure the draft release exists
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Using existing release $TAG"
+            exit 0
+          fi
+          # Only used if this job runs before the macOS script; keep in sync
+          # with RELEASE_BODY in scripts/release-macos.sh.
+          cat > "$RUNNER_TEMP/body.md" <<EOF
+          ### Install
+          - **macOS (universal: Apple Silicon + Intel):** download \`Excalidraw-Desktop_${VERSION}_universal.dmg\`, open it, and drag the app to Applications. The DMG is **signed with a Developer ID and notarized by Apple**, so it opens without Gatekeeper warnings.
+          - **Windows:** download the \`.msi\` or \`-setup.exe\` installer. Windows builds are **unsigned**, so SmartScreen will warn ("More info" → "Run anyway").
 
-            ### Logs
-            App writes a rolling log file at
-            `~/.excalidraw-desktop/excalidraw-desktop.log` (macOS / Linux)
-            or `%USERPROFILE%\.excalidraw-desktop\excalidraw-desktop.log`
-            (Windows). Attach the tail when reporting issues.
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          ### Logs
+          The app writes a rolling log file at \`~/.excalidraw-desktop/excalidraw-desktop.log\` (macOS) or \`%USERPROFILE%\\.excalidraw-desktop\\excalidraw-desktop.log\` (Windows). Attach the tail when reporting issues.
+          EOF
+          sed -i 's/^          //' "$RUNNER_TEMP/body.md"
+          gh release create "$TAG" --draft --verify-tag \
+            --title "Excalidraw Desktop $TAG" --notes-file "$RUNNER_TEMP/body.md"
+
+      - name: Upload installers
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          gh release upload "$TAG" --clobber "$SETUP" "$SETUP.sig" "$MSI" SHA256SUMS-windows.txt
+
+      - name: Merge windows-x86_64 into latest.json
+        run: |
+          set -euo pipefail
+          # The macOS script normally uploads latest.json before pushing the
+          # tag. If it isn't there yet (tag pushed by hand, or a race), wait a
+          # little, then publish a Windows-only manifest; the macOS script
+          # merges into it later. Either way the merge is idempotent.
+          for i in $(seq 1 10); do
+            if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx latest.json; then
+              break
+            fi
+            echo "No latest.json on $TAG yet ($i/10); waiting 30s for the macOS upload"
+            sleep 30
+          done
+          mkdir -p "$RUNNER_TEMP/manifest"
+          scripts/publish-updater-manifest.sh "$TAG" "$RUNNER_TEMP/manifest/latest.json" \
+            --version "$VERSION" --platform windows-x86_64 \
+            --sig "release-artifacts/$SETUP.sig" \
+            --url "https://github.com/$GH_REPO/releases/download/$TAG/$SETUP"
+          node -e '
+            const m = require(process.argv[1]);
+            if (!m.platforms["darwin-aarch64"]) {
+              console.log("::warning::latest.json has no macOS entries yet; run scripts/release-macos.sh --publish for this version before publishing the release.");
+            }
+          ' "$RUNNER_TEMP/manifest/latest.json"

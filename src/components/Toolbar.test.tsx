@@ -24,7 +24,7 @@ describe("Toolbar", () => {
 
   it("shows just the basename of the document path", () => {
     setup({ documentPath: "/Users/me/projects/diagram.excalidraw" });
-    expect(screen.getByText("diagram.excalidraw")).toBeInTheDocument();
+    expect(screen.getByText("diagram")).toBeInTheDocument();
   });
 
   it("renders a dirty marker only when dirty is true", () => {
@@ -73,5 +73,59 @@ describe("Toolbar", () => {
     expect(props.onOpen).toHaveBeenCalledTimes(1);
     expect(props.onSave).toHaveBeenCalledTimes(1);
     expect(props.onSaveAs).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides Share/Join unless handlers are provided", () => {
+    setup();
+    expect(screen.queryByTestId("toolbar-share")).toBeNull();
+    expect(screen.queryByTestId("toolbar-join")).toBeNull();
+  });
+
+  it("wires Share and Join, and shows a live peer badge only while hosting", () => {
+    const onShare = vi.fn();
+    const onJoin = vi.fn();
+    const { rerender } = render(
+      <Toolbar
+        documentPath={null}
+        dirty={false}
+        onOpen={() => {}}
+        onSave={() => {}}
+        onSaveAs={() => {}}
+        onShare={onShare}
+        onJoin={onJoin}
+        livePeerCount={null}
+      />,
+    );
+    expect(screen.queryByTestId("toolbar-live-badge")).toBeNull();
+    fireEvent.click(screen.getByTestId("toolbar-share"));
+    fireEvent.click(screen.getByRole("button", { name: "Join session…" }));
+    expect(onShare).toHaveBeenCalledTimes(1);
+    expect(onJoin).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <Toolbar
+        documentPath={null}
+        dirty={false}
+        onOpen={() => {}}
+        onSave={() => {}}
+        onSaveAs={() => {}}
+        onShare={onShare}
+        onJoin={onJoin}
+        livePeerCount={3}
+      />,
+    );
+    expect(screen.getByTestId("toolbar-live-badge")).toHaveTextContent("3");
+    expect(screen.getByTestId("toolbar-share")).toHaveAttribute("data-pressed", "true");
+  });
+
+  it("flags a session on another tab without a peer badge", () => {
+    setup({ onShare: vi.fn(), livePeerCount: null, liveElsewhere: true });
+    expect(screen.queryByTestId("toolbar-live-badge")).toBeNull();
+    expect(screen.getByTestId("toolbar-live-elsewhere")).toBeInTheDocument();
+    expect(screen.getByTestId("toolbar-share")).not.toHaveAttribute("data-pressed");
+    expect(screen.getByTestId("toolbar-share")).toHaveAttribute(
+      "aria-label",
+      "Share, a different tab is being shared",
+    );
   });
 });

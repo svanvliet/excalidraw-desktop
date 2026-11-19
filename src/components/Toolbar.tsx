@@ -1,6 +1,16 @@
 import { useCallback, type ReactNode } from "react";
-import { ExportIcon, FolderOpenIcon, SaveAsIcon, SaveIcon, SettingsIcon } from "./icons";
+import {
+  ExportIcon,
+  FolderOpenIcon,
+  LinkIcon,
+  LiveIcon,
+  SaveAsIcon,
+  SaveIcon,
+  SettingsIcon,
+  UsersIcon,
+} from "./icons";
 import { ThemeToggle } from "./ThemeToggle";
+import { displayName } from "../lib/fileFormat";
 
 export interface ToolbarProps {
   documentPath: string | null;
@@ -10,6 +20,17 @@ export interface ToolbarProps {
   onSaveAs: () => void;
   onExportPng?: () => void;
   onOpenSettings?: () => void;
+  /** Opens the live-collaboration Share dialog. */
+  onShare?: () => void;
+  /** Opens the Join-session dialog. */
+  onJoin?: () => void;
+  /**
+   * Participant count while a live session is active (shown as a badge on
+   * Share). `null`/omitted = no session.
+   */
+  livePeerCount?: number | null;
+  /** A live session is bound to a different tab than the active one. */
+  liveElsewhere?: boolean;
   /** Slot rendered between Open and Save — used for the Recent menu. */
   children?: ReactNode;
 }
@@ -32,8 +53,13 @@ export function Toolbar({
   onSaveAs,
   onExportPng,
   onOpenSettings,
+  onShare,
+  onJoin,
+  livePeerCount,
+  liveElsewhere = false,
   children,
 }: ToolbarProps) {
+  const live = livePeerCount !== null && livePeerCount !== undefined;
   const titleLabel = documentPath ?? "Untitled";
 
   const handleOpen = useCallback(() => onOpen(), [onOpen]);
@@ -45,7 +71,7 @@ export function Toolbar({
   return (
     <header className="toolbar" data-testid="toolbar">
       <div className="toolbar__title" title={titleLabel}>
-        <span className="toolbar__name">{basename(titleLabel)}</span>
+        <span className="toolbar__name">{displayName(titleLabel)}</span>
         {dirty ? (
           <span className="toolbar__dirty" aria-label="Unsaved changes" title="Unsaved changes">
             •
@@ -91,6 +117,54 @@ export function Toolbar({
             <ExportIcon />
           </button>
         ) : null}
+        {onShare || onJoin ? <span className="toolbar__divider" aria-hidden="true" /> : null}
+        {onShare ? (
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onShare}
+            data-testid="toolbar-share"
+            data-pressed={live || undefined}
+            title={
+              live
+                ? `Live session — ${livePeerCount} connected`
+                : liveElsewhere
+                  ? "A different tab is being shared"
+                  : "Share (live collaboration)"
+            }
+            aria-label={
+              live
+                ? `Share, live session with ${livePeerCount} connected`
+                : liveElsewhere
+                  ? "Share, a different tab is being shared"
+                  : "Share"
+            }
+          >
+            <UsersIcon />
+            <span>Share</span>
+            {live ? (
+              <span className="toolbar__live-badge" data-testid="toolbar-live-badge">
+                {livePeerCount}
+              </span>
+            ) : liveElsewhere ? (
+              <span className="toolbar__live-elsewhere" data-testid="toolbar-live-elsewhere">
+                <LiveIcon className="icon icon--sm" />
+              </span>
+            ) : null}
+          </button>
+        ) : null}
+        {onJoin ? (
+          <button
+            type="button"
+            className="icon-btn icon-btn--icon-only"
+            onClick={onJoin}
+            data-testid="toolbar-join"
+            aria-label="Join session…"
+            title="Join session…"
+          >
+            <LinkIcon />
+          </button>
+        ) : null}
         <span className="toolbar__divider" aria-hidden="true" />
         <ThemeToggle />
         {onOpenSettings ? (
@@ -108,9 +182,4 @@ export function Toolbar({
       </div>
     </header>
   );
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }

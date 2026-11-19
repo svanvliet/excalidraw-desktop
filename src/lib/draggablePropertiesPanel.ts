@@ -81,7 +81,8 @@ export function enableDraggablePropertiesPanel(canvasRoot: HTMLElement): () => v
     const rootRect = canvasRoot.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     const initialPosition =
-      lastPosition ?? ({ x: panelRect.left - rootRect.left, y: panelRect.top - rootRect.top } as const);
+      lastPosition ??
+      ({ x: panelRect.left - rootRect.left, y: panelRect.top - rootRect.top } as const);
     applyPosition(initialPosition);
 
     const onResize = () => {
@@ -90,15 +91,13 @@ export function enableDraggablePropertiesPanel(canvasRoot: HTMLElement): () => v
     };
     window.addEventListener("resize", onResize);
 
-    let dragState:
-      | {
-          pointerId: number;
-          startX: number;
-          startY: number;
-          startLeft: number;
-          startTop: number;
-        }
-      | null = null;
+    let dragState: {
+      pointerId: number;
+      startX: number;
+      startY: number;
+      startLeft: number;
+      startTop: number;
+    } | null = null;
 
     const onPointerMove = (event: PointerEvent) => {
       if (!dragState || event.pointerId !== dragState.pointerId) return;
