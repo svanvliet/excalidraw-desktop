@@ -15,6 +15,7 @@
 | D-AI5 | Per-engine toggle **"Use my agent's MCPs, skills & plugins"** (default **on**). Tools from those sources that aren't known read-only need in-app approval, with "allow for this conversation".                                                                                               |
 | D-AI6 | Claude Code is **bring-your-own-binary**. If `claude` is installed and logged in, we use it. We never read, store, or proxy credentials. Settings shows a one-line "your Claude/Copilot/OpenAI terms apply" note, and legal review is a release-gate item (T3 Code ships this same pattern). |
 | D-AI7 | **No API keys anywhere.** Remove `openAiKey` and migrate it out of `settings.json`. SEC-3 becomes "the app stores no AI credentials".                                                                                                                                                        |
+| D-AI9 | **Port from T3 Code (MIT), don't embed it.** Engine adapters stay in Rust; we port T3 Code's protocol schemas, engine quirks, PATH discovery, MCP bridge, and replay-fixture test approach. We don't ship its Node/Effect server or its Tailwind UI. See "Reuse from T3 Code".               |
 
 ## Research summary (what drives the design)
 
@@ -47,6 +48,29 @@ mcp_servers.excalidraw.*` overrides, and the login in `~/.codex/auth.json` or th
   Mermaid, not streamed). Pitfalls: bump element versions, tombstone deletes (or collab won't sync them),
   arrows to _existing_ shapes need manual bindings, block edits in collab **viewer** tabs, and call
   `markDirty` explicitly.
+
+## Reuse from T3 Code
+
+[pingdotgg/t3code](https://github.com/pingdotgg/t3code) (MIT, © 2026 T3 Tools Inc.) already drives all
+three engines from a desktop app. Its stack is TypeScript on Effect, in an Electron + Node server, so it
+can't be dropped into our Tauri/Rust core. Shipping it as a Node sidecar would add a bundled runtime and
+a second process model for little gain, so we **port the following and cite the source**:
+
+| T3 Code source                                                                                | What we take                                                                                                                                                                                                                                                                                                | Lands in                                       |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `packages/effect-acp` (`_generated` schema)                                                   | The ACP message schema, used to generate Rust `serde` types instead of hand-writing them.                                                                                                                                                                                                                   | `src-tauri/src/agent/acp/`                     |
+| `packages/effect-codex-app-server` (`_generated` schema, `scripts/generate.ts`)               | Codex app-server request/notification types, and the generator approach for re-syncing when Codex changes.                                                                                                                                                                                                  | `src-tauri/src/agent/codex/`                   |
+| `packages/provider-acp-registry/src/server/{adapter,copilotAcp}.ts`                           | Copilot specifics: detect `copilot`/`copilot.exe`/`copilot.cmd`; Copilot gets our MCP server over **HTTP** (the stdio shim then only serves Claude/Codex); lost-session error markers; `session/prompt` held open while async shells run; `session/new` reporting the wrong model; tool-kind normalization. | Copilot adapter; AI-0 checks each still holds. |
+| `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`                                 | `approvalPolicy` + `sandboxPolicy` combinations per mode, and the `CODEX_HOME` conflict handling.                                                                                                                                                                                                           | Codex adapter                                  |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`                                | Claude event mapping and permission handling. T3 uses the Agent SDK with `pathToClaudeCodeExecutable` (the user's binary); we speak the same stream-json protocol directly from Rust.                                                                                                                       | Claude adapter                                 |
+| `apps/server/src/mcp/{AcpMcpStdioBridge,McpHttpServer}.ts`                                    | A verbatim JSON-RPC relay from stdio to an HTTP endpoint with a bearer token, and MCP protocol version `2025-06-18`. Same design as our `--mcp-shim`.                                                                                                                                                       | `--mcp-shim`, MCP server                       |
+| `apps/desktop/src/shell/DesktopShellEnvironment.ts`                                           | GUI-app PATH discovery: login shell `-ilc` capture with a timeout, `launchctl getenv PATH` fallback on macOS, Windows profile/no-profile PATH merge, and version-manager variables (fnm/mise).                                                                                                              | `detect`                                       |
+| `apps/server/scripts/{acp-mock-agent,record-*-replay-fixture}.ts`, `orchestration-v2/testkit` | A fake ACP agent plus record/replay fixtures per engine for deterministic adapter tests.                                                                                                                                                                                                                    | cargo tests, Playwright fake agent             |
+| `apps/web/src/components/ChatView.logic.ts`, `ChatMarkdown.tsx`                               | Timeline/streaming-delta reduction and markdown-rendering logic only. Its components use Tailwind + Base UI, so we rebuild the panel with our tokens and `.icon-btn`/`.modal` classes.                                                                                                                      | `agentStore`, panel                            |
+
+Rules for porting: keep T3 Code's copyright + MIT notice in a header of each ported file and in
+`THIRD_PARTY_NOTICES.md`. Copy schemas and logic, not the Effect runtime. Re-verify every engine quirk
+against the minimum engine version we pin in AI-0, because T3 Code tracks the newest engine builds.
 
 ## Architecture
 
@@ -194,6 +218,7 @@ then edit), and the style defaults.
 
 ## Sources
 
+- T3 Code (MIT), reference implementation for all three engines: https://github.com/pingdotgg/t3code
 - Copilot CLI ACP server: https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server
 - Copilot CLI programmatic reference: https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference
 - Copilot SDK: https://github.com/github/copilot-sdk
