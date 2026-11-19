@@ -39,9 +39,12 @@ Bash,Edit,Write,NotebookEdit`, `--permission-prompt-tool stdio` (approvals arriv
   `ANTHROPIC_BASE_URL`.
 - **Codex:** `codex app-server` speaks JSON-RPC over stdio and handles threads and approval requests
   (it is what the Codex IDE extension uses, and what T3 Code uses). It is marked experimental, so we
-  pin a minimum version. `codex exec --json` is the fallback. `--sandbox read-only`, `-c
-mcp_servers.excalidraw.*` overrides, and the login in `~/.codex/auth.json` or the keyring (we only
-  check that it exists). `codex-acp` also exists.
+  pin a minimum version (`codex::CODEX_MIN_VERSION`, 0.156.0). The read-only sandbox is set three
+  ways: launch `-c sandbox_mode="read-only" -c approval_policy="on-request"`, the thread's `sandbox`,
+  and every turn's `sandboxPolicy` (no network). Our server is added as `mcp_servers.excalidraw` with
+  `bearer_token_env_var`, so the token never appears in argv. We strip `OPENAI_API_KEY` and
+  `CODEX_API_KEY` so the user's ChatGPT sign-in is used instead of API billing. `codex exec --json`
+  is a documented fallback but is not implemented. `codex-acp` also exists.
 - **ChatGPT desktop app / Copilot desktop app:** neither exposes an API another app can drive. We say so
   in the UI and docs ("use Codex CLI with your ChatGPT sign-in").
 - **Excalidraw 0.18.1:** everything we need is public API: `updateScene({captureUpdate: IMMEDIATELY})`,
@@ -121,8 +124,11 @@ WebFetch,ToolSearch`), `--permission-mode default`, and `--permission-prompt-too
   other permission request becomes an inline approval card (Allow once / Allow for this conversation /
   Deny).
 - **"Use my MCPs, skills & plugins" OFF:** Copilot gets `--disable-builtin-mcps`,
-  `--no-custom-instructions`, and only our MCP server. Claude gets `--strict-mcp-config`. Codex gets
-  `-c mcp_servers={}` plus ours.
+  `--no-custom-instructions`, and only our MCP server. Claude gets `--strict-mcp-config`. Codex merges `-c`
+  overrides recursively, so `-c mcp_servers={}` would not remove anything: instead we `config/read`
+  and set `mcp_servers.<name>.enabled=false` for each user server, and turn off project docs, apps,
+  plugins and skill instructions. The global `$CODEX_HOME/AGENTS.md` still applies, because isolating
+  `CODEX_HOME` would also lose the user's sign-in.
 - **Privacy, CSP and capabilities:** the webview makes **no** new network requests, the CSP is
   **unchanged**, and no new Tauri plugin capability is needed (only custom commands). Network traffic
   comes from the user's agent process, to its own provider, only after the AI master toggle is on, the
