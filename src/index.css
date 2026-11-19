@@ -364,6 +364,17 @@ button {
   margin: auto var(--space-2);
 }
 
+.tabbar__live {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.toolbar__live-elsewhere {
+  display: inline-flex;
+  color: var(--accent);
+}
+
 .tabbar__dirty {
   width: 6px;
   height: 6px;

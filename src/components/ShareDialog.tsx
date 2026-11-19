@@ -31,6 +31,10 @@ export interface ShareDialogProps {
   selfRole?: Role;
   /** Host: decline a viewer's edit request. */
   onDenyEdit?: (clientId: string) => void;
+  /** Display name of the tab bound to the session (shown when another tab is active). */
+  sessionTabLabel?: string;
+  /** Switch to the tab bound to the session. */
+  onGoToSessionTab?: () => void;
 }
 
 export function ShareDialog({
@@ -42,6 +46,8 @@ export function ShareDialog({
   selfName = "You",
   selfRole,
   onDenyEdit,
+  sessionTabLabel = "another tab",
+  onGoToSessionTab,
 }: ShareDialogProps) {
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -105,9 +111,20 @@ export function ShareDialog({
     [managePeer],
   );
 
+  const shareThisTabInstead = useCallback(async () => {
+    if (!tabId) return;
+    await stopHosting();
+    await startHosting(tabId);
+  }, [tabId, stopHosting, startHosting]);
+
   if (!open) return null;
 
   const hosting = session?.role === "host";
+  const elsewhere = !!session && session.tabId !== tabId;
+  const goToSessionTab = () => {
+    onClose();
+    onGoToSessionTab?.();
+  };
   const manualMissing = tunnelMode === "manual" && !manualUrl;
 
   let body: ReactNode;
@@ -133,6 +150,60 @@ export function ShareDialog({
       >
         Open Settings
       </button>
+    );
+  } else if (session && elsewhere) {
+    const count = peers.length + 1;
+    body = (
+      <>
+        <p className="share__text" data-testid="share-other-tab">
+          {hosting ? (
+            <>
+              You&rsquo;re sharing <strong>{sessionTabLabel}</strong>. Only that drawing is visible
+              to the {count === 1 ? "session" : `${count} people in the session`}; this tab stays
+              private.
+            </>
+          ) : (
+            <>
+              You&rsquo;re joined to a live session in <strong>{sessionTabLabel}</strong>. This tab
+              isn&rsquo;t part of it.
+            </>
+          )}
+        </p>
+        {hosting ? (
+          <p className="settings__hint">
+            Sharing this tab instead ends the current session. Everyone is disconnected and
+            you&rsquo;ll get a new link to send.
+          </p>
+        ) : null}
+        {error ? (
+          <p className="share__error" role="alert" data-testid="share-error">
+            {error}
+          </p>
+        ) : null}
+      </>
+    );
+    actions = (
+      <>
+        {hosting ? (
+          <button
+            type="button"
+            className="modal__secondary"
+            disabled={!tabId || starting}
+            onClick={() => void shareThisTabInstead()}
+            data-testid="share-switch-tab"
+          >
+            Share this tab instead
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="modal__primary"
+          onClick={goToSessionTab}
+          data-testid="share-go-to-tab"
+        >
+          {hosting ? "Go to shared tab" : "Go to session tab"}
+        </button>
+      </>
     );
   } else if (session?.role === "guest") {
     body = (
@@ -201,11 +272,6 @@ export function ShareDialog({
   } else {
     body = (
       <>
-        {session.tabId !== tabId ? (
-          <p className="settings__hint" data-testid="share-other-tab">
-            This session is sharing a different tab.
-          </p>
-        ) : null}
         <dl className="share__status" data-testid="share-status">
           <dt>Relay</dt>
           <dd>{status.running ? `Running on ${status.localBase ?? "127.0.0.1"}` : "Starting…"}</dd>

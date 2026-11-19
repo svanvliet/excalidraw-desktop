@@ -256,6 +256,8 @@ export function App() {
   const leaveCollab = useCollabStore((s) => s.leaveSession);
   const collabDisplayName = useSettingsStore((s) => s.collabDisplayName);
   const collabTabId = collabSession?.tabId ?? null;
+  const collabTab = collabTabId ? tabs.find((t) => t.id === collabTabId) : undefined;
+  const collabTabLabel = collabTab?.path ? basename(collabTab.path) : "Untitled";
   const collabLink = useMemo<RoomLink | null>(() => {
     if (!collabSession) return null;
     if (collabSession.role === "guest") {
@@ -613,7 +615,10 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onShare={() => setShareOpen(true)}
         onJoin={() => setJoinOpen(true)}
-        livePeerCount={collabSession ? collab.peers.length + 1 : null}
+        livePeerCount={
+          collabSession && collabTabId === activeTabId ? collab.peers.length + 1 : null
+        }
+        liveElsewhere={!!collabSession && collabTabId !== activeTabId}
       >
         <RecentMenu
           paths={recentPaths}
@@ -627,6 +632,7 @@ export function App() {
         onSelect={selectTab}
         onClose={requestCloseTab}
         onNew={handleNew}
+        liveTabId={collabTabId}
       />
       {error ? (
         <div className="app-shell__error" role="alert">
@@ -636,6 +642,7 @@ export function App() {
       {collabSession?.role === "host" ? (
         <EditRequestBar peers={collab.peers} onAllow={allowEdit} onDeny={collab.denyEdit} />
       ) : collabSession?.role === "guest" &&
+        collabTabId === activeTabId &&
         collab.status === "connected" &&
         collab.role === "viewer" ? (
         <ViewerBar state={collab.editRequest} onRequest={collab.requestEdit} />
@@ -687,6 +694,8 @@ export function App() {
         selfName={collabUsername}
         selfRole={collab.role}
         onDenyEdit={collab.denyEdit}
+        sessionTabLabel={collabTabLabel}
+        onGoToSessionTab={() => collabTabId && selectTab(collabTabId)}
       />
       <JoinDialog
         open={joinOpen}

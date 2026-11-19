@@ -117,4 +117,15 @@ describe("Toolbar", () => {
     expect(screen.getByTestId("toolbar-live-badge")).toHaveTextContent("3");
     expect(screen.getByTestId("toolbar-share")).toHaveAttribute("data-pressed", "true");
   });
+
+  it("flags a session on another tab without a peer badge", () => {
+    setup({ onShare: vi.fn(), livePeerCount: null, liveElsewhere: true });
+    expect(screen.queryByTestId("toolbar-live-badge")).toBeNull();
+    expect(screen.getByTestId("toolbar-live-elsewhere")).toBeInTheDocument();
+    expect(screen.getByTestId("toolbar-share")).not.toHaveAttribute("data-pressed");
+    expect(screen.getByTestId("toolbar-share")).toHaveAttribute(
+      "aria-label",
+      "Share, a different tab is being shared",
+    );
+  });
 });

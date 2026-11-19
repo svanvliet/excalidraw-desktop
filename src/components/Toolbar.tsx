@@ -3,6 +3,7 @@ import {
   ExportIcon,
   FolderOpenIcon,
   LinkIcon,
+  LiveIcon,
   SaveAsIcon,
   SaveIcon,
   SettingsIcon,
@@ -27,6 +28,8 @@ export interface ToolbarProps {
    * Share). `null`/omitted = no session.
    */
   livePeerCount?: number | null;
+  /** A live session is bound to a different tab than the active one. */
+  liveElsewhere?: boolean;
   /** Slot rendered between Open and Save — used for the Recent menu. */
   children?: ReactNode;
 }
@@ -52,6 +55,7 @@ export function Toolbar({
   onShare,
   onJoin,
   livePeerCount,
+  liveElsewhere = false,
   children,
 }: ToolbarProps) {
   const live = livePeerCount !== null && livePeerCount !== undefined;
@@ -121,15 +125,29 @@ export function Toolbar({
             data-testid="toolbar-share"
             data-pressed={live || undefined}
             title={
-              live ? `Live session — ${livePeerCount} connected` : "Share (live collaboration)"
+              live
+                ? `Live session — ${livePeerCount} connected`
+                : liveElsewhere
+                  ? "A different tab is being shared"
+                  : "Share (live collaboration)"
             }
-            aria-label={live ? `Share, live session with ${livePeerCount} connected` : "Share"}
+            aria-label={
+              live
+                ? `Share, live session with ${livePeerCount} connected`
+                : liveElsewhere
+                  ? "Share, a different tab is being shared"
+                  : "Share"
+            }
           >
             <UsersIcon />
             <span>Share</span>
             {live ? (
               <span className="toolbar__live-badge" data-testid="toolbar-live-badge">
                 {livePeerCount}
+              </span>
+            ) : liveElsewhere ? (
+              <span className="toolbar__live-elsewhere" data-testid="toolbar-live-elsewhere">
+                <LiveIcon className="icon icon--sm" />
               </span>
             ) : null}
           </button>

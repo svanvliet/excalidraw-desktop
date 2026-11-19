@@ -178,6 +178,27 @@ describe("ShareDialog", () => {
     expect(onDenyEdit).toHaveBeenCalledWith("v1");
   });
 
+  it("on another tab, offers to go to the shared tab or share this one instead", async () => {
+    useSettingsStore.setState({ collab: true });
+    ipc.collabStop.mockResolvedValue(status({ running: false }));
+    ipc.collabStart.mockResolvedValue(status());
+    hostSession();
+    const onGoToSessionTab = vi.fn();
+    const p = renderDialog({ tabId: "t2", sessionTabLabel: "plan.excalidraw", onGoToSessionTab });
+    expect(screen.getByTestId("share-other-tab")).toHaveTextContent(
+      "You’re sharing plan.excalidraw",
+    );
+    expect(screen.queryByTestId("share-link")).toBeNull();
+    fireEvent.click(screen.getByTestId("share-go-to-tab"));
+    expect(p.onClose).toHaveBeenCalled();
+    expect(onGoToSessionTab).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("share-switch-tab"));
+    await waitFor(() => expect(ipc.collabStart).toHaveBeenCalled());
+    expect(ipc.collabStop).toHaveBeenCalled();
+    await waitFor(() => expect(useCollabStore.getState().session?.tabId).toBe("t2"));
+  });
+
   it.each([
     ["devtunnel_not_installed", "brew install --cask devtunnel"],
     ["devtunnel_not_logged_in", "devtunnel user login"],

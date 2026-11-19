@@ -35,6 +35,22 @@ describe("TabBar", () => {
     expect(screen.getByLabelText(/unsaved changes/i)).toBeInTheDocument();
   });
 
+  it("shows a live glyph only on the shared tab", () => {
+    render(
+      <TabBar
+        tabs={[makeTab({ id: "a" }), makeTab({ id: "b" })]}
+        activeTabId="a"
+        liveTabId="b"
+        onSelect={() => {}}
+        onClose={() => {}}
+        onNew={() => {}}
+      />,
+    );
+    const [a, b] = screen.getAllByRole("tab");
+    expect(a.querySelector("[data-testid=tab-live]")).toBeNull();
+    expect(b.querySelector("[data-testid=tab-live]")).not.toBeNull();
+  });
+
   it("marks the active tab with aria-selected", () => {
     render(
       <TabBar
