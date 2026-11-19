@@ -1,13 +1,14 @@
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
+import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
 
 export interface ExcalidrawCanvasProps {
@@ -71,10 +72,12 @@ export function ExcalidrawCanvas({
 }: ExcalidrawCanvasProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
 
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       apiRef.current = api;
+      setApi(api);
       onApi(api);
     },
     [onApi],
@@ -99,6 +102,15 @@ export function ExcalidrawCanvas({
     },
     [onSceneChange, onCollabChange],
   );
+
+  // Text painted before its font loaded can stay in the fallback face; see fontRefresh.ts.
+  useEffect(() => {
+    if (!api) return;
+    return watchFontLoads(
+      () => refreshTextElements(api, CaptureUpdateAction.NEVER),
+      typeof document !== "undefined" ? document.fonts : undefined,
+    );
+  }, [api, initialData]);
 
   useEffect(() => {
     const root = canvasRef.current;
