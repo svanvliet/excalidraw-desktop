@@ -78,6 +78,9 @@ vi.mock("./ipc/commands", () => ({
   updateStatus: vi.fn(() => new Promise(() => {})),
   updateCheck: vi.fn(),
   updateInstall: vi.fn(),
+  fileOpenReady: vi.fn(async () => []),
+  setRecentMenu: vi.fn(async () => {}),
+  osUserName: vi.fn(async () => ""),
 }));
 
 import { App } from "./App";
@@ -85,7 +88,7 @@ import { useTabsStore, __resetIdCounter } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { useCollabStore, __resetCollabStoreForTests } from "./stores/collabStore";
 import { useSettingsStore, __resetSettingsForTests } from "./stores/settingsStore";
-import { collabStop } from "./ipc/commands";
+import { collabStop, fileOpenReady, openFile, setRecentMenu } from "./ipc/commands";
 
 beforeEach(() => {
   __resetIdCounter();
@@ -147,5 +150,29 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Untitled" }));
     await waitFor(() => expect(collabStop).toHaveBeenCalledTimes(1));
     expect(useCollabStore.getState().session).toBeNull();
+  });
+
+  it("opens files the OS queued before the app was listening", async () => {
+    vi.mocked(fileOpenReady).mockResolvedValueOnce(["/tmp/launched.excalidraw"]);
+    vi.mocked(openFile).mockResolvedValueOnce({
+      path: "/tmp/launched.excalidraw",
+      contents: JSON.stringify({ type: "excalidraw", version: 2, elements: [], appState: {} }),
+    });
+    render(<App />);
+    await waitFor(() => expect(openFile).toHaveBeenCalledWith("/tmp/launched.excalidraw"));
+    await waitFor(() =>
+      expect(useTabsStore.getState().tabs.map((t) => t.path)).toContain("/tmp/launched.excalidraw"),
+    );
+  });
+
+  it("mirrors recent files into the native Open Recent menu", async () => {
+    render(<App />);
+    await waitFor(() => expect(useRecentFilesStore.getState().paths).toEqual([]));
+    useRecentFilesStore.setState({ paths: ["/a/Plan.excalidraw"] });
+    await waitFor(() =>
+      expect(setRecentMenu).toHaveBeenLastCalledWith([
+        { path: "/a/Plan.excalidraw", label: "Plan" },
+      ]),
+    );
   });
 });

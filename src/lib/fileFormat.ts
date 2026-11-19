@@ -171,3 +171,20 @@ export function displayName(path: string): string {
   const stem = name.replace(/\.excalidraw$/i, "");
   return stem || name;
 }
+
+/**
+ * Labels for File → Open Recent. Same-named files get their parent folder
+ * appended so they can be told apart.
+ */
+export function recentMenuLabels(paths: readonly string[]): string[] {
+  const names = paths.map(displayName);
+  const counts = new Map<string, number>();
+  for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
+  return paths.map((p, i) => {
+    const name = names[i];
+    if ((counts.get(name) ?? 0) < 2) return name;
+    const parts = p.split(/[/\\]/).filter(Boolean);
+    const parent = parts.length >= 2 ? parts[parts.length - 2] : "";
+    return parent ? `${name} — ${parent}` : name;
+  });
+}

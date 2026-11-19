@@ -31,6 +31,14 @@ pub mod ids {
     pub const FILE_EXPORT_PNG: &str = "excalidraw:file:exportPng";
     pub const FILE_CLOSE_TAB: &str = "excalidraw:file:closeTab";
     pub const FILE_SETTINGS: &str = "excalidraw:file:settings";
+    pub const FILE_CLEAR_RECENT: &str = "excalidraw:file:clearRecent";
+
+    /// Submenu ids (never emitted; used to find the submenus at runtime).
+    pub const FILE_MENU: &str = "excalidraw-menu:file";
+    pub const RECENT_MENU: &str = "excalidraw-menu:file:recent";
+    /// Open Recent items are `<prefix><index>`; Rust resolves the path and
+    /// routes it through the file-open flow instead of `MENU_EVENT`.
+    pub const RECENT_ITEM_PREFIX: &str = "excalidraw-recent:";
 
     pub const EDIT_UNDO: &str = "excalidraw:edit:undo";
     pub const EDIT_REDO: &str = "excalidraw:edit:redo";
@@ -96,7 +104,11 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     }
 
     // ---- File ----
-    let file = SubmenuBuilder::new(app, "&File")
+    // Filled in by `set_recent_menu` once the frontend loads recent files.
+    let recent = SubmenuBuilder::with_id(app, ids::RECENT_MENU, "Open Recent")
+        .item(&MenuItem::new(app, "No Recent Files", false, None::<&str>)?)
+        .build()?;
+    let file = SubmenuBuilder::with_id(app, ids::FILE_MENU, "&File")
         .item(&MenuItem::with_id(
             app,
             ids::FILE_NEW,
@@ -111,6 +123,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             true,
             Some(&accel("$Mod+O")),
         )?)
+        .item(&recent)
         .separator()
         .item(&MenuItem::with_id(
             app,
@@ -264,6 +277,18 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 /// handled natively).
 pub fn forward_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id().as_ref();
+    if id.starts_with(ids::RECENT_ITEM_PREFIX) {
+        let path = app
+            .try_state::<crate::commands::system::RecentMenuState>()
+            .and_then(|s| s.path_for(id));
+        if let Some(path) = path {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+            crate::commands::system::dispatch_file_open(app, path);
+        }
+        return;
+    }
     if !id.starts_with("excalidraw:") {
         return;
     }
@@ -300,6 +325,7 @@ mod tests {
         assert_eq!(ids::FILE_EXPORT_PNG, "excalidraw:file:exportPng");
         assert_eq!(ids::FILE_CLOSE_TAB, "excalidraw:file:closeTab");
         assert_eq!(ids::FILE_SETTINGS, "excalidraw:file:settings");
+        assert_eq!(ids::FILE_CLEAR_RECENT, "excalidraw:file:clearRecent");
         assert_eq!(ids::EDIT_UNDO, "excalidraw:edit:undo");
         assert_eq!(ids::EDIT_REDO, "excalidraw:edit:redo");
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");

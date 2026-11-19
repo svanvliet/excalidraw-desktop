@@ -137,7 +137,7 @@ excalidraw-app/
 - Install `@excalidraw/excalidraw`. Render full editor in `ExcalidrawCanvas.tsx`.
 - Rust commands: `open_file(path) -> FileContents`, `save_file(path, json) -> ()`.
 - Typed TS wrappers in `src/ipc/commands.ts`.
-- Hook into Excalidraw's `onChange` to detect dirty state.
+- Hook into Excalidraw's `onChange` to detect dirty state. Only content changes count: `src/lib/sceneContent.ts` fingerprints element versions, attached files and background color, so selection/scroll/zoom don't re-dirty a saved file.
 - Manual test: open a `.excalidraw` from a chosen path, edit, save back.
 
 ### M3 — Tabs, recent files, autosave, session restore ✅
@@ -148,7 +148,7 @@ excalidraw-app/
 - `TabBar.tsx`: middle-click close, × button, + new-tab button, dirty marker.
 - `ConfirmCloseDialog.tsx`: in-app 3-way modal (Save / Don't Save / Cancel). Built ourselves because `@tauri-apps/plugin-dialog` only exposes 2-way ask/confirm.
 - `App.tsx` mounts one Excalidraw instance per tab in `.canvas-slot` divs and toggles visibility, so per-tab undo history (FR-9) survives tab switches.
-- `recentFilesStore.ts` via `tauri-plugin-store` (`recent-files.json`): dedupe, cap 20, most-recent first. `RecentMenu.tsx` exposes it in the toolbar; the M5 native menu will share the list.
+- `recentFilesStore.ts` via `tauri-plugin-store` (`recent-files.json`): dedupe, cap 20, most-recent first. `RecentMenu.tsx` exposes it in the toolbar, and App mirrors it into the native File → Open Recent submenu via `set_recent_menu` (`src-tauri/src/commands/system.rs`); clicking an item routes through the normal file-open flow. OS file-open requests are queued in Rust (`OpenQueue`) until the frontend calls `file_open_ready`, so a Finder double-click that cold-launches the app isn't dropped.
 - `src/lib/autosave.ts` + Rust scratch commands (`write_scratch` / `read_scratch` / `delete_scratch` / `list_scratch`): 2s debounced per-tab. File-backed tabs overwrite their path (modern macOS document model); untitled tabs go to `<appDataDir>/scratch/<tabId>.excalidraw` and stay dirty so the user is still nudged to Save. Scratch is sanitized server-side to `[A-Za-z0-9_-]{1,128}`.
 - `sessionStore.ts` persists `{ tabs: [{ id, path }], activeTabId }` to `session.json` on every store change. On launch, files are reopened, untitled tabs are matched to scratch entries by tab id, missing files are silently dropped (console warn). If everything is skipped, `ensureActiveTab()` seeds a blank tab as usual.
 - 77 JS + 10 Rust = 87 tests green.
@@ -303,7 +303,7 @@ Contract: `docs/collab-protocol.md`. Firebase dropped: on excalidraw.com Firebas
 
 - `src-tauri/src/collab/` — axum WebSocket relay bound to 127.0.0.1 (room fan-out of opaque encrypted frames, host-registered rooms only, size/peer limits) that also serves the embedded app assets for browser guests; `devtunnel` CLI orchestration (auto) or manual public URL; commands `collab_start/stop/status`, event `collab://status`.
 - `src/collab/` — AES-GCM crypto, link encode/decode, WebSocket transport, `CollabSession` sync engine (reconcile, throttled diffs, cursors, files), browser `GuestApp`.
-- Share / Join dialogs, settings (display name, tunnel mode, manual URL, port); static CSP (§6).
+- Share / Join dialogs, settings (display name — defaults to the OS user's full name via `os_user_name` — tunnel mode, manual URL, port); static CSP (§6).
 - `npm run e2e:rust-relay` runs the browser-guest spec against the production Rust relay (`src-tauri/examples/relay_standalone.rs`).
 - Test profiles (`--profile`) let two desktop instances run on one machine.
 - **Validation gate before any release:** (A) desktop build ↔ local browser, (B) desktop build ↔ remote browser over DevTunnel, (C) desktop ↔ second desktop instance. Checklist: `docs/collab-testing.md`.

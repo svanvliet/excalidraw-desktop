@@ -13,7 +13,13 @@ import { EditRequestBar, ViewerBar } from "./components/RoleBar";
 import { JoinDialog } from "./components/JoinDialog";
 import { UpdateController } from "./components/UpdateController";
 import { useCollabStore } from "./stores/collabStore";
-import { collabSetRole, collabStop } from "./ipc/commands";
+import {
+  collabSetRole,
+  collabStop,
+  fileOpenReady,
+  osUserName,
+  setRecentMenu,
+} from "./ipc/commands";
 import type { RoomLink } from "./collab/protocol";
 import { useCollabSession } from "./collab/useCollabSession";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
@@ -38,6 +44,7 @@ import {
   bytesToBase64,
   formatFromExtension,
   displayName,
+  recentMenuLabels,
 } from "./lib/fileFormat";
 import { exportSceneAsPng, loadScenePng } from "./lib/pngScene";
 import { createAutosaver } from "./lib/autosave";
@@ -184,6 +191,12 @@ export function App() {
           log.info(`App: file-open event path=${path}`);
           void openPathRef.current(path);
         });
+        // Opens that arrived before we subscribed (e.g. the Finder
+        // double-click that launched the app) were queued in Rust.
+        for (const path of await fileOpenReady()) {
+          log.info(`App: queued file-open path=${path}`);
+          await openPathRef.current(path);
+        }
       } catch (e) {
         log.warn("App: file-open subscription unavailable", e);
       }
@@ -235,6 +248,22 @@ export function App() {
     };
   }, [loadRecent, loadSettings, loadTheme, initCollab, autosaver]);
 
+  // Mirror recent files into the native File → Open Recent submenu.
+  useEffect(() => {
+    const labels = recentMenuLabels(recentPaths);
+    setRecentMenu(recentPaths.map((path, i) => ({ path, label: labels[i] }))).catch((e) =>
+      log.warn("App: set_recent_menu failed", e),
+    );
+  }, [recentPaths]);
+
+  // Default collab display name: the OS user's name, unless set in Settings.
+  const [osName, setOsName] = useState("");
+  useEffect(() => {
+    osUserName()
+      .then(setOsName)
+      .catch(() => {});
+  }, []);
+
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePath = activeTab?.path ?? null;
   const activeDirty = activeTab?.dirty ?? false;
@@ -281,7 +310,7 @@ export function App() {
     [collabTabId, apiTick],
   );
   const collabUsername =
-    collabDisplayName.trim() || (collabSession?.role === "host" ? "Host" : "Guest");
+    collabDisplayName.trim() || osName || (collabSession?.role === "host" ? "Host" : "Guest");
   const collab = useCollabSession({
     api: collabApi,
     link: collabLink,
@@ -568,6 +597,9 @@ export function App() {
         case "excalidraw:file:settings":
           setSettingsOpen(true);
           return;
+        case "excalidraw:file:clearRecent":
+          void clearRecent();
+          return;
         case "excalidraw:edit:undo":
           // Excalidraw owns its history stack — replay the keyboard
           // shortcut so its internal handler runs.
@@ -607,6 +639,7 @@ export function App() {
       handleSaveAs,
       handleExportPng,
       requestCloseTab,
+      clearRecent,
     ],
   );
 

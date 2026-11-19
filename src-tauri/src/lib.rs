@@ -11,19 +11,16 @@ use commands::collab::{
 };
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
+use commands::system::{
+    dispatch_file_open, file_open_ready, os_user_name, set_recent_menu, OpenQueue, RecentMenuState,
+};
 use commands::updater::{update_check, update_install, update_status};
 
 use std::path::PathBuf;
+use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
-use tauri::{Emitter, Manager};
 use tauri_plugin_log::{Target, TargetKind};
-
-/// Event name shared with the frontend (`src/ipc/openEvents.ts`). Whenever
-/// the OS hands us a file — via `RunEvent::Opened` on macOS, via CLI args
-/// on Windows/Linux, or via the single-instance plugin for a second
-/// invocation — we forward the path here.
-const FILE_OPEN_EVENT: &str = "excalidraw://file-open";
 
 /// Directory inside the user's home where we drop log files. Chosen to be
 /// easy to find and easy to share when triaging.
@@ -67,7 +64,7 @@ pub fn run() {
             log::info!("single-instance: 2nd invocation argv={:?}", argv);
             for arg in argv.iter().skip(1) {
                 if looks_like_openable(arg) {
-                    let _ = app.emit(FILE_OPEN_EVENT, arg);
+                    dispatch_file_open(app, arg.clone());
                 }
             }
             if let Some(w) = app.get_webview_window("main") {
@@ -140,9 +137,14 @@ pub fn run() {
             app_profile,
             update_status,
             update_check,
-            update_install
+            update_install,
+            file_open_ready,
+            set_recent_menu,
+            os_user_name
         ])
         .manage(AppProfile(profile.clone()))
+        .manage(OpenQueue::default())
+        .manage(RecentMenuState::default())
         .manage(updater::Updates::default())
         .setup(move |app| {
             log::info!(
@@ -175,7 +177,7 @@ pub fn run() {
                 for arg in std::env::args().skip(1) {
                     if looks_like_openable(&arg) {
                         log::info!("setup: forwarding cli file arg {arg}");
-                        let _ = app.emit(FILE_OPEN_EVENT, arg);
+                        dispatch_file_open(app.handle(), arg);
                     }
                 }
             }
@@ -243,7 +245,7 @@ pub fn run() {
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|| url.to_string());
                 if looks_like_openable(&display) {
-                    let _ = _app_handle.emit(FILE_OPEN_EVENT, display);
+                    dispatch_file_open(_app_handle, display);
                 }
             }
         }

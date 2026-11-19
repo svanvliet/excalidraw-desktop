@@ -21,6 +21,7 @@ export type MenuItemId =
   | "excalidraw:file:exportPng"
   | "excalidraw:file:closeTab"
   | "excalidraw:file:settings"
+  | "excalidraw:file:clearRecent"
   | "excalidraw:edit:undo"
   | "excalidraw:edit:redo"
   | "excalidraw:view:zoomIn"
@@ -38,6 +39,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:file:exportPng",
   "excalidraw:file:closeTab",
   "excalidraw:file:settings",
+  "excalidraw:file:clearRecent",
   "excalidraw:edit:undo",
   "excalidraw:edit:redo",
   "excalidraw:view:zoomIn",

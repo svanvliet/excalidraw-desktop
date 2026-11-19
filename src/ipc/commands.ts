@@ -177,6 +177,34 @@ export async function appProfile(): Promise<string | null> {
   return (await invoke<string | null>("app_profile")) ?? null;
 }
 
+// ---------- OS integration (src-tauri/src/commands/system.rs) ----------
+
+/**
+ * Tell Rust the file-open listener is attached; returns paths the OS asked
+ * to open before that (e.g. a Finder double-click that launched the app).
+ */
+export async function fileOpenReady(): Promise<string[]> {
+  if (!isTauri()) return [];
+  return invoke<string[]>("file_open_ready");
+}
+
+export interface RecentMenuItem {
+  path: string;
+  label: string;
+}
+
+/** Rebuild the native File → Open Recent submenu. */
+export async function setRecentMenu(items: RecentMenuItem[]): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("set_recent_menu", { items });
+}
+
+/** The OS user's full name (or login name); "" when unknown. */
+export async function osUserName(): Promise<string> {
+  if (!isTauri()) return "";
+  return invoke<string>("os_user_name");
+}
+
 // ---------- Updates (src-tauri/src/updater.rs) ----------
 
 export type UpdateStatusKind =

@@ -33,6 +33,7 @@ describe("menuEvents", () => {
       "excalidraw:file:exportPng",
       "excalidraw:file:closeTab",
       "excalidraw:file:settings",
+      "excalidraw:file:clearRecent",
       "excalidraw:edit:undo",
       "excalidraw:edit:redo",
       "excalidraw:view:zoomIn",

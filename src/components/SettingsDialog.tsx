@@ -12,7 +12,7 @@
  * `useSettingsStore`.
  */
 import { useEffect, useRef, useState } from "react";
-import type { TunnelMode } from "../ipc/commands";
+import { osUserName, type TunnelMode } from "../ipc/commands";
 import { isHttpUrl, isValidPort, useSettingsStore } from "../stores/settingsStore";
 import { UpdatesSection } from "./UpdatesSection";
 import { CloseIcon } from "./icons";
@@ -57,6 +57,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
   // Port is edited as text so the user can clear/retype it; only valid
   // values are committed to the store.
+  const [osName, setOsName] = useState("");
+  useEffect(() => {
+    osUserName()
+      .then(setOsName)
+      .catch(() => {});
+  }, []);
   const [portDraft, setPortDraft] = useState(String(port));
   useEffect(() => setPortDraft(String(port)), [port]);
   const portValid = isValidPort(Number(portDraft)) && /^\d+$/.test(portDraft);
@@ -179,7 +185,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 value={displayName}
                 onChange={(e) => void setCollab("collabDisplayName", e.target.value)}
                 data-testid="collab-display-name"
-                placeholder="Shown to other participants"
+                placeholder={osName || "Shown to other participants"}
+                title="Shown to other participants. Defaults to your name on this computer."
               />
             </label>
 

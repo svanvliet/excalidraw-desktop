@@ -8,6 +8,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   formatFromExtension,
+  recentMenuLabels,
 } from "./fileFormat";
 
 describe("detectFormat", () => {
@@ -131,5 +132,17 @@ describe("displayName", () => {
     expect(displayName("C:\\docs\\Plan.EXCALIDRAW")).toBe("Plan");
     expect(displayName("/a/shot.excalidraw.png")).toBe("shot.excalidraw.png");
     expect(displayName("/a/.excalidraw")).toBe(".excalidraw");
+  });
+});
+
+describe("recentMenuLabels", () => {
+  it("uses display names and disambiguates duplicates with the parent folder", () => {
+    expect(
+      recentMenuLabels([
+        "/Users/a/work/Plan.excalidraw",
+        "/Users/a/home/Plan.excalidraw",
+        "C:\\docs\\shot.png",
+      ]),
+    ).toEqual(["Plan — work", "Plan — home", "shot.png"]);
   });
 });
