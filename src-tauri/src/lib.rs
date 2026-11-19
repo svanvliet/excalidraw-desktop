@@ -3,10 +3,12 @@ mod commands;
 mod error;
 mod menu;
 mod profile;
+mod updater;
 
 use commands::collab::{app_profile, collab_start, collab_status, collab_stop, AppProfile};
 use commands::files::{open_file, read_file_bytes, save_file, write_file_bytes};
 use commands::scratch::{delete_scratch, list_scratch, read_scratch, write_scratch};
+use commands::updater::{update_check, update_install, update_status};
 
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
@@ -130,9 +132,13 @@ pub fn run() {
             collab_start,
             collab_stop,
             collab_status,
-            app_profile
+            app_profile,
+            update_status,
+            update_check,
+            update_install
         ])
         .manage(AppProfile(profile.clone()))
+        .manage(updater::Updates::default())
         .setup(move |app| {
             log::info!(
                 "setup: bootstrapping Excalidraw Desktop v{} on {}",

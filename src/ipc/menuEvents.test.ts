@@ -40,6 +40,7 @@ describe("menuEvents", () => {
       "excalidraw:view:zoomReset",
       "excalidraw:help:about",
       "excalidraw:help:docs",
+      "excalidraw:help:checkUpdates",
     ]);
   });
 

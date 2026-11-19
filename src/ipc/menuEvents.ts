@@ -27,7 +27,8 @@ export type MenuItemId =
   | "excalidraw:view:zoomOut"
   | "excalidraw:view:zoomReset"
   | "excalidraw:help:about"
-  | "excalidraw:help:docs";
+  | "excalidraw:help:docs"
+  | "excalidraw:help:checkUpdates";
 
 export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:file:new",
@@ -44,6 +45,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:view:zoomReset",
   "excalidraw:help:about",
   "excalidraw:help:docs",
+  "excalidraw:help:checkUpdates",
 ] as const;
 
 const VALID = new Set<string>(MENU_ITEM_IDS);
