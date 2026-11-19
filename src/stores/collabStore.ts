@@ -21,6 +21,12 @@ import {
   type CollabStatus,
 } from "../ipc/commands";
 import { onCollabStatus } from "../ipc/collabEvents";
+import {
+  buildShareLink as buildLink,
+  generateRoomId,
+  parseShareLink as parseLink,
+} from "../collab/link";
+import { generateKey } from "../collab/crypto";
 import type { RoomLink } from "../collab/protocol";
 import { log } from "../lib/logger";
 import { useSettingsStore } from "./settingsStore";
@@ -61,53 +67,22 @@ export interface CollabState {
 }
 
 // ---------------------------------------------------------------------------
-// Link + id helpers.
-// TODO(collab): dedupe with src/collab/link.ts + src/collab/crypto.ts once
-// lane B lands — these follow the same §2 contract.
+// Link helpers — thin wrappers over src/collab/link.ts (§2 contract).
 // ---------------------------------------------------------------------------
 
-const ROOM_ID_RE = /^[0-9a-f]{20}$/;
-const KEY_RE = /^[A-Za-z0-9_-]{22}$/;
-
-function randomBytes(n: number): Uint8Array {
-  const out = new Uint8Array(n);
-  crypto.getRandomValues(out);
-  return out;
-}
-
-/** 20 lowercase hex chars (80 random bits). */
-export function generateRoomId(): string {
-  return Array.from(randomBytes(10), (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** Random AES-GCM-128 raw key, base64url without padding (22 chars). */
-export function generateRoomKey(): string {
-  let bin = "";
-  for (const b of randomBytes(16)) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 export function buildShareLink(link: RoomLink): string {
-  return `${link.publicBase.replace(/\/+$/, "")}/#room=${link.roomId},${link.key}`;
+  return buildLink(link.publicBase, link.roomId, link.key);
 }
 
-/** Parse `<publicBase>/#room=<roomId>,<key>`; null if malformed. */
+/**
+ * Parse a pasted `<publicBase>/#room=<roomId>,<key>` link. Stricter than
+ * the guest-side parser: the desktop app has no implicit origin, so a full
+ * http(s) URL is required.
+ */
 export function parseShareLink(input: string): RoomLink | null {
-  const text = input.trim();
-  const hashAt = text.indexOf("#room=");
-  if (hashAt < 0) return null;
-  const [roomId, key, ...rest] = text.slice(hashAt + "#room=".length).split(",");
-  if (rest.length || !ROOM_ID_RE.test(roomId ?? "") || !KEY_RE.test(key ?? "")) return null;
-  let base: URL;
-  try {
-    base = new URL(text.slice(0, hashAt));
-  } catch {
-    return null;
-  }
-  if (base.protocol !== "http:" && base.protocol !== "https:") return null;
-  if (base.search) return null;
-  const publicBase = `${base.origin}${base.pathname}`.replace(/\/+$/, "");
-  return { publicBase, roomId, key };
+  const parsed = parseLink(input);
+  if (!parsed || !/^https?:\/\/[^/]/i.test(parsed.publicBase)) return null;
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +147,8 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       return;
     }
     const roomId = generateRoomId();
-    const key = generateRoomKey();
+    const key = await generateKey();
+    if (get().session || get().starting) return;
     set({
       starting: true,
       error: null,

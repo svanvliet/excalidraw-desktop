@@ -13,6 +13,7 @@ import { JoinDialog } from "./components/JoinDialog";
 import { useCollabStore } from "./stores/collabStore";
 import { collabStop } from "./ipc/commands";
 import type { RoomLink } from "./collab/protocol";
+import { useCollabSession } from "./collab/useCollabSession";
 import { useTabsStore, ensureActiveTab } from "./stores/tabsStore";
 import { useRecentFilesStore } from "./stores/recentFilesStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -78,7 +79,6 @@ export function App() {
   const clearRecent = useRecentFilesStore((s) => s.clear);
 
   const collabSession = useCollabStore((s) => s.session);
-  const collabPeerCount = useCollabStore((s) => s.status.peerCount);
   const initCollab = useCollabStore((s) => s.init);
   const joinCollab = useCollabStore((s) => s.joinSession);
   const endCollabForTab = useCollabStore((s) => s.endSessionForTab);
@@ -236,9 +236,64 @@ export function App() {
   const activePath = activeTab?.path ?? null;
   const activeDirty = activeTab?.dirty ?? false;
 
+  // Bumped when a tab's Excalidraw API (re)mounts so the collab binding can
+  // pick it up — apisRef alone doesn't trigger a render.
+  const [apiTick, setApiTick] = useState(0);
   const handleApi = useCallback((id: string, api: ExcalidrawImperativeAPI) => {
+    if (apisRef.current.get(id) === api) return;
     apisRef.current.set(id, api);
+    setApiTick((t) => t + 1);
   }, []);
+
+  // --- Live collaboration binding (docs/collab-protocol.md) -----------------
+  // The host's own webview always talks to the loopback relay; guests use the
+  // public base from the pasted link.
+  const relayRunning = useCollabStore((s) => s.status.running);
+  const relayRoomId = useCollabStore((s) => s.status.roomId);
+  const relayLocalBase = useCollabStore((s) => s.status.localBase);
+  const leaveCollab = useCollabStore((s) => s.leaveSession);
+  const collabDisplayName = useSettingsStore((s) => s.collabDisplayName);
+  const collabTabId = collabSession?.tabId ?? null;
+  const collabLink = useMemo<RoomLink | null>(() => {
+    if (!collabSession) return null;
+    if (collabSession.role === "guest") {
+      return collabSession.publicBase
+        ? {
+            publicBase: collabSession.publicBase,
+            roomId: collabSession.roomId,
+            key: collabSession.key,
+          }
+        : null;
+    }
+    if (!relayRunning || !relayLocalBase || relayRoomId !== collabSession.roomId) return null;
+    return { publicBase: relayLocalBase, roomId: collabSession.roomId, key: collabSession.key };
+  }, [collabSession, relayRunning, relayLocalBase, relayRoomId]);
+  const collabApi = useMemo(
+    () => (collabTabId ? (apisRef.current.get(collabTabId) ?? null) : null),
+    // apiTick re-reads the ref once the bound tab's canvas mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [collabTabId, apiTick],
+  );
+  const collab = useCollabSession({
+    api: collabApi,
+    link: collabLink,
+    username: collabDisplayName.trim() || (collabSession?.role === "host" ? "Host" : "Guest"),
+    isHost: collabSession?.role === "host",
+    onRemoteChange: () => {
+      if (!collabTabId) return;
+      markDirtyAction(collabTabId);
+      scheduleAutosave(collabTabId);
+    },
+  });
+  useEffect(() => {
+    if (collab.status === "ended") {
+      leaveCollab();
+      setError("The host ended the live session. Your copy of the drawing is kept in this tab.");
+    } else if (collab.status === "failed" && collab.error) {
+      log.warn("collab: session failed", collab.error);
+      setError(`Live session error: ${collab.error.message}`);
+    }
+  }, [collab.status, collab.error, leaveCollab]);
 
   const openPath = useCallback(
     async (path: string) => {
@@ -538,7 +593,7 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onShare={() => setShareOpen(true)}
         onJoin={() => setJoinOpen(true)}
-        livePeerCount={collabSession ? collabPeerCount : null}
+        livePeerCount={collabSession ? collab.peers.length + 1 : null}
       >
         <RecentMenu
           paths={recentPaths}
@@ -574,9 +629,9 @@ export function App() {
                 scheduleAutosave(tab.id);
               }}
               aiEnabled={aiEnabled}
-              isCollaborating={collabSession?.tabId === tab.id}
-              // TODO(collab-hook): pass onCollabChange / onPointerUpdate from
-              // useCollabSession when collabSession?.tabId === tab.id.
+              isCollaborating={collabTabId === tab.id}
+              onCollabChange={collabTabId === tab.id ? collab.handlers.onChange : undefined}
+              onPointerUpdate={collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined}
               libraryReturnUrl={libraryReturnUrl}
               theme={resolvedTheme}
             />

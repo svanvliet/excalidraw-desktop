@@ -32,8 +32,6 @@ import {
   __resetCollabStoreForTests,
   buildShareLink,
   parseShareLink,
-  generateRoomId,
-  generateRoomKey,
   selectShareLink,
   selectLocalLink,
 } from "./collabStore";
@@ -56,12 +54,6 @@ const ROOM = "0123456789abcdef0123";
 const KEY = "AAAAAAAAAAAAAAAAAAAAAA";
 
 describe("collab link helpers", () => {
-  it("generates contract-shaped room ids and keys", () => {
-    expect(generateRoomId()).toMatch(/^[0-9a-f]{20}$/);
-    expect(generateRoomKey()).toMatch(/^[A-Za-z0-9_-]{22}$/);
-    expect(generateRoomId()).not.toBe(generateRoomId());
-  });
-
   it("round-trips build/parse", () => {
     const link = { publicBase: "https://abc-4780.usw3.devtunnels.ms", roomId: ROOM, key: KEY };
     const url = buildShareLink(link);
