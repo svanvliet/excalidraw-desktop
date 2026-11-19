@@ -309,9 +309,9 @@ cfg() { printf '{"version":"%s","identifier":"com.svanvliet.excalidrawdesktop.up
 
 # 2. Old version: build it and copy the app somewhere writable
 EXTRA_CONFIG="$(cfg 0.1.90)" npm run release:mac -- 0.1.90 --skip-notarize
-mkdir -p /tmp/updatetest && rm -rf "/tmp/updatetest/Excalidraw Desktop.app"
+mkdir -p /private/tmp/updatetest && rm -rf "/private/tmp/updatetest/Excalidraw Desktop.app"
 ditto "src-tauri/target/universal-apple-darwin/release/bundle/macos/Excalidraw Desktop.app" \
-  "/tmp/updatetest/Excalidraw Desktop.app"
+  "/private/tmp/updatetest/Excalidraw Desktop.app"
 
 # 3. New version: its tarball, .sig, and latest.json land in release-artifacts
 EXTRA_CONFIG="$(cfg 0.1.91)" npm run release:mac -- 0.1.91 --skip-notarize
@@ -320,12 +320,13 @@ EXTRA_CONFIG="$(cfg 0.1.91)" npm run release:mac -- 0.1.91 --skip-notarize
 (cd src-tauri/target/release-artifacts && python3 -m http.server 8765 --bind 127.0.0.1)
 
 # 5. In another terminal, run the OLD app with a throwaway profile
-"/tmp/updatetest/Excalidraw Desktop.app/Contents/MacOS/excalidraw-desktop" --profile updatetest
+"/private/tmp/updatetest/Excalidraw Desktop.app/Contents/MacOS/excalidraw-desktop" --profile updatetest
 ```
 
 The old app should offer 0.1.91, download it from the local server,
-verify the signature, replace `/tmp/updatetest/Excalidraw Desktop.app`,
-and relaunch as 0.1.91. Delete `/tmp/updatetest` and
+verify the signature, replace `/private/tmp/updatetest/Excalidraw Desktop.app`,
+and relaunch as 0.1.91. Use `/private/tmp`, not `/tmp`: the updater refuses
+to replace an app whose path contains a symlink (`/tmp` → `/private/tmp`). Delete `/private/tmp/updatetest` and
 `unset ALLOW_TEST_BUILD EXCALIDRAW_UPDATE_ENDPOINT DOWNLOAD_BASE` afterwards
 (the release script refuses to run with the overrides set).
 
