@@ -38,6 +38,7 @@ describe("menuEvents", () => {
       "excalidraw:view:zoomIn",
       "excalidraw:view:zoomOut",
       "excalidraw:view:zoomReset",
+      "excalidraw:view:aiPanel",
       "excalidraw:help:about",
       "excalidraw:help:docs",
       "excalidraw:help:checkUpdates",

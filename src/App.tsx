@@ -589,6 +589,11 @@ export function App() {
         case "excalidraw:view:zoomReset":
           dispatchShortcut({ key: "0" });
           return;
+        case "excalidraw:view:aiPanel":
+          // With AI off there's no panel to show; send the user to the opt-in toggle.
+          if (useSettingsStore.getState().ai) useAgentStore.getState().togglePanel();
+          else setSettingsOpen(true);
+          return;
         case "excalidraw:help:about":
           setError(
             "Excalidraw Desktop — a local-first wrapper around the official Excalidraw editor.",

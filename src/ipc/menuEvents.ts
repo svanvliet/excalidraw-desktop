@@ -26,6 +26,7 @@ export type MenuItemId =
   | "excalidraw:view:zoomIn"
   | "excalidraw:view:zoomOut"
   | "excalidraw:view:zoomReset"
+  | "excalidraw:view:aiPanel"
   | "excalidraw:help:about"
   | "excalidraw:help:docs"
   | "excalidraw:help:checkUpdates";
@@ -43,6 +44,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:view:zoomIn",
   "excalidraw:view:zoomOut",
   "excalidraw:view:zoomReset",
+  "excalidraw:view:aiPanel",
   "excalidraw:help:about",
   "excalidraw:help:docs",
   "excalidraw:help:checkUpdates",

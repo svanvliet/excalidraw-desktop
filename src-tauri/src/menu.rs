@@ -38,6 +38,7 @@ pub mod ids {
     pub const VIEW_ZOOM_IN: &str = "excalidraw:view:zoomIn";
     pub const VIEW_ZOOM_OUT: &str = "excalidraw:view:zoomOut";
     pub const VIEW_ZOOM_RESET: &str = "excalidraw:view:zoomReset";
+    pub const VIEW_AI_PANEL: &str = "excalidraw:view:aiPanel";
 
     pub const HELP_ABOUT: &str = "excalidraw:help:about";
     pub const HELP_DOCS: &str = "excalidraw:help:docs";
@@ -209,6 +210,15 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             Some(&accel("$Mod+0")),
         )?)
         .separator()
+        // No accelerator: the webview owns ⌘/Ctrl+Shift+A so it also works outside Tauri.
+        .item(&MenuItem::with_id(
+            app,
+            ids::VIEW_AI_PANEL,
+            "AI Panel",
+            true,
+            None::<&str>,
+        )?)
+        .separator()
         .fullscreen()
         .build()?;
     menu = menu.item(&view);
@@ -305,6 +315,7 @@ mod tests {
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");
         assert_eq!(ids::VIEW_ZOOM_OUT, "excalidraw:view:zoomOut");
         assert_eq!(ids::VIEW_ZOOM_RESET, "excalidraw:view:zoomReset");
+        assert_eq!(ids::VIEW_AI_PANEL, "excalidraw:view:aiPanel");
         assert_eq!(ids::HELP_ABOUT, "excalidraw:help:about");
         assert_eq!(ids::HELP_DOCS, "excalidraw:help:docs");
         assert_eq!(ids::HELP_CHECK_UPDATES, "excalidraw:help:checkUpdates");
