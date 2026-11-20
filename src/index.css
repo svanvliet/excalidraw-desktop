@@ -98,14 +98,15 @@ button {
 }
 
 /* Fallback when the native panel is not in the DOM (e.g. Excalidraw's mobile layout). */
-.excalidraw .image-props-dock {
+.excalidraw .Island.image-props-dock {
   --padding: 2;
   position: absolute;
   top: 4.5rem;
   left: 1rem;
   z-index: var(--zIndex-layerUI, 4);
   width: 12.5rem;
-  max-height: calc(100% - 6rem);
+  height: auto;
+  max-height: calc(100% - 10rem);
   overflow-y: auto;
   padding: calc(var(--padding) * var(--space-factor, 0.25rem));
 }
@@ -129,19 +130,22 @@ button {
   padding: calc(var(--padding) * var(--space-factor, 0.25rem));
 }
 
+/* Excalidraw sets these inline on its own picker. */
 .excalidraw .image-props__no-shades {
-  display: flex;
-  align-items: center;
-  min-height: 1.875rem;
+  position: relative;
 }
 
 .excalidraw .image-props__no-shades-text {
-  color: var(--color-gray-50, var(--fg-subtle));
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 0.75rem;
   text-align: center;
 }
 
-.excalidraw .image-props__hex {
+.excalidraw .color-picker-input.image-props__hex {
   padding: 0;
   border: 0;
 }
