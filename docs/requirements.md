@@ -113,8 +113,9 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 
 - **FR-35** Features beyond Excalidraw's schema MUST be built as built-in extensions (`docs/extensions.md`) that store intent in `element.customData` and always write standard elements and files, so documents render identically in stock Excalidraw, exports and collab. No third-party or document-supplied code is ever loaded.
 - **FR-36** Each extension is defined once and exposed both in the UI (a selection-aware bar) and to the agent (`apply_extension` / `remove_extension`). Applying to several elements is one undo step; collab peers receive it as a normal edit.
-- **FR-37** Remove and re-apply MUST derive from the stored source. If the element was changed elsewhere so its output no longer matches the intent, it is treated as not applied and left alone. Source files an intent depends on MUST survive save, reload and collab sync.
+- **FR-37** Remove and re-apply MUST derive from the stored source. Image extensions stack in a canonical order (shapes before decorations) on one recorded original; changing any one re-renders the whole chain, and removing the last restores the original. Older single-extension documents MUST keep working. If the element was changed elsewhere so its output no longer matches the intent, it is treated as not applied and left alone. Source files an intent depends on MUST survive save, reload and collab sync.
 - **FR-38** First extension: **Mask** for images — Circle, Rounded rectangle, Remove mask.
+- **FR-39** **Border** for images — Thin / Medium / Thick, colour swatches, Remove border. Drawn inside the current outline (the mask shape when masked), so bounds never change; works with or without a mask.
 
 ## 5. Non-Functional Requirements
 
