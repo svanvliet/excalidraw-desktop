@@ -52,9 +52,7 @@ pub const DEFAULT_SYSTEM_PROMPT: &str = "You are working inside Excalidraw Deskt
 canvas is available through the `excalidraw` MCP tools: read the scene before editing, and make \
 all diagram changes through those tools. You may create and edit files inside your working \
 directory (and any folder the user attached); writes elsewhere and shell commands may need the \
-user's approval, and there is no network access. Images are supported: use `add_image` with a \
-png/jpeg/gif/webp/svg file from your working directory or the attached folder (or inline base64 \
-data), e.g. to put photos on org-chart cards with `inside` set to the card's id.";
+user's approval, and there is no network access.";
 
 /// How long `stop` waits for a graceful exit (after cancel + stdin EOF) before terminating.
 pub const STOP_GRACE: Duration = Duration::from_secs(2);

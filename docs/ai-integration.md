@@ -199,8 +199,9 @@ call with base64 `data` instead. This also applies to `add_image` ops inside `ap
 (`src/agent/scene/images.ts`) re-checks the cap and the magic bytes against the declared type. It
 rejects SVG that has `<script>`, `<foreignObject>`, `on*` handlers, external `href`/`url()`, or
 `@import`. It then registers the file via `addFiles`. There are no URL downloads, no new Tauri
-command or capability, and no CSP change: `img-src` already allows `data:`. The system prompt tells
-agents that images are supported, for example photos on org-chart cards.
+command or capability, and no CSP change: `img-src` already allows `data:`. Image guidance lives in
+the `add_image` tool description, not the system prompt: image bytes returned by another tool go
+straight to `add_image` as `data`, so they don't get echoed or stored and inflate the context.
 
 ## UX
 
