@@ -85,99 +85,70 @@ button {
   position: relative;
 }
 
-/* ---------------------------- Extensions bar ---------------------------- */
+/* ------------------------- Image properties panel ------------------------ */
 
-/* Anchored above (or below) the selection; left/top come from ExtensionsBar. */
-.extensions-bar {
+/*
+ * Image stroke / mask sections (ImagePropertiesPanel). Inside Excalidraw's panel they inherit its
+ * own `.panelColumn` / `.buttonList` / `.color-picker*` styles; these rules only fill the gaps.
+ */
+.excalidraw .image-props {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.75rem;
+}
+
+/* Fallback when the native panel is not in the DOM (e.g. Excalidraw's mobile layout). */
+.excalidraw .image-props-dock {
+  --padding: 2;
   position: absolute;
-  z-index: 20;
+  top: 4.5rem;
+  left: 1rem;
+  z-index: var(--zIndex-layerUI, 4);
+  width: 12.5rem;
+  max-height: calc(100% - 6rem);
+  overflow-y: auto;
+  padding: calc(var(--padding) * var(--space-factor, 0.25rem));
+}
+
+/* Excalidraw draws this divider between the top picks and the trigger inline. */
+.excalidraw .image-props__separator {
+  width: 1px;
+  height: 100%;
+  margin: 0 auto;
+  background-color: var(--default-border-color);
+}
+
+.excalidraw .image-props__popover {
+  position: absolute;
+  z-index: var(--zIndex-popup, 7);
+}
+
+.excalidraw .image-props__popover-island {
+  --padding: 3;
+  max-width: 13rem;
+  padding: calc(var(--padding) * var(--space-factor, 0.25rem));
+}
+
+.excalidraw .image-props__no-shades {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1);
-  transform: translate(-50%, -100%);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
+  min-height: 1.875rem;
 }
 
-.extensions-bar[data-below] {
-  transform: translate(-50%, 0);
+.excalidraw .image-props__no-shades-text {
+  color: var(--color-gray-50, var(--fg-subtle));
+  font-size: 0.75rem;
+  text-align: center;
 }
 
-.extensions-bar__group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.extensions-bar__group + .extensions-bar__group {
-  padding-left: var(--space-2);
-  border-left: 1px solid var(--border-subtle);
-}
-
-.extensions-bar__title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0 var(--space-2);
-  color: var(--fg-muted);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-
-.extensions-bar .icon-btn {
-  height: var(--control-height-sm);
-}
-
-.extensions-bar .icon-btn[data-pressed] {
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-
-.extensions-bar__swatches {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding-left: var(--space-1);
-}
-
-/* --swatch is the option's colour (set inline by ExtensionsBar). */
-.extensions-bar__swatch {
-  width: 18px;
-  height: 18px;
+.excalidraw .image-props__hex {
   padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--swatch);
-  cursor: pointer;
+  border: 0;
 }
 
-.extensions-bar__swatch:hover:not(:disabled) {
-  border-color: var(--fg-muted);
-}
-
-.extensions-bar__swatch[data-pressed] {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.extensions-bar__swatch:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.extensions-bar__swatch:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.extensions-bar__error {
-  padding: 0 var(--space-2);
+.excalidraw .image-props__error {
   color: var(--danger);
-  font-size: var(--font-size-xs);
+  font-size: 0.75rem;
 }
 
 .excalidraw-canvas .excalidraw .App-menu__left.App-menu__left--draggable {

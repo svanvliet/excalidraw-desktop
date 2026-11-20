@@ -195,15 +195,114 @@ export const PaperclipIcon = (props: IconProps) => (
   </Icon>
 );
 
-export const MaskIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <circle cx="12" cy="12" r="5" />
-  </Icon>
+/*
+ * Excalidraw's own property-panel icons (MIT, copied from @excalidraw/excalidraw 0.18.1) so the
+ * image stroke controls match the native ones. Sized by Excalidraw's `.buttonList svg` rule.
+ */
+function NativeIcon({ grid = 20, children }: { grid?: 20 | 24; children: ReactNode }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox={`0 0 ${grid} ${grid}`}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={grid === 24 ? 2 : undefined}
+      aria-hidden="true"
+      focusable="false"
+    >
+      {children}
+    </svg>
+  );
+}
+
+export const StrokeWidthThinIcon = () => (
+  <NativeIcon>
+    <path d="M4.167 10h11.666" strokeWidth="1.25" />
+  </NativeIcon>
 );
 
-export const BorderIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <rect x="4" y="4" width="16" height="16" rx="3" strokeWidth={3.5} />
-  </Icon>
+export const StrokeWidthBoldIcon = () => (
+  <NativeIcon>
+    <path d="M5 10h10" strokeWidth="2.5" />
+  </NativeIcon>
+);
+
+export const StrokeWidthExtraBoldIcon = () => (
+  <NativeIcon>
+    <path d="M5 10h10" strokeWidth="3.75" />
+  </NativeIcon>
+);
+
+export const StrokeStyleSolidIcon = StrokeWidthThinIcon;
+
+export const StrokeStyleDashedIcon = () => (
+  <NativeIcon grid={24}>
+    <g strokeWidth="2">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M5 12h2" />
+      <path d="M17 12h2" />
+      <path d="M11 12h2" />
+    </g>
+  </NativeIcon>
+);
+
+export const StrokeStyleDottedIcon = () => (
+  <NativeIcon grid={24}>
+    <g strokeWidth="2">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M4 12v.01" />
+      <path d="M8 12v.01" />
+      <path d="M12 12v.01" />
+      <path d="M16 12v.01" />
+      <path d="M20 12v.01" />
+    </g>
+  </NativeIcon>
+);
+
+export const SloppinessArchitectIcon = () => (
+  <NativeIcon>
+    <path
+      d="M2.5 12.038c1.655-.885 5.9-3.292 8.568-4.354 2.668-1.063.101 2.821 1.32 3.104 1.218.283 5.112-1.814 5.112-1.814"
+      strokeWidth="1.25"
+    />
+  </NativeIcon>
+);
+
+export const SloppinessArtistIcon = () => (
+  <NativeIcon>
+    <path
+      d="M2.5 12.563c1.655-.886 5.9-3.293 8.568-4.355 2.668-1.062.101 2.822 1.32 3.105 1.218.283 5.112-1.814 5.112-1.814m-13.469 2.23c2.963-1.586 6.13-5.62 7.468-4.998 1.338.623-1.153 4.11-.132 5.595 1.02 1.487 6.133-1.43 6.133-1.43"
+      strokeWidth="1.25"
+    />
+  </NativeIcon>
+);
+
+export const SloppinessCartoonistIcon = () => (
+  <NativeIcon>
+    <path
+      d="M2.5 11.936c1.737-.879 8.627-5.346 10.42-5.268 1.795.078-.418 5.138.345 5.736.763.598 3.53-1.789 4.235-2.147M2.929 9.788c1.164-.519 5.47-3.28 6.987-3.114 1.519.165 1 3.827 2.121 4.109 1.122.281 3.839-2.016 4.606-2.42"
+      strokeWidth="1.25"
+    />
+  </NativeIcon>
+);
+
+/** Mask: none (full rectangle), circle, rounded rectangle — drawn in the native icon style. */
+export const MaskNoneIcon = () => (
+  <NativeIcon>
+    <rect x="3.75" y="3.75" width="12.5" height="12.5" strokeWidth="1.25" />
+  </NativeIcon>
+);
+
+export const MaskCircleIcon = () => (
+  <NativeIcon>
+    <circle cx="10" cy="10" r="6.25" strokeWidth="1.25" />
+  </NativeIcon>
+);
+
+export const MaskRoundedIcon = () => (
+  <NativeIcon>
+    <rect x="3.75" y="3.75" width="12.5" height="12.5" rx="3.5" strokeWidth="1.25" />
+  </NativeIcon>
 );
