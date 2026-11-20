@@ -38,6 +38,9 @@ import {
 } from "./scene/draft";
 import { prepareImage, type PreparedImage } from "./scene/images";
 import { isFoldedText, rowOf } from "./scene/summary";
+import { applyPreparedToDraft, EXTENSION_TOOLS, prepareExtensionTool } from "./scene/extensions";
+import type { Prepared } from "../extensions/runner";
+import { extensionStateOf } from "../extensions/registry";
 import { commitDraft } from "./scene/turns";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
@@ -64,6 +67,8 @@ const EDIT_TOOLS = new Set([
   "arrange",
   "move_elements",
   "duplicate_elements",
+  "apply_extension",
+  "remove_extension",
 ]);
 
 // --- arg helpers -------------------------------------------------------------
@@ -300,10 +305,16 @@ function getElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
     if (el) found.push(el);
     else missing.push(id);
   }
+  const extensions: Record<string, unknown> = {};
+  for (const el of found) {
+    const state = extensionStateOf(el);
+    if (state) extensions[el.id] = state;
+  }
   return json({
     tabId,
     revision: revisionOf(draft.toArray()),
     elements: found,
+    ...(Object.keys(extensions).length ? { extensions } : {}),
     ...(missing.length ? { missing } : {}),
   });
 }
@@ -538,6 +549,8 @@ interface EditCtx {
   mermaid: Map<Args, MermaidPrepared>;
   /** Validated image payloads keyed by the args object (hashing is async). */
   images: Map<Args, PreparedImage>;
+  /** Pre-computed extension results keyed by the args object (extensions are async). */
+  extensions: Map<Args, Prepared>;
 }
 
 const SKELETON_TYPES = [
@@ -1250,6 +1263,12 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return moveBy(draft, args);
     case "duplicate_elements":
       return duplicate(draft, args);
+    case "apply_extension":
+    case "remove_extension": {
+      const prepared = ctx.extensions.get(args);
+      if (!prepared) throw new ToolError(`"${tool}" was not prepared`);
+      return applyPreparedToDraft(draft, prepared, ctx.files);
+    }
     default:
       throw new ToolError(`"${tool}" can't be used here`);
   }
@@ -1277,14 +1296,25 @@ async function runEdit(
   tabId: string,
   args: Args,
 ): Promise<ToolContent[]> {
-  const ctx: EditCtx = { files: [], mermaid: new Map(), images: new Map() };
+  const ctx: EditCtx = { files: [], mermaid: new Map(), images: new Map(), extensions: new Map() };
   const ops = tool === "apply_ops" ? opsOf(args) : [{ tool, args }];
   // Async preparation first, so applying the draft below is one synchronous step.
+  // Extensions run against the scene as it is now; applying checks nothing changed since.
   for (const [i, op] of ops.entries()) {
-    if (op.tool !== "add_mermaid" && op.tool !== "add_image") continue;
+    if (op.tool !== "add_mermaid" && op.tool !== "add_image" && !EXTENSION_TOOLS.has(op.tool))
+      continue;
     try {
       if (op.tool === "add_mermaid") ctx.mermaid.set(op.args, await prepareMermaid(op.args));
-      else ctx.images.set(op.args, await prepareImage(op.args));
+      else if (op.tool === "add_image") ctx.images.set(op.args, await prepareImage(op.args));
+      else {
+        const prepared = await prepareExtensionTool(
+          op.tool,
+          op.args,
+          tab.api.getSceneElementsIncludingDeleted(),
+          tab.api.getFiles(),
+        );
+        ctx.extensions.set(op.args, prepared);
+      }
     } catch (err) {
       if (tool !== "apply_ops") throw err;
       throw new ToolError(

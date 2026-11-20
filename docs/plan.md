@@ -356,6 +356,10 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
 - **AI-6 Validation gate:**
   - `docs/ai-testing.md`: 3 engines × 2 OSes, plus a terms/legal review before public release.
 
+### EXT — Desktop extensions
+
+Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types.ts` contract, `registry.ts`, `runner.ts`, `groups.ts`, `tools.ts`, one folder per extension, e.g. `mask/`). Intent lives in `customData.excalidrawDesktop`; output is standard elements + files. The same definition drives the selection-anchored `ExtensionsBar` and the generated `apply_extension` / `remove_extension` MCP tools. No new capability or CSP change.
+
 ## 7. Decisions log
 
 | #     | Decision                                                                                                                                                       | Why                                                                                                                                |
@@ -385,6 +389,7 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
 | D-AI7 | No API keys; remove `openAiKey`                                                                                                                                | The key was never used; storing it in plaintext violated SEC-3.                                                                    |
 | D-AI8 | Canvas tools served via a loopback MCP server + stdio shim instead of engine-specific tool APIs                                                                | One tool implementation works for every engine and transport.                                                                      |
 | D-AI9 | Port concepts, schemas and test tooling from T3 Code (MIT) into our Rust core; don't embed its Node server or Tailwind UI                                      | It already drives Copilot ACP, Claude and Codex app-server. A Node sidecar would add a bundled runtime and a second process model. |
+| D-X1  | Desktop extensions store intent in `customData` and always write standard output; built-in only                                                                | Adds features without forking Excalidraw or changing the file format; files still render everywhere; no third-party code loading.  |
 
 ## 8. Risks & mitigations
 

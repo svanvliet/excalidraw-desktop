@@ -191,6 +191,8 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `move_elements`      | Moves by dx/dy; labels and frame contents follow, bound arrows re-route                          |
 | `duplicate_elements` | Copies with labels, frame contents and internal arrows; returns an old → new id map              |
 | `set_canvas`         | Background color (undoable, saved) and grid mode                                                 |
+| `apply_extension`    | Applies a desktop extension preset/params (e.g. mask an image to a circle); see `extensions.md`  |
+| `remove_extension`   | Removes an extension and restores the element from its stored source                             |
 | `apply_ops`          | Batches several edits into one undo step                                                         |
 | `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 

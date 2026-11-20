@@ -1,4 +1,5 @@
 /** Compact, model-friendly rows for scene summaries (one row per element). */
+import { extensionStateOf } from "../../extensions/registry";
 import { type Draft, type El, isLinear, isText } from "./draft";
 
 export interface SummaryRow {
@@ -20,6 +21,10 @@ export interface SummaryRow {
   locked?: true;
   angle?: number;
   link?: string;
+  /** Applied desktop extensions → params (docs/extensions.md). */
+  ext?: Record<string, Record<string, unknown>>;
+  /** Extensions whose stored intent no longer matches the element (edited elsewhere). */
+  extStale?: string[];
 }
 
 const r = (n: number) => Math.round(n);
@@ -59,5 +64,8 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
   if (el.locked) row.locked = true;
   if (el.angle) row.angle = Math.round(el.angle * 1000) / 1000;
   if (el.link) row.link = el.link;
+  const ext = extensionStateOf(el);
+  if (ext && Object.keys(ext.applied).length) row.ext = ext.applied;
+  if (ext?.stale.length) row.extStale = ext.stale;
   return row;
 }

@@ -7,6 +7,7 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
+import { ExtensionsBar } from "./ExtensionsBar";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
@@ -132,6 +133,7 @@ export function ExcalidrawCanvas({
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
         {...(theme ? { theme } : {})}
       />
+      {api && !viewOnly && <ExtensionsBar api={api} />}
     </div>
   );
 }

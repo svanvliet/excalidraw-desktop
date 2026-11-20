@@ -194,3 +194,10 @@ export const PaperclipIcon = (props: IconProps) => (
     <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
   </Icon>
 );
+
+export const MaskIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <circle cx="12" cy="12" r="5" />
+  </Icon>
+);

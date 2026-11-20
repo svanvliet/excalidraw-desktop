@@ -25,6 +25,7 @@ import type {
   SocketId,
 } from "@excalidraw/excalidraw/types";
 
+import { sceneFileIds } from "../extensions/registry";
 import { log } from "../lib/logger";
 import { decrypt, encrypt, importKey } from "./crypto";
 import type { Payload, RelayErrorCode, Role, RolesMap } from "./protocol";
@@ -663,11 +664,9 @@ export class CollabSession {
   // ---------------------------------------------------------------- helpers
 
   private referencedFileIds(elements: readonly OrderedExcalidrawElement[]): string[] {
-    const ids: string[] = [];
-    for (const el of elements) {
-      if (el.type === "image" && el.fileId) ids.push(el.fileId);
-    }
-    return ids;
+    // Includes extension source files (e.g. a masked image's original), which no element's
+    // `fileId` points at.
+    return sceneFileIds(elements);
   }
 
   private isUnsynced(el: OrderedExcalidrawElement): boolean {
