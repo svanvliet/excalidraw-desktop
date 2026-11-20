@@ -6,10 +6,10 @@
  * width / style / sloppiness for the border extension, and the mask shape) into the panel's
  * `.panelColumn`, right after its first slot — where Stroke sits for shapes. React only moves its
  * own nodes, so a foreign node there survives panel re-renders; a MutationObserver re-attaches
- * it when the panel remounts. When the panel is not in the DOM (e.g. the mobile layout) the same
- * sections show in a small docked island instead.
+ * it when the panel remounts. When no panel is in the DOM (e.g. the mobile layout with its
+ * properties sheet closed) the same sections show in a small docked island instead.
  *
- * The DOM contract (`.App-menu__left .panelColumn`) is pinned by e2e/extensions.spec.ts.
+ * The DOM contract (PANEL_SELECTOR) is pinned by e2e/extensions.spec.ts.
  * Every click runs `runExtension`: one undo step, the same path the agent tools use.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type RefObject } from "react";
@@ -48,8 +48,8 @@ export type ImagePanelApi = Pick<
   | "onChange"
 >;
 
-/** Where the sections go in Excalidraw 0.18.1's DOM. */
-export const PANEL_SELECTOR = ".App-menu__left .panelColumn";
+/** Where the sections go in Excalidraw 0.18.1's DOM: the desktop panel or the mobile sheet. */
+export const PANEL_SELECTOR = ".App-menu__left .panelColumn, .App-mobile-menu .panelColumn";
 
 /** Hidden while the user is mid-gesture or typing, and in view / zen mode. */
 function isBusy(s: AppState): boolean {
