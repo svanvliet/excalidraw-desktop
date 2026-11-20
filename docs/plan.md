@@ -281,7 +281,7 @@ continue to pass.
 
 The updater (M12) adds **no** capability: the webview never calls the plugin's JS API; it uses the app's own `update_status` / `update_check` / `update_install` commands, which run the plugin from Rust.
 
-The AI agent (AI-1…AI-6) adds **no** capability either. Engine processes are spawned by Rust using fixed argument builders, through the app's own `agent_*` commands. No `shell` plugin or webview process access is granted. Attach-folder reuses `dialog:allow-open`, and read access is enforced on the engine side (the folder is passed as the agent's read-only working directory or `--add-dir`).
+The AI agent (AI-1…AI-6) adds **no** capability either. Engine processes are spawned by Rust using fixed argument builders, through the app's own `agent_*` commands. No `shell` plugin or webview process access is granted. Attach-folder reuses `dialog:allow-open`, and file access is enforced on the engine side (the folder is passed as the agent's working directory or `--add-dir`, with writes scoped to it and the session folder).
 
 ## 6. CSP
 
@@ -349,7 +349,7 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
   - add/update/delete/connect/add_mermaid/arrange/move/duplicate/apply_ops/set_viewport/select/find/get_canvas_state/set_canvas.
   - `expectedRevision` checks, the viewer guard, version bumps and tombstones, `markDirty` plus autosave, and Revert-turn snapshots.
 - **AI-4 Panel UX:**
-  - Docked per-tab panel, transcript, tool chips, approval cards, Stop/Revert, context chips, Attach folder (read-only), and quick actions.
+  - Docked per-tab panel, transcript, tool chips, approval cards, Stop/Revert, context chips, Attach folder (writable working folder, session folder shown), and quick actions.
   - Settings → AI engine cards, the first-use disclosure, and View → AI Panel (⌘/Ctrl+Shift+A).
 - **AI-5 Polish:**
   - `TTDDialog` backed by the agent, engine session resume, a collab indicator, and redacted prompt logging.
@@ -379,7 +379,7 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
 | D-AI1 | Copilot CLI + Claude Code + Codex in v1 behind one `EngineAdapter` trait and one canonical event model                    | Users bring whichever subscription they already have; adding an engine means adding one adapter.                                   |
 | D-AI2 | Docked per-tab chat panel                                                                                                 | Conversations relate to a specific diagram; the panel leaves the canvas visible while editing.                                     |
 | D-AI3 | Live-apply, one undo step per turn, plus Revert turn                                                                      | Fast feedback; standard undo still works; collab-safe revert.                                                                      |
-| D-AI4 | Canvas-only by default; optional read-only Attach folder; engine shell/write always off                                   | Smallest blast radius; still enables "diagram this repo".                                                                          |
+| D-AI4 | Session or attached working folder; in-folder writes auto-approved; shell gated; no allow-all                             | Agent can produce files; blast radius stays one folder.                                                                            |
 | D-AI5 | Per-engine "Use my MCPs, skills & plugins" (default on) with in-app approvals                                             | Users keep their agent's power; tools that act outside the canvas still need consent.                                              |
 | D-AI6 | Claude Code as bring-your-own-binary: if it is installed and signed in, use it; never touch credentials                   | Matches prior art (T3 Code). Anthropic's terms are ambiguous for wrappers, so legal review is a release gate.                      |
 | D-AI7 | No API keys; remove `openAiKey`                                                                                           | The key was never used; storing it in plaintext violated SEC-3.                                                                    |
