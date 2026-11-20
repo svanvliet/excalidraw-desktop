@@ -18,6 +18,7 @@ pub const M_THREAD_START: &str = "thread/start";
 pub const M_THREAD_RESUME: &str = "thread/resume";
 pub const M_TURN_START: &str = "turn/start";
 pub const M_TURN_INTERRUPT: &str = "turn/interrupt";
+pub const M_MODEL_LIST: &str = "model/list";
 
 // ---- notifications ----
 pub const N_TURN_STARTED: &str = "turn/started";

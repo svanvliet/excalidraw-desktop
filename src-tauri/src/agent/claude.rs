@@ -359,6 +359,24 @@ impl ClaudeAdapter {
         self.model = resolved
             .map(str::to_string)
             .or_else(|| self.requested_model.clone());
+        let available: Vec<crate::agent::events::ModelOption> = info
+            .get("models")
+            .and_then(Value::as_array)
+            .map(|models| {
+                models
+                    .iter()
+                    .filter_map(|m| {
+                        Some(crate::agent::events::ModelOption {
+                            id: str_field(m, "value")?.to_string(),
+                            name: str_field(m, "displayName").map(str::to_string),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !available.is_empty() {
+            out.events.push(AgentEvent::Models { available });
+        }
         let version = str_field(&info, "claude_code_version").map(str::to_string);
         self.ready_sent = true;
         out.events.push(self.ready_event(version));
@@ -1009,12 +1027,20 @@ mod tests {
         let ev = a.on_line(&resp.to_string()).events;
         assert_eq!(
             ev,
-            vec![AgentEvent::Ready {
-                engine: EngineKind::Claude,
-                version: Some("2.1.329".into()),
-                model: Some("claude-haiku-5-5".into()),
-                engine_session_id: Some(sid),
-            }]
+            vec![
+                AgentEvent::Models {
+                    available: vec![crate::agent::events::ModelOption {
+                        id: "haiku".into(),
+                        name: None,
+                    }]
+                },
+                AgentEvent::Ready {
+                    engine: EngineKind::Claude,
+                    version: Some("2.1.329".into()),
+                    model: Some("claude-haiku-5-5".into()),
+                    engine_session_id: Some(sid),
+                }
+            ]
         );
     }
 

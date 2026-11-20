@@ -82,6 +82,14 @@ pub struct PlanEntry {
     pub status: String,
 }
 
+/// One selectable model as the engine lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOption {
+    pub id: String,
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -95,6 +103,14 @@ pub enum AgentEvent {
         version: Option<String>,
         model: Option<String>,
         engine_session_id: Option<String>,
+    },
+    /// Models the engine offers for this session (sent once, when known).
+    Models {
+        available: Vec<ModelOption>,
+    },
+    /// The session's model changed (live switch via `agent_set_model`).
+    ModelChanged {
+        model: String,
     },
     TurnStarted {
         turn_id: String,

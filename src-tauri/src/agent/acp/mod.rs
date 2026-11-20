@@ -57,7 +57,7 @@ enum Pending {
     Initialize,
     NewSession,
     LoadSession,
-    SetModel,
+    SetModel { model: String, announce: bool },
     Prompt { turn_id: String },
 }
 
@@ -105,6 +105,9 @@ pub struct AcpAdapter {
     next_permission: u64,
     allowed_for_conversation: HashSet<String>,
     stderr_auth_reported: bool,
+    /// How this session accepts model writes: a `model` config option id, or `session/set_model`.
+    model_config_id: Option<String>,
+    models_api: bool,
 }
 
 impl AcpAdapter {
@@ -132,6 +135,8 @@ impl AcpAdapter {
             next_permission: 1,
             allowed_for_conversation: HashSet::new(),
             stderr_auth_reported: false,
+            model_config_id: None,
+            models_api: false,
         }
     }
 
@@ -270,15 +275,19 @@ impl AcpAdapter {
             Pending::Initialize => self.on_initialize(out, result),
             Pending::NewSession => self.on_new_session(out, result),
             Pending::LoadSession => self.on_load_session(out, result),
-            Pending::SetModel => {
-                if let Err(e) = result {
-                    out.events.push(AgentEvent::Error {
-                        kind: ErrorKind::Other,
-                        message: format!("Could not select model: {}", e.full_text()),
-                        fatal: false,
-                    });
+            Pending::SetModel { model, announce } => match result {
+                Err(e) => out.events.push(AgentEvent::Error {
+                    kind: ErrorKind::Other,
+                    message: format!("Could not select model: {}", e.full_text()),
+                    fatal: false,
+                }),
+                Ok(_) => {
+                    if announce {
+                        self.model = Some(model.clone());
+                        out.events.push(AgentEvent::ModelChanged { model });
+                    }
                 }
-            }
+            },
             Pending::Prompt { turn_id } => self.on_prompt_response(out, turn_id, result),
         }
     }
@@ -324,51 +333,84 @@ impl AcpAdapter {
                 "session/new returned no sessionId".into(),
             );
         };
-        self.session_id = Some(session_id.clone());
-        let model_option = resp.config_options.iter().find(|o| o.is_model_select());
-        let reported = model_option
-            .and_then(|o| o.current_value.as_str().map(str::to_owned))
-            .or_else(|| {
-                resp.models
-                    .as_ref()
-                    .and_then(|m| m.current_model_id.clone())
-            });
+        self.session_id = Some(session_id);
+        let reported = self.note_models(out, &resp);
         if let Some(model) = self.model.clone() {
             // Copilot's session/new reports its built-in default, not the model it runs
             // (github/copilot-cli#5363), so always write the selection for Copilot.
             let needs_write = self.is_copilot() || reported.as_deref() != Some(model.as_str());
             if needs_write {
-                if let Some(opt) = model_option {
-                    let params = types::SetConfigOptionRequest {
-                        session_id,
-                        config_id: opt.id.clone(),
-                        value: model,
-                    };
-                    self.request(
-                        out,
-                        Pending::SetModel,
-                        method::SESSION_SET_CONFIG_OPTION,
-                        params,
-                    );
-                } else if resp.models.is_some() {
-                    let params = types::SetModelRequest {
-                        session_id,
-                        model_id: model,
-                    };
-                    self.request(out, Pending::SetModel, method::SESSION_SET_MODEL, params);
-                }
+                self.write_model(out, model, false);
             }
         }
         self.become_ready(out, self.model.clone().or(reported));
     }
 
+    /// Remember how to write the model and emit `Models`; returns the engine-reported model.
+    fn note_models(
+        &mut self,
+        out: &mut AdapterOutput,
+        resp: &types::NewSessionResponse,
+    ) -> Option<String> {
+        let model_option = resp.config_options.iter().find(|o| o.is_model_select());
+        self.model_config_id = model_option.map(|o| o.id.clone());
+        self.models_api = resp.models.is_some();
+        let available = types::available_models(resp);
+        if !available.is_empty() {
+            out.events.push(AgentEvent::Models { available });
+        }
+        model_option
+            .and_then(|o| o.current_value.as_str().map(str::to_owned))
+            .or_else(|| {
+                resp.models
+                    .as_ref()
+                    .and_then(|m| m.current_model_id.clone())
+            })
+    }
+
+    /// Write `model` via the model config option or `session/set_model`. Returns false when the
+    /// session offers neither.
+    fn write_model(&mut self, out: &mut AdapterOutput, model: String, announce: bool) -> bool {
+        let Some(session_id) = self.session_id.clone() else {
+            return false;
+        };
+        let pending = Pending::SetModel {
+            model: model.clone(),
+            announce,
+        };
+        if let Some(config_id) = self.model_config_id.clone() {
+            let params = types::SetConfigOptionRequest {
+                session_id,
+                config_id,
+                value: model,
+            };
+            self.request(out, pending, method::SESSION_SET_CONFIG_OPTION, params);
+        } else if self.models_api {
+            let params = types::SetModelRequest {
+                session_id,
+                model_id: model,
+            };
+            self.request(out, pending, method::SESSION_SET_MODEL, params);
+        } else {
+            return false;
+        }
+        true
+    }
+
     fn on_load_session(&mut self, out: &mut AdapterOutput, result: Result<Value, RpcError>) {
         match result {
-            Ok(_) => {
+            Ok(v) => {
                 self.session_id = self.resume_id.clone();
                 // The resumed conversation already carries our instructions.
                 self.system_prompt = None;
-                self.become_ready(out, self.model.clone());
+                let resp: types::NewSessionResponse = serde_json::from_value(v).unwrap_or_default();
+                let reported = self.note_models(out, &resp);
+                if let Some(model) = self.model.clone() {
+                    if self.is_copilot() || reported.as_deref() != Some(model.as_str()) {
+                        self.write_model(out, model, false);
+                    }
+                }
+                self.become_ready(out, self.model.clone().or(reported));
             }
             Err(e) if is_auth_error(&e) => self.handshake_error(out, "session/load", &e),
             Err(e) => {
@@ -383,6 +425,9 @@ impl AcpAdapter {
 
     fn become_ready(&mut self, out: &mut AdapterOutput, model: Option<String>) {
         self.phase = Phase::Ready;
+        if self.model.is_none() {
+            self.model = model.clone();
+        }
         out.events.push(AgentEvent::Ready {
             engine: self.kind(),
             version: self.agent_version.clone(),
@@ -472,8 +517,15 @@ impl AcpAdapter {
             return;
         };
         match n.update {
-            SessionUpdate::AgentMessageChunk { content } => {
+            SessionUpdate::AgentMessageChunk {
+                content,
+                message_id,
+            } => {
                 if let Some(text) = types::content_text(&content).filter(|t| !t.is_empty()) {
+                    if self.is_copilot() && message_id.is_none() && copilot::is_cli_notice(text) {
+                        log::info!("acp/copilot notice: {}", text.trim());
+                        return;
+                    }
                     out.events.push(AgentEvent::TextDelta {
                         turn_id,
                         text: text.to_owned(),
@@ -812,6 +864,22 @@ impl EngineAdapter for AcpAdapter {
                     &format!("method not supported by client: {m}"),
                 )),
             },
+        }
+        out
+    }
+
+    fn set_model(&mut self, model: &str) -> AdapterOutput {
+        let mut out = AdapterOutput::default();
+        let model = model.trim().to_string();
+        if model.is_empty() || self.model.as_deref() == Some(model.as_str()) {
+            return out;
+        }
+        if self.phase != Phase::Ready || !self.write_model(&mut out, model, true) {
+            out.events.push(AgentEvent::Error {
+                kind: ErrorKind::Other,
+                message: "This agent session can't change models right now.".into(),
+                fatal: false,
+            });
         }
         out
     }

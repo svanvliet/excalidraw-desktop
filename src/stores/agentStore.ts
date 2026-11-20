@@ -12,6 +12,7 @@ import type {
   EngineInfo,
   EngineKind,
   ErrorKind,
+  ModelOption,
   PermissionDecision,
   PlanEntry,
   StopReason,
@@ -109,6 +110,8 @@ export interface Conversation {
   status: ConversationStatus;
   version: string | null;
   model: string | null;
+  /** Models the engine offered for this session (empty until it reports them). */
+  availableModels: ModelOption[];
   engineSessionId: string | null;
   currentTurnId: string | null;
   items: TranscriptItem[];
@@ -129,6 +132,7 @@ export function emptyConversation(tabId: string, engine: EngineKind | null = nul
     status: "idle",
     version: null,
     model: null,
+    availableModels: [],
     engineSessionId: null,
     currentTurnId: null,
     items: [],
@@ -191,6 +195,10 @@ function appendAssistant(
 /** Pure reducer: fold one agent event into a conversation. */
 export function reduceAgentEvent(conv: Conversation, event: AgentEvent): Conversation {
   switch (event.type) {
+    case "models":
+      return { ...conv, availableModels: event.available };
+    case "modelChanged":
+      return { ...conv, model: event.model };
     case "ready":
       return {
         ...conv,

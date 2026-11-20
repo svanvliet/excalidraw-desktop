@@ -319,6 +319,12 @@ export function agentPermissionRespond(
   return invoke<void>("agent_permission_respond", { sessionId, requestId, decision });
 }
 
+/** Switch a running session's model; result arrives as `modelChanged` or `error`. */
+export function agentSetModel(sessionId: string, model: string): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_set_model"));
+  return invoke<void>("agent_set_model", { sessionId, model });
+}
+
 export function agentStop(sessionId: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("agent_stop", { sessionId });

@@ -32,6 +32,8 @@ pub struct AgentStartOptions {
     pub model: Option<String>,
     pub attached_folder: Option<String>,
     pub resume_id: Option<String>,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
 }
 
 pub type AgentState = Arc<AgentManager>;
@@ -150,6 +152,7 @@ pub async fn agent_start(
             use_host_config: options.use_host_config,
             model: options.model.filter(|m| !m.trim().is_empty()),
             resume_id: options.resume_id.filter(|r| !r.trim().is_empty()),
+            conversation_id: options.conversation_id.filter(|c| !c.trim().is_empty()),
             spawn_env,
         })
         .await
@@ -164,6 +167,18 @@ pub async fn agent_prompt(
     text: String,
 ) -> Result<String, AppError> {
     state.prompt(&session_id, &text).map_err(AppError::Other)
+}
+
+/// Switch a running session's model (Copilot/Codex; Claude reports an error).
+#[tauri::command]
+pub async fn agent_set_model(
+    state: State<'_, AgentState>,
+    session_id: String,
+    model: String,
+) -> Result<(), AppError> {
+    state
+        .set_model(&session_id, &model)
+        .map_err(AppError::Other)
 }
 
 #[tauri::command]
@@ -292,6 +307,7 @@ mod live_tests {
                 use_host_config: false,
                 model: None,
                 resume_id: None,
+                conversation_id: None,
                 spawn_env: probe.shell.for_binary(&binary),
             })
             .await

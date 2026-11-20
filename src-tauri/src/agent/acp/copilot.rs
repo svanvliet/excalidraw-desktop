@@ -13,17 +13,17 @@ pub const META_KEY: &str = "github.com/copilot";
 pub const SESSION_EVENT_METHOD: &str = "github.com/copilot/sessionEvent";
 
 /// Built-in tools removed from the model's tool list (SEC-6). Shell + file-write tools; `view`,
-/// `glob`, `grep` stay so the agent can read an attached folder.
+/// `glob`, `grep` stay so the agent can read an attached folder. Only names the CLI knows: an
+/// unknown name makes Copilot print an "Unknown tool name" notice (`write_bash`/`write_powershell`
+/// were dropped in 1.0.106; `--deny-tool=shell` still covers any shell tool).
 pub const EXCLUDED_TOOLS: &[&str] = &[
     "bash",
     "powershell",
     "list_bash",
     "read_bash",
-    "write_bash",
     "stop_bash",
     "list_powershell",
     "read_powershell",
-    "write_powershell",
     "stop_powershell",
     "edit",
     "create",
@@ -90,6 +90,14 @@ pub fn env_remove(cfg: &SessionConfig) -> Vec<String> {
 
 pub fn client_capabilities_meta() -> Value {
     json!({ META_KEY: { "events": SUBSCRIBED_EVENTS } })
+}
+
+/// Copilot streams its own CLI notices ("Info: Disabled tools: …", "Warning: …") as
+/// `agent_message_chunk`s without a `messageId`; they are diagnostics, not assistant text.
+pub fn is_cli_notice(text: &str) -> bool {
+    const PREFIXES: &[&str] = &["Info: ", "Warning: "];
+    let t = text.trim_start();
+    PREFIXES.iter().any(|p| t.starts_with(p))
 }
 
 /// Copilot loses its session server-side; the process must be restarted.

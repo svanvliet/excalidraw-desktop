@@ -77,6 +77,9 @@ pub struct StartRequest {
     pub use_host_config: bool,
     pub model: Option<String>,
     pub resume_id: Option<String>,
+    /// App-side conversation id. Gives each conversation a stable scratch cwd, which Claude
+    /// needs to find its session again on resume. Falls back to the tab id.
+    pub conversation_id: Option<String>,
     /// Base env for the engine (discovered PATH etc.), see `detect::ShellEnv::for_binary`.
     pub spawn_env: Vec<(String, String)>,
 }
@@ -87,6 +90,9 @@ enum Cmd {
         text: String,
     },
     Cancel,
+    SetModel {
+        model: String,
+    },
     Permission {
         request_id: String,
         decision: PermissionDecision,
@@ -152,8 +158,15 @@ impl AgentManager {
             .map(|(id, _)| id.clone())
     }
 
-    fn scratch_dir(&self, tab_id: &str) -> PathBuf {
-        self.cfg.agent_root.join(sanitize_tab_id(tab_id))
+    fn scratch_dir(&self, req: &StartRequest) -> PathBuf {
+        match &req.conversation_id {
+            Some(id) => self
+                .cfg
+                .agent_root
+                .join("conversations")
+                .join(sanitize_tab_id(id)),
+            None => self.cfg.agent_root.join(sanitize_tab_id(&req.tab_id)),
+        }
     }
 
     /// Start an engine session for a tab (one per tab: an existing one is stopped first).
@@ -177,7 +190,7 @@ impl AgentManager {
                 ))
             }
             None => {
-                let dir = self.scratch_dir(&req.tab_id);
+                let dir = self.scratch_dir(&req);
                 std::fs::create_dir_all(&dir)
                     .map_err(|e| format!("create {}: {e}", dir.display()))?;
                 dir
@@ -270,6 +283,16 @@ impl AgentManager {
 
     pub fn cancel(&self, session_id: &str) -> Result<(), String> {
         self.send(session_id, Cmd::Cancel)
+    }
+
+    /// Switch the model of a running session; the result arrives as `ModelChanged` or `Error`.
+    pub fn set_model(&self, session_id: &str, model: &str) -> Result<(), String> {
+        self.send(
+            session_id,
+            Cmd::SetModel {
+                model: model.to_string(),
+            },
+        )
     }
 
     pub fn respond_permission(
@@ -404,6 +427,10 @@ impl Actor {
                     }
                     Some(Cmd::Cancel) => {
                         let out = self.adapter.cancel();
+                        self.apply(out).await;
+                    }
+                    Some(Cmd::SetModel { model }) => {
+                        let out = self.adapter.set_model(&model);
                         self.apply(out).await;
                     }
                     Some(Cmd::Permission { request_id, decision }) => {
@@ -710,6 +737,7 @@ done
             use_host_config: false,
             model: None,
             resume_id: None,
+            conversation_id: None,
             spawn_env: vec![("PATH".into(), "/usr/bin:/bin".into())],
         }
     }

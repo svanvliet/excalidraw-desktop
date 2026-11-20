@@ -42,6 +42,8 @@ export type AgentEvent =
       model: string | null;
       engineSessionId: string | null;
     }
+  | { type: "models"; available: ModelOption[] }
+  | { type: "modelChanged"; model: string }
   | { type: "turnStarted"; turnId: string }
   | { type: "textDelta"; turnId: string; text: string }
   | { type: "thinkingDelta"; turnId: string; text: string }
@@ -68,6 +70,12 @@ export type AgentEvent =
   | { type: "turnEnded"; turnId: string; stopReason: StopReason; usage: Usage | null }
   | { type: "error"; kind: ErrorKind; message: string; fatal: boolean }
   | { type: "exited"; code: number | null };
+
+/** One selectable model as the engine lists it. */
+export interface ModelOption {
+  id: string;
+  name: string | null;
+}
 
 export interface AgentEventEnvelope {
   sessionId: string;
@@ -117,6 +125,8 @@ export interface AgentStartOptions {
   model: string | null;
   attachedFolder: string | null;
   resumeId: string | null;
+  /** App-side conversation id; gives each conversation a stable scratch cwd. */
+  conversationId?: string | null;
 }
 
 export const CANVAS_TOOL_NAMES = [

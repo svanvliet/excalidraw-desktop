@@ -100,6 +100,10 @@ fn copilot_sandbox_flags_are_always_present() {
             for tool in ["bash", "powershell", "edit", "create", "apply_patch"] {
                 assert!(excluded.split(',').any(|t| t == tool), "{tool} excluded");
             }
+            // Unknown to current Copilot builds; listing them prints an "Info:" notice.
+            for tool in ["write_bash", "write_powershell"] {
+                assert!(!excluded.split(',').any(|t| t == tool), "{tool} not listed");
+            }
             assert!(a.contains(&"--deny-tool=shell".to_owned()));
             assert!(a.contains(&"--deny-tool=write".to_owned()));
             assert!(a.contains(&"--allow-tool=excalidraw".to_owned()));
@@ -205,8 +209,17 @@ fn copilot_always_writes_model_via_config_option() {
     assert_eq!(w["method"], "session/set_config_option");
     assert_eq!(w["params"]["configId"], "model");
     assert_eq!(w["params"]["value"], "claude-sonnet-4.5");
+    assert_eq!(
+        out.events[0],
+        AgentEvent::Models {
+            available: vec![crate::agent::events::ModelOption {
+                id: "claude-sonnet-4.5".into(),
+                name: Some("Sonnet".into()),
+            }]
+        }
+    );
     assert!(
-        matches!(&out.events[0], AgentEvent::Ready { model: Some(m), .. } if m == "claude-sonnet-4.5")
+        matches!(&out.events[1], AgentEvent::Ready { model: Some(m), .. } if m == "claude-sonnet-4.5")
     );
     // A failed selection is a non-fatal error.
     let out = a.on_line(&err(3, -32602, "unknown model"));
@@ -243,6 +256,104 @@ fn generic_sets_model_only_when_it_differs() {
     let w = parse(&out.writes[0]);
     assert_eq!(w["method"], "session/set_model");
     assert_eq!(w["params"]["modelId"], "opus");
+}
+
+#[test]
+fn session_models_are_reported_and_switchable_live() {
+    let mut a = AcpAdapter::copilot();
+    a.start(&cfg());
+    a.on_line(&resp(1, init_ok()));
+    let out = a.on_line(&resp(
+        2,
+        json!({"sessionId":"s1",
+            "models":{"currentModelId":"gpt-5","availableModels":[
+                {"modelId":"gpt-5","name":"GPT-5"},{"modelId":"claude-sonnet-4.5"}]},
+            "configOptions":[{"id":"model","category":"model","type":"select",
+                "currentValue":"gpt-5","options":[{"value":"gpt-5"}]}]}),
+    ));
+    assert!(
+        out.writes.is_empty(),
+        "no model requested, nothing to write"
+    );
+    let AgentEvent::Models { available } = &out.events[0] else {
+        panic!("expected Models, got {:?}", out.events)
+    };
+    let ids: Vec<_> = available.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, ["gpt-5", "claude-sonnet-4.5"]);
+    assert_eq!(available[0].name.as_deref(), Some("GPT-5"));
+    assert!(matches!(&out.events[1], AgentEvent::Ready { model: Some(m), .. } if m == "gpt-5"));
+
+    // Same model: no-op. New model: written via the config option, announced on success.
+    assert_eq!(a.set_model("gpt-5"), AdapterOutput::default());
+    let out = a.set_model("claude-sonnet-4.5");
+    assert!(out.events.is_empty());
+    let w = parse(&out.writes[0]);
+    assert_eq!(w["method"], "session/set_config_option");
+    assert_eq!(w["params"]["sessionId"], "s1");
+    assert_eq!(w["params"]["value"], "claude-sonnet-4.5");
+    let id = w["id"].as_u64().unwrap();
+    let out = a.on_line(&resp(id, json!({})));
+    assert_eq!(
+        out.events,
+        vec![AgentEvent::ModelChanged {
+            model: "claude-sonnet-4.5".into()
+        }]
+    );
+}
+
+#[test]
+fn set_model_before_ready_is_a_soft_error() {
+    let mut a = AcpAdapter::copilot();
+    a.start(&cfg());
+    let out = a.set_model("gpt-5");
+    assert!(out.writes.is_empty());
+    assert!(matches!(
+        &out.events[0],
+        AgentEvent::Error { fatal: false, .. }
+    ));
+}
+
+#[test]
+fn copilot_cli_notices_are_not_assistant_text() {
+    let (mut a, _) = ready(AcpAdapter::copilot(), &cfg());
+    a.prompt("t1", "hi");
+    let chunk = |text: &str, message_id: Option<&str>| {
+        let mut update = json!({"sessionUpdate":"agent_message_chunk",
+            "content":{"type":"text","text":text}});
+        if let Some(id) = message_id {
+            update["messageId"] = json!(id);
+        }
+        json!({"jsonrpc":"2.0","method":"session/update",
+            "params":{"sessionId":"s1","update":update}})
+        .to_string()
+    };
+    let notices = [
+        "Info: Disabled tools: bash, create, edit",
+        "Info: Unknown tool name in the tool excludedlist: \"write_bash\"",
+        "\nWarning: something odd",
+    ];
+    for n in notices {
+        let out = a.on_line(&chunk(n, None));
+        assert!(
+            !out.events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TextDelta { .. })),
+            "notice leaked: {n}"
+        );
+    }
+    // Real replies carry a messageId, even if they happen to start with "Info: ".
+    let out = a.on_line(&chunk("Info: here is your diagram", Some("m1")));
+    assert!(
+        matches!(&out.events[..], [AgentEvent::TextDelta { text, .. }] if text.starts_with("Info: "))
+    );
+    let out = a.on_line(&chunk("Plain text", None));
+    assert!(matches!(&out.events[..], [AgentEvent::TextDelta { .. }]));
+
+    // Generic ACP engines keep their text untouched.
+    let (mut g, _) = ready(AcpAdapter::generic(EngineKind::Claude, vec![]), &cfg());
+    g.prompt("t1", "hi");
+    let out = g.on_line(&chunk("Info: generic", None));
+    assert!(matches!(&out.events[..], [AgentEvent::TextDelta { .. }]));
 }
 
 #[test]

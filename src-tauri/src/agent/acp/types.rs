@@ -344,11 +344,57 @@ pub struct SessionConfigOption {
     pub options: Value,
 }
 
+/// Selectable models from `session/new` (or `session/load`): the `models` state if present,
+/// otherwise the values of the model select config option.
+pub fn available_models(resp: &NewSessionResponse) -> Vec<crate::agent::events::ModelOption> {
+    use crate::agent::events::ModelOption;
+    if let Some(m) = resp
+        .models
+        .as_ref()
+        .filter(|m| !m.available_models.is_empty())
+    {
+        return m
+            .available_models
+            .iter()
+            .map(|i| ModelOption {
+                id: i.model_id.clone(),
+                name: i.name.clone(),
+            })
+            .collect();
+    }
+    resp.config_options
+        .iter()
+        .find(|o| o.is_model_select())
+        .map(|o| o.select_options())
+        .unwrap_or_default()
+}
+
 impl SessionConfigOption {
     pub fn is_model_select(&self) -> bool {
         self.category.as_deref() == Some("model")
             && self.kind.as_deref() == Some("select")
             && !self.id.trim().is_empty()
+    }
+
+    /// `{value, name}` pairs of a select option (flat list or grouped `{group, options}`).
+    pub fn select_options(&self) -> Vec<crate::agent::events::ModelOption> {
+        fn collect(v: &Value, out: &mut Vec<crate::agent::events::ModelOption>) {
+            if let Some(arr) = v.as_array() {
+                for item in arr {
+                    if let Some(val) = item.get("value").and_then(Value::as_str) {
+                        out.push(crate::agent::events::ModelOption {
+                            id: val.to_owned(),
+                            name: item.get("name").and_then(Value::as_str).map(str::to_owned),
+                        });
+                    } else if let Some(group) = item.get("options") {
+                        collect(group, out);
+                    }
+                }
+            }
+        }
+        let mut out = Vec::new();
+        collect(&self.options, &mut out);
+        out
     }
 
     /// Values of a select option (flat list or grouped `{group, options}`).
@@ -413,6 +459,9 @@ pub enum SessionUpdate {
     AgentMessageChunk {
         #[serde(default)]
         content: Value,
+        /// Set on real model output; Copilot's CLI notices ("Info: …") carry none.
+        #[serde(default, rename = "messageId")]
+        message_id: Option<String>,
     },
     AgentThoughtChunk {
         #[serde(default)]

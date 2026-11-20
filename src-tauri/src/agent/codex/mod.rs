@@ -64,6 +64,7 @@ enum Pending {
     ThreadResume,
     TurnStart { app_turn: String },
     TurnInterrupt,
+    ModelList,
 }
 
 #[derive(Debug, Default)]
@@ -324,6 +325,15 @@ impl CodexAdapter {
                     log::warn!("codex: turn/interrupt failed: {}", e.message);
                 }
             }
+            Pending::ModelList => match result {
+                Ok(v) => {
+                    let available = model_options(&v);
+                    if !available.is_empty() {
+                        out.events.push(AgentEvent::Models { available });
+                    }
+                }
+                Err(e) => log::info!("codex: model/list failed: {}", e.message),
+            },
         }
     }
 
@@ -387,6 +397,8 @@ impl CodexAdapter {
                 self.thread_id = Some(r.thread.id);
                 if !self.dead {
                     self.send_turn(out);
+                    let line = self.request(M_MODEL_LIST, json!({}), Pending::ModelList);
+                    out.writes.push(line);
                 }
             }
             Ok(Err(e)) => self.fatal(
@@ -1200,6 +1212,19 @@ impl EngineAdapter for CodexAdapter {
         out
     }
 
+    /// Codex takes the model per `turn/start`, so a switch applies from the next turn.
+    fn set_model(&mut self, model: &str) -> AdapterOutput {
+        let mut out = AdapterOutput::default();
+        let model = model.trim();
+        if !model.is_empty() && self.model.as_deref() != Some(model) {
+            self.model = Some(model.to_string());
+            out.events.push(AgentEvent::ModelChanged {
+                model: model.to_string(),
+            });
+        }
+        out
+    }
+
     fn on_stderr(&mut self, line: &str) -> AdapterOutput {
         let mut out = AdapterOutput::default();
         if let Some(kind) = errors::classify_stderr(line) {
@@ -1214,4 +1239,30 @@ impl EngineAdapter for CodexAdapter {
         }
         out
     }
+}
+
+/// `model/list` result → visible models (`data[].{id|model, displayName, hidden}`).
+fn model_options(v: &Value) -> Vec<crate::agent::events::ModelOption> {
+    v.get("data")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|m| !m.get("hidden").and_then(Value::as_bool).unwrap_or(false))
+                .filter_map(|m| {
+                    let id = m
+                        .get("model")
+                        .or_else(|| m.get("id"))
+                        .and_then(Value::as_str)?;
+                    Some(crate::agent::events::ModelOption {
+                        id: id.to_string(),
+                        name: m
+                            .get("displayName")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }

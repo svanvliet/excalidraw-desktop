@@ -1052,3 +1052,24 @@ fn live_smoke() {
     );
     assert!(text_of(&events).to_lowercase().contains("ok"));
 }
+
+#[test]
+fn model_list_and_live_switch() {
+    let list = json!({"data":[
+        {"id":"gpt-6.2-sol","model":"gpt-6.2-sol","displayName":"GPT-6.2-Sol","hidden":false},
+        {"id":"old","model":"old","hidden":true},
+        {"id":"x"}]});
+    let ids: Vec<_> = model_options(&list).into_iter().map(|m| m.id).collect();
+    assert_eq!(ids, ["gpt-6.2-sol", "x"]);
+
+    let mut a = CodexAdapter::new();
+    let out = a.set_model("gpt-6.2-sol");
+    assert_eq!(
+        out.events,
+        vec![AgentEvent::ModelChanged {
+            model: "gpt-6.2-sol".into()
+        }]
+    );
+    assert_eq!(a.model.as_deref(), Some("gpt-6.2-sol"));
+    assert!(a.set_model("gpt-6.2-sol").events.is_empty());
+}

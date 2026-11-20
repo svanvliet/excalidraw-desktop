@@ -76,4 +76,16 @@ pub trait EngineAdapter: Send {
     fn on_stderr(&mut self, _line: &str) -> AdapterOutput {
         AdapterOutput::default()
     }
+    /// Switch the session's model mid-conversation. Engines that can't (Claude `-p`) report a
+    /// non-fatal error; the UI only offers the switch where `engineCaps.liveModelSwitch` is set.
+    fn set_model(&mut self, _model: &str) -> AdapterOutput {
+        AdapterOutput {
+            events: vec![AgentEvent::Error {
+                kind: crate::agent::events::ErrorKind::Other,
+                message: "This engine can't change models mid-conversation. Start a new conversation to use a different model.".into(),
+                fatal: false,
+            }],
+            writes: vec![],
+        }
+    }
 }
