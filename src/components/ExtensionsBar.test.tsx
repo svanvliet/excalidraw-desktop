@@ -147,15 +147,18 @@ describe("ExtensionsBar", () => {
         "true",
       ),
     );
-    expect(params()).toEqual({ width: 4, color: "#e03131", opacity: 100 });
-    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    expect(params()).toMatchObject({ width: 2, color: "#e03131", opacity: 100 });
+    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Thick" }));
+    fireEvent.click(screen.getByRole("button", { name: "Extra bold" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Thick" })).toHaveAttribute("aria-pressed", "true"),
+      expect(screen.getByRole("button", { name: "Extra bold" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
     );
-    expect(params()).toEqual({ width: 8, color: "#e03131", opacity: 100 });
-    expect(screen.getByRole("button", { name: "Border gray" })).toHaveAttribute(
+    expect(params()).toMatchObject({ width: 4, color: "#e03131", opacity: 100 });
+    expect(screen.getByRole("button", { name: "Border black" })).toHaveAttribute(
       "aria-pressed",
       "false",
     );

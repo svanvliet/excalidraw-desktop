@@ -75,7 +75,11 @@ describe("extension stacks", () => {
     expect(asImage(b).fileId).toBe(asImage(a).fileId);
     expect(stored(b).chain).toEqual([
       { ext: "mask", v: 1, params: CIRCLE },
-      { ext: "border", v: 1, params: { width: 8, color: "#1971c2", opacity: 100 } },
+      {
+        ext: "border",
+        v: 2,
+        params: { width: 8, color: "#1971c2", opacity: 100, style: "solid", roughness: 0 },
+      },
     ]);
     expect(b).toMatchObject({ x: 60, y: 20, width: 100, height: 100 });
   });
@@ -91,7 +95,7 @@ describe("extension stacks", () => {
     expect(lastOps()).toContain("lineWidth=8");
     expect(extensionStateOf(el)?.applied).toEqual({
       mask: CIRCLE,
-      border: { width: 2, color: "#1971c2", opacity: 100 },
+      border: { width: 2, color: "#1971c2", opacity: 100, style: "solid", roughness: 0 },
     });
   });
 

@@ -598,7 +598,7 @@
     {
       "name": "apply_extension",
       "readOnly": false,
-      "description": "Apply (or re-apply with new params) an extension to elements, as one undoable change. Built-in app extensions store their settings in the element's customData and write standard Excalidraw output (ordinary element fields and image files), so the file still renders in stock Excalidraw. Extensions on one element stack in a fixed order (mask → border); every change re-renders the original through the whole stack, so e.g. a border follows the current mask shape. get_scene_summary rows show applied extensions as ext and edited-elsewhere ones as extStale. Applying one extension keeps the others; re-applying replaces its params. Elements it doesn't apply to are returned in skipped. Extensions: mask: Mask an image to a circle or rounded rectangle; presets circle (Circle), roundedRect (Rounded rectangle). border: Draw a border inside the image edge that follows any mask shape; presets thin (Thin), medium (Medium), thick (Thick). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Apply (or re-apply with new params) an extension to elements, as one undoable change. Built-in app extensions store their settings in the element's customData and write standard Excalidraw output (ordinary element fields and image files), so the file still renders in stock Excalidraw. Extensions on one element stack in a fixed order (mask → border); every change re-renders the original through the whole stack, so e.g. a border follows the current mask shape. get_scene_summary rows show applied extensions as ext and edited-elsewhere ones as extStale. Applying one extension keeps the others; re-applying replaces its params. Elements it doesn't apply to are returned in skipped. Extensions: mask: Mask an image to a circle or rounded rectangle; presets circle (Circle), roundedRect (Rounded rectangle). border: Draw a border inside the image edge that follows any mask shape (solid, dashed or dotted; sketchy like native shapes); presets thin (Thin), bold (Bold), extraBold (Extra bold). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -623,7 +623,7 @@
           "preset": {
             "type": "string",
             "description": "A preset of the chosen extension (the same actions the app UI offers).",
-            "enum": ["circle", "roundedRect", "thin", "medium", "thick"]
+            "enum": ["circle", "roundedRect", "thin", "bold", "extraBold"]
           },
           "params": {
             "type": "object",
@@ -657,8 +657,8 @@
                     "type": "number",
                     "minimum": 0.5,
                     "maximum": 100,
-                    "default": 4,
-                    "description": "Stroke width in scene units, drawn inside the image edge"
+                    "default": 2,
+                    "description": "Stroke width in scene units, drawn inside the image edge (Excalidraw: thin 1, bold 2, extra bold 4)"
                   },
                   "color": {
                     "type": "string",
@@ -672,6 +672,18 @@
                     "maximum": 100,
                     "default": 100,
                     "description": "Stroke opacity in %"
+                  },
+                  "style": {
+                    "type": "string",
+                    "enum": ["solid", "dashed", "dotted"],
+                    "default": "solid",
+                    "description": "Stroke style"
+                  },
+                  "roughness": {
+                    "type": "number",
+                    "enum": [0, 1, 2],
+                    "default": 0,
+                    "description": "Sloppiness: 0 architect, 1 artist, 2 cartoonist"
                   }
                 }
               }
