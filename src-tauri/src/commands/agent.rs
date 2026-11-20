@@ -34,6 +34,9 @@ pub struct AgentStartOptions {
     pub resume_id: Option<String>,
     #[serde(default)]
     pub conversation_id: Option<String>,
+    /// The folder was attached mid-conversation (see `StartRequest::keep_session_cwd`).
+    #[serde(default)]
+    pub keep_session_cwd: bool,
 }
 
 pub type AgentState = Arc<AgentManager>;
@@ -153,9 +156,24 @@ pub async fn agent_start(
             model: options.model.filter(|m| !m.trim().is_empty()),
             resume_id: options.resume_id.filter(|r| !r.trim().is_empty()),
             conversation_id: options.conversation_id.filter(|c| !c.trim().is_empty()),
+            keep_session_cwd: options.keep_session_cwd,
             spawn_env,
         })
         .await
+        .map_err(AppError::Other)
+}
+
+/// The conversation's session folder (created if missing), shown in the panel's Folder row.
+#[tauri::command]
+pub async fn agent_session_folder(
+    state: State<'_, AgentState>,
+    tab_id: String,
+    conversation_id: Option<String>,
+) -> Result<String, AppError> {
+    let conversation_id = conversation_id.filter(|c| !c.trim().is_empty());
+    state
+        .session_folder(&tab_id, conversation_id.as_deref())
+        .map(|p| p.to_string_lossy().into_owned())
         .map_err(AppError::Other)
 }
 
@@ -308,6 +326,7 @@ mod live_tests {
                 model: None,
                 resume_id: None,
                 conversation_id: None,
+                keep_session_cwd: false,
                 spawn_env: probe.shell.for_binary(&binary),
             })
             .await

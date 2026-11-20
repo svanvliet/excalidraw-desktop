@@ -7,8 +7,8 @@ mod profile;
 mod updater;
 
 use commands::agent::{
-    agent_cancel, agent_detect, agent_permission_respond, agent_prompt, agent_set_model,
-    agent_start, agent_stop, agent_tool_result,
+    agent_cancel, agent_detect, agent_permission_respond, agent_prompt, agent_session_folder,
+    agent_set_model, agent_start, agent_stop, agent_tool_result,
 };
 use commands::collab::{
     app_profile, collab_remove_peer, collab_set_role, collab_start, collab_status, collab_stop,
@@ -148,6 +148,7 @@ pub fn run() {
             os_user_name,
             agent_detect,
             agent_start,
+            agent_session_folder,
             agent_prompt,
             agent_cancel,
             agent_set_model,

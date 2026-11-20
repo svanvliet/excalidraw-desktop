@@ -7,9 +7,11 @@
 //! `initialize` → `initialized` + `account/read` → [`config/read` when host config is off] →
 //! `thread/start` | `thread/resume` → `Ready` → `turn/start` per prompt → streamed notifications.
 //!
-//! Safety (SEC-3/SEC-6): the sandbox is read-only at every layer: `-c sandbox_mode` on the
-//! command line, `sandbox` on the thread, and `sandboxPolicy` on every turn. Approval policy is
-//! `on-request`. Our canvas MCP server is pre-approved (`default_tools_approval_mode = "approve"`,
+//! Safety (SEC-3/SEC-6): the sandbox is `workspace-write` at every layer (`-c sandbox_mode` on
+//! the command line, `sandbox` on the thread, and a `workspaceWrite` `sandboxPolicy` on every
+//! turn) with the session's writable roots only, network off, and `$TMPDIR`//tmp excluded.
+//! Approval policy is `untrusted`, so every non-trivial command asks. File changes whose paths
+//! all resolve inside a writable root are auto-accepted; others become cards. Our canvas MCP server is pre-approved (`default_tools_approval_mode = "approve"`,
 //! plus auto-accept of any elicitation it still raises); every other approval becomes an
 //! [`AgentEvent::PermissionRequest`].
 //!
@@ -23,7 +25,7 @@
 //! `codex exec --json` fallback: a one-shot-per-turn mode for Codex builds without
 //! `app-server`. It would be a second `EngineAdapter` (`CodexExecAdapter`) whose `launch_spec`
 //! is chosen by `detect` when `version < CODEX_MIN_VERSION`; each `prompt` would need a fresh
-//! process (`codex exec --json --sandbox read-only resume <thread>`), which the manager's
+//! process (`codex exec --json --sandbox workspace-write resume <thread>`), which the manager's
 //! one-process-per-session model doesn't support yet. Not implemented.
 mod errors;
 pub mod protocol;
@@ -31,8 +33,8 @@ pub mod protocol;
 mod tests;
 
 use super::adapter::{
-    AdapterOutput, EngineAdapter, LaunchSpec, McpEndpoint, SessionConfig, MCP_SERVER_NAME,
-    MCP_TOKEN_ENV, MCP_URL_ENV,
+    is_within_roots, AdapterOutput, EngineAdapter, LaunchSpec, McpEndpoint, SessionConfig,
+    MCP_SERVER_NAME, MCP_TOKEN_ENV, MCP_URL_ENV,
 };
 use super::events::{
     AgentEvent, EngineKind, ErrorKind, PermissionDecision, PlanEntry, StopReason, ToolCallStatus,
@@ -41,15 +43,16 @@ use super::events::{
 use protocol::*;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 /// Oldest Codex CLI whose `app-server` protocol matches [`protocol`] (thread/turn v2 API,
 /// `approvalsReviewer`, `mcpServer/elicitation/request`, `item/permissions/requestApproval`).
 /// Verified against T3 Code's recorded 0.156.1 transcripts.
 pub const CODEX_MIN_VERSION: &str = "0.156.0";
 
-const APPROVAL_POLICY: &str = "on-request";
+const APPROVAL_POLICY: &str = "untrusted";
 const APPROVALS_REVIEWER: &str = "user";
-const SANDBOX_MODE: &str = "read-only";
+const SANDBOX_MODE: &str = "workspace-write";
 const CLIENT_NAME: &str = "excalidraw_desktop";
 const MAX_TOOL_OUTPUT: usize = 8 * 1024;
 /// Env vars that would silently switch Codex from the user's ChatGPT plan to API billing.
@@ -120,6 +123,9 @@ pub struct CodexAdapter {
     /// Keys granted with "allow for conversation"; matching requests are auto-accepted.
     allowances: HashSet<String>,
     stderr_reported: Vec<ErrorKind>,
+    writable_roots: Vec<PathBuf>,
+    /// Paths of `fileChange` items by item id, to vet their approval requests.
+    file_changes: HashMap<String, Vec<String>>,
 }
 
 impl CodexAdapter {
@@ -133,6 +139,29 @@ impl CodexAdapter {
     /// Codex thread id once the thread exists; persist it to resume later via `resume_id`.
     pub fn thread_id(&self) -> Option<&str> {
         self.thread_id.as_deref()
+    }
+
+    fn root_strings(&self) -> Vec<String> {
+        self.writable_roots
+            .iter()
+            .map(|r| r.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn sandbox_policy(&self) -> SandboxPolicy {
+        SandboxPolicy::WorkspaceWrite {
+            writable_roots: self.root_strings(),
+            network_access: false,
+            exclude_tmpdir_env_var: true,
+            exclude_slash_tmp: true,
+        }
+    }
+
+    /// True iff every path (and the requested grant root, if any) is inside a writable root.
+    fn changes_in_roots(&self, paths: &[String], grant_root: Option<&str>) -> bool {
+        let cwd = Path::new(&self.cwd);
+        let inside = |p: &str| is_within_roots(Path::new(p), cwd, &self.writable_roots);
+        !paths.is_empty() && paths.iter().all(|p| inside(p)) && grant_root.is_none_or(inside)
     }
 
     fn request(&mut self, method: &str, params: impl serde::Serialize, kind: Pending) -> String {
@@ -168,6 +197,22 @@ impl CodexAdapter {
         cfg.insert("mcp_servers".into(), Value::Object(servers));
         cfg.insert("tools.update_plan.enabled".into(), json!(true));
         cfg.insert("mcp_optional_startup_grace_ms".into(), json!(10_000));
+        cfg.insert(
+            "sandbox_workspace_write.writable_roots".into(),
+            json!(self.root_strings()),
+        );
+        cfg.insert(
+            "sandbox_workspace_write.network_access".into(),
+            json!(false),
+        );
+        cfg.insert(
+            "sandbox_workspace_write.exclude_tmpdir_env_var".into(),
+            json!(true),
+        );
+        cfg.insert(
+            "sandbox_workspace_write.exclude_slash_tmp".into(),
+            json!(true),
+        );
         if !self.use_host_config {
             cfg.insert("project_doc_max_bytes".into(), json!(0));
             cfg.insert("features.apps".into(), json!(false));
@@ -210,9 +255,7 @@ impl CodexAdapter {
             input: vec![UserInput::Text { text }],
             approval_policy: APPROVAL_POLICY,
             approvals_reviewer: APPROVALS_REVIEWER,
-            sandbox_policy: SandboxPolicy::ReadOnly {
-                network_access: false,
-            },
+            sandbox_policy: self.sandbox_policy(),
             cwd: self.cwd.clone(),
             model: self.model.clone(),
         };
@@ -569,6 +612,14 @@ impl CodexAdapter {
                     }
                     return;
                 }
+                if let ThreadItem::FileChange { id, changes, .. } = &n.item {
+                    let paths = changes.iter().map(|c| c.path.clone()).collect();
+                    if completed {
+                        self.file_changes.remove(id);
+                    } else {
+                        self.file_changes.insert(id.clone(), paths);
+                    }
+                }
                 if let Some(ev) = tool_call_event(&app_turn, &n.item, completed) {
                     out.events.push(ev);
                 }
@@ -695,14 +746,27 @@ impl CodexAdapter {
             R_FILE_CHANGE_APPROVAL => {
                 let p: FileChangeApprovalParams =
                     serde_json::from_value(params).unwrap_or_default();
-                let root = p.grant_root.clone().unwrap_or_default();
+                let paths = p
+                    .item_id
+                    .as_ref()
+                    .and_then(|i| self.file_changes.get(i))
+                    .cloned()
+                    .unwrap_or_default();
+                if self.changes_in_roots(&paths, p.grant_root.as_deref()) {
+                    out.writes.push(response_line(
+                        &id,
+                        approval_response(&ApprovalKind::FileChange, PermissionDecision::AllowOnce),
+                    ));
+                    return;
+                }
                 (
                     ApprovalKind::FileChange,
-                    format!("fileChange:{root}"),
+                    file_change_key(&paths, p.grant_root.as_deref()),
                     "apply_patch".to_string(),
                     "Edit files".to_string(),
                     join_detail([
                         p.reason,
+                        Some(paths.join("\n")).filter(|s| !s.is_empty()),
                         p.grant_root.map(|r| format!("write access to {r}")),
                     ]),
                 )
@@ -710,11 +774,18 @@ impl CodexAdapter {
             R_APPLY_PATCH_APPROVAL_V1 => {
                 let p: ApplyPatchApprovalV1Params =
                     serde_json::from_value(params).unwrap_or_default();
-                let root = p.grant_root.clone().unwrap_or_default();
-                let files: Vec<&str> = p.file_changes.keys().map(String::as_str).collect();
+                let paths: Vec<String> = p.file_changes.keys().cloned().collect();
+                if self.changes_in_roots(&paths, p.grant_root.as_deref()) {
+                    out.writes.push(response_line(
+                        &id,
+                        approval_response(&ApprovalKind::PatchV1, PermissionDecision::AllowOnce),
+                    ));
+                    return;
+                }
+                let files: Vec<&str> = paths.iter().map(String::as_str).collect();
                 (
                     ApprovalKind::PatchV1,
-                    format!("fileChange:{root}"),
+                    file_change_key(&paths, p.grant_root.as_deref()),
                     "apply_patch".to_string(),
                     "Edit files".to_string(),
                     join_detail([p.reason, Some(files.join("\n")).filter(|s| !s.is_empty())]),
@@ -869,17 +940,39 @@ fn excalidraw_server(mcp: &McpEndpoint) -> Value {
     server
 }
 
+/// Allowance key for a file change: the exact file set (and grant root), so "allow for
+/// conversation" never becomes blanket write access.
+fn file_change_key(paths: &[String], grant_root: Option<&str>) -> String {
+    let mut sorted = paths.to_vec();
+    sorted.sort();
+    format!(
+        "fileChange:{}|{}",
+        sorted.join("\u{1f}"),
+        grant_root.unwrap_or_default()
+    )
+}
+
 fn approval_response(kind: &ApprovalKind, decision: PermissionDecision) -> Value {
     use PermissionDecision::*;
     match kind {
-        ApprovalKind::Command | ApprovalKind::FileChange => json!({
+        // Session-wide patch approval is Codex-side and unscoped; remember our own key instead.
+        ApprovalKind::FileChange => json!({
+            "decision": if decision == Deny { "decline" } else { "accept" }
+        }),
+        ApprovalKind::PatchV1 => match decision {
+            AllowOnce | AllowForConversation => json!({ "decision": "approved" }),
+            Deny => {
+                json!({ "decision": { "denied": { "rejection": "The user declined this request." } } })
+            }
+        },
+        ApprovalKind::Command => json!({
             "decision": match decision {
                 AllowOnce => "accept",
                 AllowForConversation => "acceptForSession",
                 Deny => "decline",
             }
         }),
-        ApprovalKind::ExecV1 | ApprovalKind::PatchV1 => match decision {
+        ApprovalKind::ExecV1 => match decision {
             AllowOnce => json!({ "decision": "approved" }),
             AllowForConversation => json!({ "decision": "approved_for_session" }),
             Deny => {
@@ -1090,6 +1183,8 @@ impl EngineAdapter for CodexAdapter {
                 format!("sandbox_mode=\"{SANDBOX_MODE}\""),
                 "-c".into(),
                 format!("approval_policy=\"{APPROVAL_POLICY}\""),
+                "-c".into(),
+                "sandbox_workspace_write.network_access=false".into(),
             ],
             env_set,
             env_remove: BILLING_ENV_VARS.iter().map(|s| s.to_string()).collect(),
@@ -1099,6 +1194,7 @@ impl EngineAdapter for CodexAdapter {
 
     fn start(&mut self, cfg: &SessionConfig) -> AdapterOutput {
         self.cwd = cfg.cwd.to_string_lossy().into_owned();
+        self.writable_roots = cfg.writable_roots.clone();
         self.model = cfg.model.clone().filter(|m| !m.is_empty());
         self.system_prompt = Some(cfg.system_prompt.clone()).filter(|s| !s.trim().is_empty());
         self.use_host_config = cfg.use_host_config;

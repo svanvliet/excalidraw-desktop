@@ -80,6 +80,9 @@ pub struct StartRequest {
     /// App-side conversation id. Gives each conversation a stable scratch cwd, which Claude
     /// needs to find its session again on resume. Falls back to the tab id.
     pub conversation_id: Option<String>,
+    /// The folder was attached after the conversation started: keep the session folder as the
+    /// cwd (Claude finds sessions by cwd) and add the folder as a second writable root.
+    pub keep_session_cwd: bool,
     /// Base env for the engine (discovered PATH etc.), see `detect::ShellEnv::for_binary`.
     pub spawn_env: Vec<(String, String)>,
 }
@@ -137,6 +140,20 @@ fn sanitize_tab_id(tab_id: &str) -> String {
     }
 }
 
+/// The engine's cwd and the roots it may write to. A folder attached before the conversation
+/// started is the cwd (and the only root); one attached later joins the session folder.
+fn session_paths(
+    session_dir: PathBuf,
+    folder: Option<&PathBuf>,
+    keep_session_cwd: bool,
+) -> (PathBuf, Vec<PathBuf>) {
+    match folder {
+        Some(dir) if !keep_session_cwd => (dir.clone(), vec![dir.clone()]),
+        Some(dir) if *dir != session_dir => (session_dir.clone(), vec![session_dir, dir.clone()]),
+        _ => (session_dir.clone(), vec![session_dir]),
+    }
+}
+
 impl AgentManager {
     pub fn new(cfg: ManagerConfig) -> Arc<Self> {
         Arc::new(Self {
@@ -158,15 +175,27 @@ impl AgentManager {
             .map(|(id, _)| id.clone())
     }
 
-    fn scratch_dir(&self, req: &StartRequest) -> PathBuf {
-        match &req.conversation_id {
+    fn scratch_dir(&self, tab_id: &str, conversation_id: Option<&str>) -> PathBuf {
+        match conversation_id {
             Some(id) => self
                 .cfg
                 .agent_root
                 .join("conversations")
                 .join(sanitize_tab_id(id)),
-            None => self.cfg.agent_root.join(sanitize_tab_id(&req.tab_id)),
+            None => self.cfg.agent_root.join(sanitize_tab_id(tab_id)),
         }
+    }
+
+    /// The conversation's session folder (created if missing): the engine's default cwd and
+    /// where it writes files when no folder is attached.
+    pub fn session_folder(
+        &self,
+        tab_id: &str,
+        conversation_id: Option<&str>,
+    ) -> Result<PathBuf, String> {
+        let dir = self.scratch_dir(tab_id, conversation_id);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        Ok(dir.canonicalize().unwrap_or(dir))
     }
 
     /// Start an engine session for a tab (one per tab: an existing one is stopped first).
@@ -181,21 +210,19 @@ impl AgentManager {
         let mut adapter = (self.cfg.adapters)(req.engine)
             .ok_or_else(|| format!("{:?} engine support is not available yet", req.engine))?;
 
-        let cwd = match &req.attached_folder {
-            Some(dir) if dir.is_dir() => dir.clone(),
+        let session_dir = self.session_folder(&req.tab_id, req.conversation_id.as_deref())?;
+        let folder = match &req.attached_folder {
+            Some(dir) if dir.is_dir() => Some(dir.canonicalize().unwrap_or_else(|_| dir.clone())),
             Some(dir) => {
                 return Err(format!(
                     "attached folder {} is not a directory",
                     dir.display()
                 ))
             }
-            None => {
-                let dir = self.scratch_dir(&req);
-                std::fs::create_dir_all(&dir)
-                    .map_err(|e| format!("create {}: {e}", dir.display()))?;
-                dir
-            }
+            None => None,
         };
+        let (cwd, writable_roots) =
+            session_paths(session_dir, folder.as_ref(), req.keep_session_cwd);
 
         let session_id = random_id("agent");
         let mcp = self.cfg.mcp.register(&session_id, &req.tab_id);
@@ -204,7 +231,8 @@ impl AgentManager {
             tab_id: req.tab_id.clone(),
             binary: req.binary.clone(),
             cwd,
-            attached_folder: req.attached_folder.clone(),
+            attached_folder: folder,
+            writable_roots,
             use_host_config: req.use_host_config,
             model: req.model.clone(),
             mcp,
@@ -738,6 +766,7 @@ done
             model: None,
             resume_id: None,
             conversation_id: None,
+            keep_session_cwd: false,
             spawn_env: vec![("PATH".into(), "/usr/bin:/bin".into())],
         }
     }
@@ -859,6 +888,32 @@ done
         h.mgr.kill_all(Duration::from_secs(5)).await;
         assert!(h.mgr.session_ids().is_empty());
         assert_eq!(h.mcp.live.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn session_paths_pick_cwd_and_writable_roots() {
+        let s = PathBuf::from("/data/agent/conversations/c1");
+        let f = PathBuf::from("/work/project");
+        assert_eq!(
+            session_paths(s.clone(), None, false),
+            (s.clone(), vec![s.clone()])
+        );
+        assert_eq!(
+            session_paths(s.clone(), Some(&f), false),
+            (f.clone(), vec![f.clone()])
+        );
+        assert_eq!(
+            session_paths(s.clone(), Some(&f), true),
+            (s.clone(), vec![s.clone(), f.clone()])
+        );
+    }
+
+    #[tokio::test]
+    async fn session_folder_is_created_per_conversation() {
+        let h = harness(FAKE_ENGINE);
+        let dir = h.mgr.session_folder("t", Some("c/../9")).unwrap();
+        assert!(dir.is_dir());
+        assert!(dir.ends_with("conversations/c_.._9"));
     }
 
     #[tokio::test]
