@@ -337,3 +337,63 @@ async fn shim_maps_failures_to_jsonrpc_errors() {
         .unwrap()
         .contains("unreachable"));
 }
+
+#[tokio::test]
+async fn add_image_paths_are_loaded_from_session_roots_before_forwarding() {
+    let (s, rx) = server(DEFAULT_TOOL_TIMEOUT).await;
+    auto_respond(s.clone(), rx);
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let (root, outside) = (base.join("session"), base.join("outside"));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(root.join("p.gif"), b"GIF89a\x01\x00\x01\x00").unwrap();
+    std::fs::write(outside.join("x.gif"), b"GIF89a\x01\x00\x01\x00").unwrap();
+    let ep = s.register_session("s1", "tab1");
+
+    // Before roots are set, paths are refused (inline data still goes through).
+    let call = |args: Value| json!({ "name": "add_image", "arguments": args });
+    let r = rpc(
+        &ep.url,
+        &ep.token,
+        "tools/call",
+        call(json!({ "path": "p.gif" })),
+    )
+    .await;
+    assert_eq!(r["result"]["isError"], true);
+    let r = rpc(
+        &ep.url,
+        &ep.token,
+        "tools/call",
+        call(json!({ "data": "R0lG", "mimeType": "image/gif" })),
+    )
+    .await;
+    assert_eq!(result_json(&r)["args"]["data"], "R0lG");
+
+    s.set_session_file_roots("s1", vec![root.clone()]);
+    let r = rpc(
+        &ep.url,
+        &ep.token,
+        "tools/call",
+        call(json!({ "path": "p.gif", "x": 1 })),
+    )
+    .await;
+    let args = &result_json(&r)["args"];
+    assert!(args.get("path").is_none(), "{args}");
+    assert_eq!(args["mimeType"], "image/gif");
+    assert_eq!(args["data"], "R0lGODlhAQABAA==");
+    assert_eq!(args["x"], 1);
+
+    let r = rpc(
+        &ep.url,
+        &ep.token,
+        "tools/call",
+        call(json!({ "path": "../outside/x.gif" })),
+    )
+    .await;
+    assert_eq!(r["result"]["isError"], true);
+    assert!(r["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("outside the conversation's folders"));
+}

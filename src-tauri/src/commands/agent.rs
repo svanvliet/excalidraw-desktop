@@ -59,10 +59,14 @@ fn adapter_factory() -> manager::AdapterFactory {
 struct GlobalMcp;
 
 impl manager::McpEndpointProvider for GlobalMcp {
-    fn register(&self, session_id: &str, tab_id: &str) -> McpEndpoint {
+    fn register(&self, session_id: &str, tab_id: &str, file_roots: &[PathBuf]) -> McpEndpoint {
         match McpServer::global() {
-            Some(server) => server.register_session(session_id, tab_id),
-            None => manager::UnwiredMcp.register(session_id, tab_id),
+            Some(server) => {
+                let ep = server.register_session(session_id, tab_id);
+                server.set_session_file_roots(session_id, file_roots.to_vec());
+                ep
+            }
+            None => manager::UnwiredMcp.register(session_id, tab_id, file_roots),
         }
     }
     fn unregister(&self, session_id: &str) {
@@ -275,10 +279,12 @@ mod live_tests {
     struct HttpOnly(Arc<McpServer>);
 
     impl manager::McpEndpointProvider for HttpOnly {
-        fn register(&self, session_id: &str, tab_id: &str) -> McpEndpoint {
+        fn register(&self, session_id: &str, tab_id: &str, roots: &[PathBuf]) -> McpEndpoint {
+            let ep = self.0.register_session(session_id, tab_id);
+            self.0.set_session_file_roots(session_id, roots.to_vec());
             McpEndpoint {
                 shim_command: vec![],
-                ..self.0.register_session(session_id, tab_id)
+                ..ep
             }
         }
         fn unregister(&self, session_id: &str) {

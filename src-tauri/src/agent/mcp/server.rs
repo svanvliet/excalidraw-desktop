@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -22,6 +23,7 @@ use rand::RngCore;
 use serde_json::{json, Value};
 use tokio::sync::{oneshot, OnceCell};
 
+use super::images;
 use super::protocol::{self, APPROVE_TOOL};
 use crate::agent::adapter::{McpEndpoint, MCP_SHIM_FLAG};
 use crate::agent::events::{PermissionDecision, ToolCallRequest, ToolCallResult};
@@ -80,6 +82,8 @@ impl Default for McpServerOptions {
 struct SessionEntry {
     tab_id: String,
     token: String,
+    /// Canonical folders `add_image` may read from (cwd first); see [`images`].
+    file_roots: Vec<PathBuf>,
 }
 
 struct Pending {
@@ -173,12 +177,20 @@ impl McpServer {
             SessionEntry {
                 tab_id: tab_id.to_owned(),
                 token: token.clone(),
+                file_roots: Vec::new(),
             },
         );
         McpEndpoint {
             url: self.url(),
             token,
             shim_command: shim_command(),
+        }
+    }
+
+    /// Folders the session's `add_image` calls may load files from (canonical; cwd first).
+    pub fn set_session_file_roots(&self, session_id: &str, roots: Vec<PathBuf>) {
+        if let Some(s) = self.state.sessions.lock().unwrap().get_mut(session_id) {
+            s.file_roots = roots;
         }
     }
 
@@ -283,6 +295,7 @@ fn status(code: StatusCode) -> Response {
 struct Caller {
     session_id: String,
     tab_id: String,
+    file_roots: Vec<PathBuf>,
 }
 
 impl ServerState {
@@ -301,6 +314,7 @@ impl ServerState {
                 found = Some(Caller {
                     session_id: sid.clone(),
                     tab_id: s.tab_id.clone(),
+                    file_roots: s.file_roots.clone(),
                 });
             }
         }
@@ -455,7 +469,7 @@ async fn call_tool(state: &Arc<ServerState>, caller: &Caller, id: &Value, params
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return protocol::err(id, protocol::INVALID_PARAMS, "Missing tool name");
     };
-    let args = match params.get("arguments") {
+    let mut args = match params.get("arguments") {
         None | Some(Value::Null) => json!({}),
         Some(v @ Value::Object(_)) => v.clone(),
         Some(_) => {
@@ -471,6 +485,9 @@ async fn call_tool(state: &Arc<ServerState>, caller: &Caller, id: &Value, params
             protocol::INVALID_PARAMS,
             format!("Unknown tool: {name}"),
         );
+    }
+    if let Some(r) = inline_image_files(name, &mut args, &caller.file_roots).await {
+        return protocol::ok(id, r);
     }
     let tab_id = args
         .get("tabId")
@@ -527,6 +544,30 @@ async fn call_tool(state: &Arc<ServerState>, caller: &Caller, id: &Value, params
         }
     };
     protocol::ok(id, result)
+}
+
+/// Load `add_image` `path`s from disk (off the async runtime). `Some(error result)` on failure.
+async fn inline_image_files(name: &str, args: &mut Value, roots: &[PathBuf]) -> Option<Value> {
+    if name != images::ADD_IMAGE_TOOL && name != "apply_ops" {
+        return None;
+    }
+    let (name, mut owned, roots) = (name.to_owned(), std::mem::take(args), roots.to_vec());
+    let res = tokio::task::spawn_blocking(move || {
+        let r = images::inline_image_paths(&name, &mut owned, &roots);
+        (owned, r)
+    })
+    .await;
+    match res {
+        Ok((owned, Ok(()))) => {
+            *args = owned;
+            None
+        }
+        Ok((_, Err(e))) => Some(protocol::text_result(format!("Error: {e}"), true)),
+        Err(e) => Some(protocol::text_result(
+            format!("Error: failed to load image: {e}"),
+            true,
+        )),
+    }
 }
 
 /// Claude Code permission-prompt-tool contract: text content holding

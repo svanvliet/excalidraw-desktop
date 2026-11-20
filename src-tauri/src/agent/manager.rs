@@ -21,8 +21,9 @@ pub type EventSink = Arc<dyn Fn(AgentEventEnvelope) + Send + Sync>;
 pub type AdapterFactory = Arc<dyn Fn(EngineKind) -> Option<Box<dyn EngineAdapter>> + Send + Sync>;
 
 /// Registers a session with the canvas MCP server (MCP lane) and hands back its endpoint.
+/// `file_roots` are the canonical folders the session's `add_image` may read (cwd first).
 pub trait McpEndpointProvider: Send + Sync {
-    fn register(&self, session_id: &str, tab_id: &str) -> McpEndpoint;
+    fn register(&self, session_id: &str, tab_id: &str, file_roots: &[PathBuf]) -> McpEndpoint;
     fn unregister(&self, session_id: &str);
 }
 
@@ -30,7 +31,7 @@ pub trait McpEndpointProvider: Send + Sync {
 pub struct UnwiredMcp;
 
 impl McpEndpointProvider for UnwiredMcp {
-    fn register(&self, session_id: &str, _tab_id: &str) -> McpEndpoint {
+    fn register(&self, session_id: &str, _tab_id: &str, _file_roots: &[PathBuf]) -> McpEndpoint {
         log::warn!("agent/manager: MCP server not wired; session {session_id} has no canvas tools");
         McpEndpoint {
             url: String::new(),
@@ -156,6 +157,16 @@ fn session_paths(
     }
 }
 
+/// Where `add_image` may load files from: the writable roots (cwd first) plus the session
+/// folder, which is not a writable root when a folder was attached before the first prompt.
+fn image_roots(writable_roots: &[PathBuf], session_dir: PathBuf) -> Vec<PathBuf> {
+    let mut roots = writable_roots.to_vec();
+    if !roots.contains(&session_dir) {
+        roots.push(session_dir);
+    }
+    roots
+}
+
 impl AgentManager {
     pub fn new(cfg: ManagerConfig) -> Arc<Self> {
         Arc::new(Self {
@@ -224,10 +235,11 @@ impl AgentManager {
             None => None,
         };
         let (cwd, writable_roots) =
-            session_paths(session_dir, folder.as_ref(), req.keep_session_cwd);
+            session_paths(session_dir.clone(), folder.as_ref(), req.keep_session_cwd);
+        let file_roots = image_roots(&writable_roots, session_dir);
 
         let session_id = random_id("agent");
-        let mcp = self.cfg.mcp.register(&session_id, &req.tab_id);
+        let mcp = self.cfg.mcp.register(&session_id, &req.tab_id, &file_roots);
         let session_cfg = SessionConfig {
             engine: req.engine,
             tab_id: req.tab_id.clone(),
@@ -705,7 +717,7 @@ done
     }
 
     impl McpEndpointProvider for CountingMcp {
-        fn register(&self, session_id: &str, tab_id: &str) -> McpEndpoint {
+        fn register(&self, session_id: &str, tab_id: &str, _roots: &[PathBuf]) -> McpEndpoint {
             self.live.fetch_add(1, Ordering::SeqCst);
             McpEndpoint {
                 url: format!("http://127.0.0.1:1/mcp/{tab_id}"),
@@ -907,6 +919,20 @@ done
         assert_eq!(
             session_paths(s.clone(), Some(&f), true),
             (s.clone(), vec![s.clone(), f.clone()])
+        );
+    }
+
+    #[test]
+    fn image_roots_always_include_the_session_folder() {
+        let s = PathBuf::from("/data/agent/conversations/c1");
+        let f = PathBuf::from("/work/project");
+        assert_eq!(
+            image_roots(std::slice::from_ref(&f), s.clone()),
+            vec![f.clone(), s.clone()]
+        );
+        assert_eq!(
+            image_roots(&[s.clone(), f.clone()], s.clone()),
+            vec![s.clone(), f.clone()]
         );
     }
 
