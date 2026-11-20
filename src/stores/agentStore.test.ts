@@ -39,6 +39,7 @@ import {
   __resetAgentStoreForTests,
   emptyConversation,
   installAgentStore,
+  loadKnownModelsFor,
   reduceAgentEvent,
   setTurnController,
   useAgentStore,
@@ -427,6 +428,28 @@ describe("agentStore session flow", () => {
     expect(ipc.agentSetModel).toHaveBeenCalledWith("s1", "claude-sonnet");
     emit("t1", "s1", { type: "modelChanged", model: "claude-sonnet" });
     expect(useAgentStore.getState().conversations.t1.model).toBe("claude-sonnet");
+  });
+
+  it("probes an engine's models in the background before the first prompt", async () => {
+    await enableAi();
+    ipc.agentStart.mockResolvedValueOnce("probe-1");
+    const loading = loadKnownModelsFor("copilot", { probe: true });
+    await vi.waitFor(() =>
+      expect(ipc.agentStart).toHaveBeenCalledWith(
+        expect.objectContaining({ tabId: "__models:copilot", engine: "copilot", model: null }),
+      ),
+    );
+    expect(useAgentStore.getState().probingModels.copilot).toBe(true);
+    emit("__models:copilot", "probe-1", {
+      type: "models",
+      available: [{ id: "gpt-5", name: "GPT-5" }],
+    });
+    await loading;
+    expect(useAgentStore.getState().knownModels.copilot).toEqual([{ id: "gpt-5", name: "GPT-5" }]);
+    expect(useAgentStore.getState().probingModels.copilot).toBe(false);
+    expect(ipc.agentStop).toHaveBeenCalledWith("probe-1");
+    expect(ipc.agentPrompt).not.toHaveBeenCalled();
+    expect(useAgentStore.getState().conversations["__models:copilot"]).toBeUndefined();
   });
 
   it("keeps Claude's model fixed after the first prompt", async () => {

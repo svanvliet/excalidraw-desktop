@@ -39,6 +39,7 @@ export function AgentContextBar({
   disabled,
 }: Props) {
   const known = useAgentStore((s) => (engine ? s.knownModels[engine] : undefined));
+  const probing = useAgentStore((s) => (engine ? !!s.probingModels[engine] : false));
   const settingsModel = useSettingsStore((s) => (engine ? s.aiEngines[engine].model.trim() : ""));
   const store = useAgentStore.getState;
   const locked = isLocked(conversation);
@@ -96,7 +97,7 @@ export function AgentContextBar({
 
       <span className="agent-context__label">Model</span>
       <span className="agent-context__value">
-        {modelEditable && tabId && options.length > 0 ? (
+        {modelEditable && tabId && (options.length > 0 || !locked) ? (
           <select
             className="agent-panel__engine"
             aria-label="Model"
@@ -111,6 +112,11 @@ export function AgentContextBar({
                 {o.name ?? o.id}
               </option>
             ))}
+            {options.length === 0 ? (
+              <option value="__none" disabled>
+                {probing ? "Loading models…" : "No other models reported"}
+              </option>
+            ) : null}
           </select>
         ) : (
           <span

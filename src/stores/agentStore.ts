@@ -394,6 +394,8 @@ export interface AgentState {
   hydrated: Record<string, boolean>;
   /** Last model list each engine reported (drives the picker before a session exists). */
   knownModels: Partial<Record<EngineKind, ModelOption[]>>;
+  /** Engines whose model list is being fetched by a background probe. */
+  probingModels: Partial<Record<EngineKind, boolean>>;
   panelOpen: boolean;
   panelWidth: number;
   engines: EngineInfo[];
@@ -536,6 +538,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     history: {},
     hydrated: {},
     knownModels: {},
+    probingModels: {},
     panelOpen: false,
     panelWidth: DEFAULT_PANEL_WIDTH,
     engines: [],
@@ -605,7 +608,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         attachedFolder: x.attachedFolder,
         items: x.items,
       }));
-      void loadKnownModelsFor(engine);
+      void loadKnownModelsFor(engine, { probe: true });
     },
 
     async setModel(tabId, model) {
@@ -657,7 +660,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         };
       });
       const engine = get().engineFor(tabId);
-      if (engine) void loadKnownModelsFor(engine);
+      if (engine) void loadKnownModelsFor(engine, { probe: true });
     },
 
     async openConversation(tabId, id) {
@@ -861,6 +864,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
     },
 
     handleEnvelope(env) {
+      if (env.tabId.startsWith(PROBE_TAB_PREFIX)) {
+        handleProbeEvent(env.tabId, env.event);
+        return;
+      }
       if (retiredSessions.has(env.sessionId)) return;
       const prev = get().conversations[env.tabId];
       if (!prev) return;
@@ -905,14 +912,83 @@ export const useAgentStore = create<AgentState>((set, get) => {
   };
 });
 
-/** Load an engine's cached model list into `knownModels` (AI on only). */
-export async function loadKnownModelsFor(engine: EngineKind): Promise<void> {
+/**
+ * Load an engine's cached model list into `knownModels` (AI on only). With
+ * `probe`, an engine that has never reported models is started briefly in the
+ * background (no prompt is sent) so the picker can list them before the first
+ * message.
+ */
+export async function loadKnownModelsFor(
+  engine: EngineKind,
+  opts: { probe?: boolean } = {},
+): Promise<void> {
   if (!aiOn() || useAgentStore.getState().knownModels[engine]) return;
   const models = await loadKnownModels(engine);
-  if (models.length === 0) return;
-  useAgentStore.setState((s) =>
-    s.knownModels[engine] ? s : { knownModels: { ...s.knownModels, [engine]: models } },
-  );
+  if (models.length > 0) {
+    useAgentStore.setState((s) =>
+      s.knownModels[engine] ? s : { knownModels: { ...s.knownModels, [engine]: models } },
+    );
+    return;
+  }
+  if (opts.probe) await probeModels(engine);
+}
+
+const PROBE_TAB_PREFIX = "__models:";
+const MODEL_PROBE_TIMEOUT_MS = 30_000;
+const probeWaiters = new Map<string, () => void>();
+
+function handleProbeEvent(tabId: string, event: AgentEvent): void {
+  const engine = tabId.slice(PROBE_TAB_PREFIX.length) as EngineKind;
+  if (event.type === "models" && event.available.length > 0) {
+    useAgentStore.setState((s) => ({
+      knownModels: { ...s.knownModels, [engine]: event.available },
+    }));
+    if (aiOn()) void saveKnownModels(engine, event.available);
+  } else if (event.type !== "exited" && !(event.type === "error" && event.fatal)) {
+    return;
+  }
+  probeWaiters.get(tabId)?.();
+}
+
+async function probeModels(engine: EngineKind): Promise<void> {
+  const state = useAgentStore.getState();
+  if (state.probingModels[engine] || state.knownModels[engine]) return;
+  const settings = useSettingsStore.getState();
+  if (!settings.aiDisclosureAccepted[engine] || !settings.aiEngines[engine].enabled) return;
+  const tabId = PROBE_TAB_PREFIX + engine;
+  const setProbing = (on: boolean) =>
+    useAgentStore.setState((s) => ({ probingModels: { ...s.probingModels, [engine]: on } }));
+  setProbing(true);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const done = new Promise<void>((resolve) => {
+    probeWaiters.set(tabId, resolve);
+    timer = setTimeout(resolve, MODEL_PROBE_TIMEOUT_MS);
+  });
+  let sessionId: string | null = null;
+  try {
+    await ensureSubscribed();
+    sessionId = await agentStart({
+      tabId,
+      engine,
+      pathOverride: settings.aiEngines[engine].pathOverride.trim() || null,
+      useHostConfig: false,
+      model: null,
+      attachedFolder: null,
+      resumeId: null,
+      conversationId: `models-probe-${engine}`,
+    });
+    await done;
+  } catch (e) {
+    log.info(`agentStore: model probe for ${engine} failed`, e);
+  } finally {
+    clearTimeout(timer);
+    probeWaiters.delete(tabId);
+    if (sessionId) {
+      retiredSessions.add(sessionId);
+      await agentStop(sessionId).catch((e) => log.warn("agentStore: probe stop failed", e));
+    }
+    setProbing(false);
+  }
 }
 
 /** Persisted shape of a tab: the active conversation first, then history. */
@@ -978,6 +1054,7 @@ export function __resetAgentStoreForTests(): void {
     history: {},
     hydrated: {},
     knownModels: {},
+    probingModels: {},
     panelOpen: false,
     panelWidth: DEFAULT_PANEL_WIDTH,
     engines: [],
@@ -985,6 +1062,7 @@ export function __resetAgentStoreForTests(): void {
     pendingDisclosure: null,
   });
   retiredSessions.clear();
+  probeWaiters.clear();
   unlistenEvents = null;
   subscribing = null;
   turnController = NOOP_TURN_CONTROLLER;

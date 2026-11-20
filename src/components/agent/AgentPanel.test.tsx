@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AgentEventEnvelope, EngineInfo } from "../../agent/types";
 
 vi.mock("@tauri-apps/plugin-store", () => {
@@ -102,8 +102,11 @@ describe("AgentPanel", () => {
     render(<AgentPanel tabId="t1" />);
     await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
     expect(ipc.agentDetect).toHaveBeenCalledTimes(1);
-    const options = screen.getAllByRole("option").map((o) => o.textContent);
+    const options = within(screen.getByTestId("agent-engine-select"))
+      .getAllByRole("option")
+      .map((o) => o.textContent);
     expect(options).toEqual(["GitHub Copilot CLI", "OpenAI Codex"]);
+    expect(screen.getByTestId("agent-model-select")).toBeTruthy();
     expect(screen.getByTestId("agent-footer")).toHaveTextContent("Uses your GitHub Copilot plan");
   });
 
