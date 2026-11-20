@@ -38,10 +38,12 @@ vi.mock("../ipc/agentEvents", () => ({ onAgentEvent: events.onAgentEvent }));
 import {
   __resetAgentStoreForTests,
   emptyConversation,
+  fromRecord,
   installAgentStore,
   loadKnownModelsFor,
   reduceAgentEvent,
   setTurnController,
+  toRecord,
   useAgentStore,
   type Conversation,
 } from "./agentStore";
@@ -281,6 +283,7 @@ describe("agentStore session flow", () => {
       attachedFolder: null,
       resumeId: null,
       conversationId: useAgentStore.getState().conversations.t1.id,
+      keepSessionCwd: false,
     });
     expect(ipc.agentPrompt).toHaveBeenCalledWith("s1", "hello");
 
@@ -395,16 +398,52 @@ describe("agentStore session flow", () => {
     expect(ipc.agentPrompt).not.toHaveBeenCalled();
   });
 
-  it("attaches a folder only before the conversation starts", async () => {
+  it("never changes or detaches a folder once the conversation starts", async () => {
     await enableAi();
     await useAgentStore.getState().setAttachedFolder("t1", "/Users/me/proj");
     await useAgentStore.getState().send("t1", "go");
     expect(ipc.agentStart).toHaveBeenLastCalledWith(
-      expect.objectContaining({ attachedFolder: "/Users/me/proj" }),
+      expect.objectContaining({ attachedFolder: "/Users/me/proj", keepSessionCwd: false }),
     );
+    emit("t1", "s1", { type: "turnEnded", turnId: "T", stopReason: "endTurn", usage: null });
     await useAgentStore.getState().setAttachedFolder("t1", null);
+    await useAgentStore.getState().setAttachedFolder("t1", "/Users/me/other");
     expect(useAgentStore.getState().conversations.t1.attachedFolder).toBe("/Users/me/proj");
     expect(ipc.agentStop).not.toHaveBeenCalled();
+  });
+
+  it("attaches a folder mid-conversation only when none was set, and persists that", async () => {
+    await enableAi();
+    await useAgentStore.getState().send("t1", "go");
+    emit("t1", "s1", {
+      type: "ready",
+      engine: "copilot",
+      version: "1",
+      model: null,
+      engineSessionId: "e1",
+    });
+    emit("t1", "s1", { type: "turnStarted", turnId: "T" });
+    await useAgentStore.getState().setAttachedFolder("t1", "/Users/me/proj");
+    expect(useAgentStore.getState().conversations.t1.attachedFolder).toBeNull();
+    emit("t1", "s1", { type: "turnEnded", turnId: "T", stopReason: "endTurn", usage: null });
+
+    await useAgentStore.getState().setAttachedFolder("t1", "/Users/me/proj");
+    const c = useAgentStore.getState().conversations.t1;
+    expect(c).toMatchObject({ attachedFolder: "/Users/me/proj", folderAttachedLate: true });
+    expect(ipc.agentStop).toHaveBeenCalledWith("s1");
+    const rec = toRecord(c)!;
+    expect(rec.folderAttachedLate).toBe(true);
+    expect(fromRecord("t1", rec).folderAttachedLate).toBe(true);
+
+    ipc.agentStart.mockResolvedValueOnce("s2");
+    await useAgentStore.getState().send("t1", "again");
+    expect(ipc.agentStart).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        attachedFolder: "/Users/me/proj",
+        resumeId: "e1",
+        keepSessionCwd: true,
+      }),
+    );
   });
 
   it("locks the engine once the conversation starts", async () => {

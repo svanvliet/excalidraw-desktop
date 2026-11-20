@@ -299,6 +299,12 @@ export function agentStart(options: AgentStartOptions): Promise<string> {
   return invoke<string>("agent_start", { options });
 }
 
+/** The conversation's session folder (its default cwd), created if missing. */
+export function agentSessionFolder(tabId: string, conversationId: string): Promise<string> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_session_folder"));
+  return invoke<string>("agent_session_folder", { tabId, conversationId });
+}
+
 /** Send a prompt; resolves to the turn id. Progress arrives on `agent://event`. */
 export function agentPrompt(sessionId: string, text: string): Promise<string> {
   if (!isTauri()) return Promise.reject(unavailable("agent_prompt"));

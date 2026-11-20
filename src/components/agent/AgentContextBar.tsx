@@ -25,10 +25,16 @@ function revealFolder(path: string) {
     .catch((e) => log.warn("agent: reveal folder failed", e));
 }
 
+async function revealSessionFolder(tabId: string) {
+  const path = await useAgentStore.getState().sessionFolder(tabId);
+  if (path) revealFolder(path);
+}
+
 /**
  * Engine / model / folder of the active conversation. Engine and folder are
- * chosen before the first prompt, then fixed; the model stays switchable on
- * engines that support it (ENGINE_CAPS).
+ * chosen before the first prompt, then fixed (a folder can still be attached
+ * later if none was set); the model stays switchable on engines that support
+ * it (ENGINE_CAPS). Without a folder the agent works in its session folder.
  */
 export function AgentContextBar({
   tabId,
@@ -136,35 +142,39 @@ export function AgentContextBar({
       <span className="agent-context__value agent-context__folder">
         <span
           className="agent-context__path"
-          title={folder ?? "The agent only sees this canvas."}
+          title={
+            folder ?? "The agent's own folder for this conversation. Files it writes land here."
+          }
           data-testid="agent-folder"
         >
-          {folder ? `${folderName(folder)} (read-only)` : "None — canvas only"}
+          {folder ? folderName(folder) : "Session folder"}
         </span>
-        {!locked ? (
-          <>
-            <button
-              type="button"
-              className="agent-context__link"
-              onClick={() => void pickFolder()}
-              disabled={disabled || running}
-              title="Let the agent read a folder (read-only)"
-              data-testid="agent-attach"
-            >
-              {folder ? "Change…" : "Attach…"}
-            </button>
-            {folder ? (
-              <button
-                type="button"
-                className="agent-context__link"
-                onClick={() => tabId && void store().setAttachedFolder(tabId, null)}
-                disabled={disabled || running}
-                data-testid="agent-detach"
-              >
-                Detach
-              </button>
-            ) : null}
-          </>
+        {!locked || !folder ? (
+          <button
+            type="button"
+            className="agent-context__link"
+            onClick={() => void pickFolder()}
+            disabled={disabled || running}
+            title={
+              locked
+                ? "Let the agent read and write a folder. It can't be changed afterwards."
+                : "Let the agent read and write a folder"
+            }
+            data-testid="agent-attach"
+          >
+            {folder ? "Change…" : "Attach…"}
+          </button>
+        ) : null}
+        {!locked && folder ? (
+          <button
+            type="button"
+            className="agent-context__link"
+            onClick={() => tabId && void store().setAttachedFolder(tabId, null)}
+            disabled={disabled || running}
+            data-testid="agent-detach"
+          >
+            Detach
+          </button>
         ) : null}
         {folder ? (
           <button
@@ -173,6 +183,16 @@ export function AgentContextBar({
             onClick={() => revealFolder(folder)}
             title={folder}
             data-testid="agent-reveal"
+          >
+            Reveal
+          </button>
+        ) : tabId ? (
+          <button
+            type="button"
+            className="agent-context__link"
+            onClick={() => void revealSessionFolder(tabId)}
+            title="Show the session folder"
+            data-testid="agent-reveal-session"
           >
             Reveal
           </button>
