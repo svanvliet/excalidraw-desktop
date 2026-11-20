@@ -109,6 +109,13 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-33** The first use of each engine MUST show a disclosure of what is sent to which provider under the user's account. Network traffic for AI comes only from the user's agent process, after the toggle is on and the user sends a prompt.
 - **FR-34** Excalidraw's built-in "Text to diagram" dialog MUST be backed by the default engine when AI is enabled.
 
+### 4.10 Desktop extensions
+
+- **FR-35** Features beyond Excalidraw's schema MUST be built as built-in extensions (`docs/extensions.md`) that store intent in `element.customData` and always write standard elements and files, so documents render identically in stock Excalidraw, exports and collab. No third-party or document-supplied code is ever loaded.
+- **FR-36** Each extension is defined once and exposed both in the UI (a selection-aware bar) and to the agent (`apply_extension` / `remove_extension`). Applying to several elements is one undo step; collab peers receive it as a normal edit.
+- **FR-37** Remove and re-apply MUST derive from the stored source. If the element was changed elsewhere so its output no longer matches the intent, it is treated as not applied and left alone. Source files an intent depends on MUST survive save, reload and collab sync.
+- **FR-38** First extension: **Mask** for images — Circle, Rounded rectangle, Remove mask.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.
