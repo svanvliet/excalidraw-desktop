@@ -122,7 +122,7 @@ fn launch_spec_always_workspace_write_with_token_in_env_only() {
             "{joined}"
         );
         assert!(
-            joined.contains("-c approval_policy=\"untrusted\""),
+            joined.contains("-c approval_policy=\"on-request\""),
             "{joined}"
         );
         assert!(joined.contains("-c sandbox_workspace_write.network_access=false"));
@@ -157,7 +157,7 @@ fn handshake_starts_read_only_thread_with_canvas_mcp() {
     find_req(&out.writes, M_ACCOUNT_READ);
     let (tid, p) = find_req(&out.writes, M_THREAD_START);
     assert_eq!(p["sandbox"], "workspace-write");
-    assert_eq!(p["approvalPolicy"], "untrusted");
+    assert_eq!(p["approvalPolicy"], "on-request");
     assert_eq!(
         p["config"]["sandbox_workspace_write.writable_roots"],
         json!(["/tmp/scratch"])
@@ -208,7 +208,7 @@ fn handshake_starts_read_only_thread_with_canvas_mcp() {
         json!({ "type": "workspaceWrite", "writableRoots": ["/tmp/scratch"],
                 "networkAccess": false, "excludeTmpdirEnvVar": true, "excludeSlashTmp": true })
     );
-    assert_eq!(p["approvalPolicy"], "untrusted");
+    assert_eq!(p["approvalPolicy"], "on-request");
 }
 
 #[test]

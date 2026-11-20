@@ -10,8 +10,9 @@
 //! Safety (SEC-3/SEC-6): the sandbox is `workspace-write` at every layer (`-c sandbox_mode` on
 //! the command line, `sandbox` on the thread, and a `workspaceWrite` `sandboxPolicy` on every
 //! turn) with the session's writable roots only, network off, and `$TMPDIR`//tmp excluded.
-//! Approval policy is `untrusted`, so every non-trivial command asks. File changes whose paths
-//! all resolve inside a writable root are auto-accepted; others become cards. Our canvas MCP server is pre-approved (`default_tools_approval_mode = "approve"`,
+//! Approval policy is `on-request` (Codex no longer accepts `untrusted`): commands run inside
+//! that sandbox and any escalation asks. File-change approvals whose paths all resolve inside
+//! a writable root are auto-accepted; others become cards. Our canvas MCP server is pre-approved (`default_tools_approval_mode = "approve"`,
 //! plus auto-accept of any elicitation it still raises); every other approval becomes an
 //! [`AgentEvent::PermissionRequest`].
 //!
@@ -50,7 +51,10 @@ use std::path::{Path, PathBuf};
 /// Verified against T3 Code's recorded 0.156.1 transcripts.
 pub const CODEX_MIN_VERSION: &str = "0.156.0";
 
-const APPROVAL_POLICY: &str = "untrusted";
+/// `untrusted` would ask before every non-trivial command, but Codex 0.170 rejects it. With
+/// `on-request`, commands run inside the workspace-write sandbox (writes only under the roots,
+/// no network) and only sandbox escalations ask.
+const APPROVAL_POLICY: &str = "on-request";
 const APPROVALS_REVIEWER: &str = "user";
 const SANDBOX_MODE: &str = "workspace-write";
 const CLIENT_NAME: &str = "excalidraw_desktop";

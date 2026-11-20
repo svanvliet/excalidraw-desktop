@@ -49,7 +49,9 @@ pub fn no_adapters() -> AdapterFactory {
 /// Appended to the engine's own system prompt (D-AI4: canvas-only by default).
 pub const DEFAULT_SYSTEM_PROMPT: &str = "You are working inside Excalidraw Desktop. The user's \
 canvas is available through the `excalidraw` MCP tools: read the scene before editing, and make \
-all diagram changes through those tools. You cannot run shell commands or write files.";
+all diagram changes through those tools. You may create and edit files inside your working \
+directory (and any folder the user attached); writes elsewhere and shell commands may need the \
+user's approval, and there is no network access.";
 
 /// How long `stop` waits for a graceful exit (after cancel + stdin EOF) before terminating.
 pub const STOP_GRACE: Duration = Duration::from_secs(2);
