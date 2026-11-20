@@ -828,9 +828,9 @@ impl EngineAdapter for AcpAdapter {
         // "For this conversation" is remembered here and answered `allow_once` on the wire, so
         // an agent never persists the grant beyond this conversation.
         let preference: &[&str] = match decision {
-            PermissionDecision::AllowOnce | PermissionDecision::AllowForConversation => {
-                &["allow_once", "allow_always"]
-            }
+            PermissionDecision::AllowOnce
+            | PermissionDecision::AllowForConversation
+            | PermissionDecision::AllowAll => &["allow_once", "allow_always"],
             PermissionDecision::Deny => &["reject_once", "reject_always"],
         };
         if decision == PermissionDecision::AllowForConversation {

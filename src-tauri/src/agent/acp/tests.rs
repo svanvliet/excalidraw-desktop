@@ -751,6 +751,24 @@ fn permission_decisions_map_to_option_ids() {
     assert_eq!(parse(&out.writes[0])["result"]["outcome"]["optionId"], "a1");
 }
 
+#[test]
+fn allow_all_answers_allow_once_without_remembering() {
+    let (mut a, _) = ready(AcpAdapter::copilot(), &cfg());
+    a.prompt("t1", "x");
+    let rid = first_request_id(&a.on_line(&permission_line(60, "c1", "Run thing")));
+    let out = a.respond_permission(&rid, PermissionDecision::AllowAll);
+    assert_eq!(
+        parse(&out.writes[0])["result"]["outcome"]["optionId"],
+        "a1",
+        "never allow_always on the wire"
+    );
+    let again = a.on_line(&permission_line(61, "c2", "Run thing"));
+    assert!(again
+        .events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::PermissionRequest { .. })));
+}
+
 fn shell_permission_line(id: u64, call: &str, command: &str) -> String {
     json!({"jsonrpc":"2.0","id":id,"method":"session/request_permission","params":{
         "sessionId":"s1","toolCall":{"toolCallId":call,"title":"Run shell command","kind":"execute",

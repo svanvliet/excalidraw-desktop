@@ -102,6 +102,7 @@ enum Cmd {
         request_id: String,
         decision: PermissionDecision,
     },
+    SetAllowAll(bool),
     Stop,
 }
 
@@ -279,6 +280,7 @@ impl AgentManager {
             stdin: proc.stdin.take(),
             saw_fatal: false,
             stderr_tail: VecDeque::new(),
+            approvals: ApprovalGate::default(),
         };
         tokio::spawn(async move {
             actor.run(proc, rx, start_out).await;
@@ -338,6 +340,12 @@ impl AgentManager {
                 decision,
             },
         )
+    }
+
+    /// Turn the conversation's "allow all" approval mode on or off. Turning it on also approves
+    /// any request still waiting; the change arrives as `ApprovalMode`.
+    pub fn set_allow_all(&self, session_id: &str, allow_all: bool) -> Result<(), String> {
+        self.send(session_id, Cmd::SetAllowAll(allow_all))
     }
 
     /// Cancel, close stdin, wait `stop_grace`, then terminate/kill the tree. Resolves once the
@@ -408,10 +416,91 @@ struct Actor {
     stdin: Option<ChildStdin>,
     saw_fatal: bool,
     stderr_tail: VecDeque<String>,
+    approvals: ApprovalGate,
+}
+
+/// The session's "allow all" approval mode (D-AI4). Lives only as long as the engine
+/// session: a restarted or resumed conversation starts with it off.
+#[derive(Debug, Default)]
+struct ApprovalGate {
+    allow_all: bool,
+    /// Permission requests shown to the user and not answered yet.
+    pending: Vec<String>,
+}
+
+fn merge(into: &mut AdapterOutput, out: AdapterOutput) {
+    into.events.extend(out.events);
+    into.writes.extend(out.writes);
+}
+
+impl ApprovalGate {
+    /// With allow-all on, answers permission requests in `out` instead of surfacing them;
+    /// the engine's own tool-call events still show what ran.
+    fn filter(&mut self, adapter: &mut dyn EngineAdapter, out: AdapterOutput) -> AdapterOutput {
+        let mut result = AdapterOutput::default();
+        let mut queue = VecDeque::from([out]);
+        while let Some(out) = queue.pop_front() {
+            result.writes.extend(out.writes);
+            for event in out.events {
+                match &event {
+                    AgentEvent::PermissionRequest { request_id, .. } if self.allow_all => {
+                        log::info!("agent/manager: auto-approving {request_id} (allow all)");
+                        queue.push_back(
+                            adapter.respond_permission(request_id, PermissionDecision::AllowAll),
+                        );
+                        continue;
+                    }
+                    AgentEvent::PermissionRequest { request_id, .. } => {
+                        self.pending.push(request_id.clone());
+                    }
+                    AgentEvent::TurnEnded { .. } | AgentEvent::Exited { .. } => {
+                        self.pending.clear();
+                    }
+                    _ => {}
+                }
+                result.events.push(event);
+            }
+        }
+        result
+    }
+
+    fn respond(
+        &mut self,
+        adapter: &mut dyn EngineAdapter,
+        request_id: &str,
+        decision: PermissionDecision,
+    ) -> AdapterOutput {
+        self.pending.retain(|id| id != request_id);
+        let mut out = adapter.respond_permission(request_id, decision);
+        if decision == PermissionDecision::AllowAll {
+            merge(&mut out, self.set_allow_all(adapter, true));
+        }
+        out
+    }
+
+    fn set_allow_all(&mut self, adapter: &mut dyn EngineAdapter, on: bool) -> AdapterOutput {
+        let mut out = AdapterOutput::default();
+        if self.allow_all == on {
+            return out;
+        }
+        self.allow_all = on;
+        log::info!("agent/manager: allow all approvals = {on}");
+        out.events.push(AgentEvent::ApprovalMode { allow_all: on });
+        if on {
+            for id in std::mem::take(&mut self.pending) {
+                merge(
+                    &mut out,
+                    adapter.respond_permission(&id, PermissionDecision::AllowAll),
+                );
+            }
+        }
+        out
+    }
 }
 
 impl Actor {
     async fn apply(&mut self, out: AdapterOutput) {
+        let out = self.approvals.filter(self.adapter.as_mut(), out);
         for event in out.events {
             if matches!(event, AgentEvent::Error { fatal: true, .. }) {
                 self.saw_fatal = true;
@@ -464,7 +553,13 @@ impl Actor {
                         self.apply(out).await;
                     }
                     Some(Cmd::Permission { request_id, decision }) => {
-                        let out = self.adapter.respond_permission(&request_id, decision);
+                        let out =
+                            self.approvals
+                                .respond(self.adapter.as_mut(), &request_id, decision);
+                        self.apply(out).await;
+                    }
+                    Some(Cmd::SetAllowAll(on)) => {
+                        let out = self.approvals.set_allow_all(self.adapter.as_mut(), on);
                         self.apply(out).await;
                     }
                     Some(Cmd::Stop) | None => {
@@ -841,6 +936,150 @@ done
         assert_eq!(h.mcp.live.load(Ordering::SeqCst), 0);
         assert!(h.mgr.prompt(&sid, "again").is_err());
         assert!(h.mgr.session_ids().is_empty());
+    }
+
+    #[tokio::test]
+    async fn allow_all_auto_approves_later_requests_until_turned_off() {
+        let mut h = harness(FAKE_ENGINE);
+        let sid = h.mgr.start(req("t")).await.unwrap();
+        next(&mut h).await; // ready
+
+        h.mgr.prompt(&sid, "one").unwrap();
+        next(&mut h).await; // turnStarted
+        next(&mut h).await; // delta
+        let AgentEvent::PermissionRequest { request_id, .. } = next(&mut h).await.event else {
+            panic!("expected permission request");
+        };
+        h.mgr
+            .respond_permission(&sid, &request_id, PermissionDecision::AllowAll)
+            .unwrap();
+        assert_eq!(
+            next(&mut h).await.event,
+            AgentEvent::ApprovalMode { allow_all: true }
+        );
+        assert!(matches!(
+            next(&mut h).await.event,
+            AgentEvent::TurnEnded { .. }
+        ));
+
+        // The next request is answered by the manager; no card reaches the webview.
+        h.mgr.prompt(&sid, "two").unwrap();
+        next(&mut h).await; // turnStarted
+        next(&mut h).await; // delta
+        assert!(matches!(
+            next(&mut h).await.event,
+            AgentEvent::TurnEnded { .. }
+        ));
+
+        h.mgr.set_allow_all(&sid, false).unwrap();
+        assert_eq!(
+            next(&mut h).await.event,
+            AgentEvent::ApprovalMode { allow_all: false }
+        );
+        h.mgr.prompt(&sid, "three").unwrap();
+        next(&mut h).await; // turnStarted
+        next(&mut h).await; // delta
+        assert!(matches!(
+            next(&mut h).await.event,
+            AgentEvent::PermissionRequest { .. }
+        ));
+        h.mgr.stop(&sid).await.unwrap();
+    }
+
+    #[derive(Default)]
+    struct RecordingAdapter {
+        answered: Vec<(String, PermissionDecision)>,
+    }
+
+    impl EngineAdapter for RecordingAdapter {
+        fn kind(&self) -> EngineKind {
+            EngineKind::Copilot
+        }
+        fn launch_spec(&self, _cfg: &SessionConfig) -> LaunchSpec {
+            unreachable!()
+        }
+        fn start(&mut self, _cfg: &SessionConfig) -> AdapterOutput {
+            AdapterOutput::default()
+        }
+        fn prompt(&mut self, _turn_id: &str, _text: &str) -> AdapterOutput {
+            AdapterOutput::default()
+        }
+        fn cancel(&mut self) -> AdapterOutput {
+            AdapterOutput::default()
+        }
+        fn respond_permission(&mut self, id: &str, d: PermissionDecision) -> AdapterOutput {
+            self.answered.push((id.into(), d));
+            AdapterOutput {
+                events: vec![],
+                writes: vec![format!("answer {id}")],
+            }
+        }
+        fn on_line(&mut self, _line: &str) -> AdapterOutput {
+            AdapterOutput::default()
+        }
+    }
+
+    fn perm_req(id: &str) -> AgentEvent {
+        AgentEvent::PermissionRequest {
+            turn_id: "t".into(),
+            request_id: id.into(),
+            tool_name: "shell".into(),
+            title: "Run".into(),
+            detail: None,
+        }
+    }
+
+    #[test]
+    fn allow_all_also_approves_requests_already_waiting() {
+        let mut a = RecordingAdapter::default();
+        let mut gate = ApprovalGate::default();
+        let shown = gate.filter(
+            &mut a,
+            AdapterOutput {
+                events: vec![perm_req("p1"), perm_req("p2")],
+                writes: vec![],
+            },
+        );
+        assert_eq!(shown.events.len(), 2);
+
+        let out = gate.respond(&mut a, "p1", PermissionDecision::AllowAll);
+        assert_eq!(
+            out.events,
+            vec![AgentEvent::ApprovalMode { allow_all: true }]
+        );
+        assert_eq!(out.writes, vec!["answer p1", "answer p2"]);
+        assert_eq!(
+            a.answered,
+            vec![
+                ("p1".into(), PermissionDecision::AllowAll),
+                ("p2".into(), PermissionDecision::AllowAll)
+            ]
+        );
+
+        // Later requests never surface while on; nothing is left pending.
+        let out = gate.filter(
+            &mut a,
+            AdapterOutput {
+                events: vec![perm_req("p3")],
+                writes: vec![],
+            },
+        );
+        assert!(out.events.is_empty());
+        assert_eq!(out.writes, vec!["answer p3"]);
+        assert!(gate.pending.is_empty());
+
+        // Other decisions don't turn it on.
+        let mut gate = ApprovalGate::default();
+        gate.filter(
+            &mut a,
+            AdapterOutput {
+                events: vec![perm_req("q1")],
+                writes: vec![],
+            },
+        );
+        let out = gate.respond(&mut a, "q1", PermissionDecision::AllowForConversation);
+        assert!(out.events.is_empty());
+        assert!(!gate.allow_all);
     }
 
     #[tokio::test]
