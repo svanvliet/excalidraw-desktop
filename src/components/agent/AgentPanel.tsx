@@ -1,5 +1,5 @@
 /**
- * Docked AI agent panel — one conversation per tab (D-AI2).
+ * Docked AI agent panel — a drawing's conversations, one active at a time (D-AI2).
  * Spec: docs/ai-integration.md § UX. All IPC goes through `useAgentStore`,
  * which refuses to call anything while the `ai` setting is off.
  */
@@ -11,22 +11,14 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { EngineKind } from "../../agent/types";
 import { emptyConversation, useAgentStore } from "../../stores/agentStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { log } from "../../lib/logger";
 import { ENGINE_META, disclosureText, formatUsage } from "./engineMeta";
 import { TranscriptItemView } from "./TranscriptItem";
-import {
-  CloseIcon,
-  PaperclipIcon,
-  PlusIcon,
-  SendIcon,
-  SettingsIcon,
-  SparklesIcon,
-  StopIcon,
-} from "../icons";
+import { ConversationSwitcher } from "./ConversationSwitcher";
+import { AgentContextBar } from "./AgentContextBar";
+import { CloseIcon, SendIcon, SettingsIcon, SparklesIcon, StopIcon } from "../icons";
 
 export interface AgentPanelProps {
   /** Active tab the conversation belongs to; null when no tab is open. */
@@ -71,6 +63,10 @@ export function AgentPanel({
     if (visible && engines.length === 0) void store().detect();
   }, [visible, engines.length, store]);
 
+  useEffect(() => {
+    if (visible && tabId) void store().hydrate(tabId);
+  }, [visible, tabId, store]);
+
   const itemCount = conversation?.items.length ?? 0;
   const lastItem = conversation?.items[itemCount - 1];
   const lastText = lastItem?.kind === "assistant" ? lastItem.text.length : 0;
@@ -102,16 +98,6 @@ export function AgentPanel({
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
-    }
-  };
-
-  const attachFolder = async () => {
-    if (!tabId) return;
-    try {
-      const picked = await openDialog({ directory: true, multiple: false });
-      if (typeof picked === "string") await store().setAttachedFolder(tabId, picked);
-    } catch (e) {
-      log.warn("agent: attach folder failed", e);
     }
   };
 
@@ -152,36 +138,8 @@ export function AgentPanel({
 
       <header className="agent-panel__header">
         <SparklesIcon className="agent-panel__logo" />
-        {available.length > 0 && tabId ? (
-          <select
-            className="agent-panel__engine"
-            aria-label="Agent engine"
-            value={engine ?? ""}
-            onChange={(e) => void store().selectEngine(tabId, e.target.value as EngineKind)}
-            disabled={running}
-            data-testid="agent-engine-select"
-          >
-            {available.map((e) => (
-              <option key={e} value={e}>
-                {ENGINE_META[e].label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="agent-panel__title">AI agent</span>
-        )}
+        <ConversationSwitcher tabId={tabId} conversation={conv} running={running} />
         <span className="agent-panel__spacer" />
-        <button
-          type="button"
-          className="icon-btn icon-btn--icon-only"
-          onClick={() => tabId && void store().newConversation(tabId)}
-          disabled={!tabId || running || itemCount === 0}
-          aria-label="New conversation"
-          title="New conversation"
-          data-testid="agent-new"
-        >
-          <PlusIcon />
-        </button>
         <button
           type="button"
           className="icon-btn icon-btn--icon-only"
@@ -193,6 +151,17 @@ export function AgentPanel({
           <CloseIcon />
         </button>
       </header>
+
+      {!readOnly && !noEngine ? (
+        <AgentContextBar
+          tabId={tabId}
+          conversation={conv}
+          engine={engine}
+          available={available}
+          running={running}
+          disabled={composerDisabled}
+        />
+      ) : null}
 
       {collabParticipants > 0 ? (
         <div className="agent-panel__banner" data-testid="agent-collab">
@@ -316,25 +285,6 @@ export function AgentPanel({
           submit();
         }}
       >
-        {conv.attachedFolder ? (
-          <div className="agent-composer__chips">
-            <span className="agent-chip" title={conv.attachedFolder} data-testid="agent-folder">
-              <span className="agent-chip__text">
-                Read-only: {conv.attachedFolder.split(/[\\/]/).filter(Boolean).pop()}
-              </span>
-              <button
-                type="button"
-                className="agent-chip__remove"
-                onClick={() => tabId && void store().setAttachedFolder(tabId, null)}
-                aria-label="Detach folder"
-                title="Detach folder"
-                disabled={running}
-              >
-                <CloseIcon />
-              </button>
-            </span>
-          </div>
-        ) : null}
         <textarea
           className="agent-composer__input"
           value={draft}
@@ -347,17 +297,6 @@ export function AgentPanel({
           data-testid="agent-input"
         />
         <div className="agent-composer__row">
-          <button
-            type="button"
-            className="icon-btn icon-btn--icon-only"
-            onClick={() => void attachFolder()}
-            disabled={composerDisabled || running}
-            aria-label="Attach folder (read-only)"
-            title="Attach folder… (read-only)"
-            data-testid="agent-attach"
-          >
-            <PaperclipIcon />
-          </button>
           <span className="agent-panel__spacer" />
           {running ? (
             <button

@@ -5,7 +5,7 @@
 import { useEffect } from "react";
 import type { EngineKind } from "../../agent/types";
 import { ENGINE_KINDS, useSettingsStore } from "../../stores/settingsStore";
-import { useAgentStore } from "../../stores/agentStore";
+import { loadKnownModelsFor, useAgentStore } from "../../stores/agentStore";
 import { ENGINE_META, engineStatusText } from "./engineMeta";
 import { RefreshIcon } from "../icons";
 
@@ -18,9 +18,12 @@ export function AiSettingsSection() {
   const engines = useAgentStore((s) => s.engines);
   const detecting = useAgentStore((s) => s.detecting);
   const detect = useAgentStore((s) => s.detect);
+  const knownModels = useAgentStore((s) => s.knownModels);
 
   useEffect(() => {
-    if (ai) void detect();
+    if (!ai) return;
+    void detect();
+    for (const e of ENGINE_KINDS) void loadKnownModelsFor(e);
   }, [ai, detect]);
 
   return (
@@ -155,8 +158,16 @@ export function AiSettingsSection() {
                       value={cfg.model}
                       onChange={(e) => void setEngineSettings(engine, { model: e.target.value })}
                       placeholder="Engine default"
+                      list={`ai-models-${engine}`}
                       data-testid={`ai-model-${engine}`}
                     />
+                    <datalist id={`ai-models-${engine}`}>
+                      {(knownModels[engine] ?? []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name ?? m.id}
+                        </option>
+                      ))}
+                    </datalist>
                   </label>
                 </div>
               </div>

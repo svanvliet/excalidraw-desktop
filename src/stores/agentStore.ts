@@ -905,7 +905,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
   };
 });
 
-async function loadKnownModelsFor(engine: EngineKind): Promise<void> {
+/** Load an engine's cached model list into `knownModels` (AI on only). */
+export async function loadKnownModelsFor(engine: EngineKind): Promise<void> {
   if (!aiOn() || useAgentStore.getState().knownModels[engine]) return;
   const models = await loadKnownModels(engine);
   if (models.length === 0) return;

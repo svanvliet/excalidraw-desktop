@@ -26,6 +26,7 @@ const ipc = vi.hoisted(() => ({
   agentCancel: vi.fn(),
   agentPermissionRespond: vi.fn(),
   agentStop: vi.fn(),
+  agentSetModel: vi.fn(),
 }));
 vi.mock("../../ipc/commands", () => ipc);
 
@@ -84,6 +85,7 @@ beforeEach(() => {
   ipc.agentCancel.mockResolvedValue(undefined);
   ipc.agentPermissionRespond.mockResolvedValue(undefined);
   ipc.agentStop.mockResolvedValue(undefined);
+  ipc.agentSetModel.mockResolvedValue(undefined);
 });
 
 describe("AgentPanel", () => {
@@ -207,17 +209,83 @@ describe("AgentPanel", () => {
     expect(screen.getByTestId("agent-input")).toBeDisabled();
   });
 
-  it("Attach folder stores the picked path and shows a removable chip", async () => {
+  it("Folder row attaches and detaches before the first prompt, then locks", async () => {
     dialog.open.mockResolvedValue("/Users/me/project");
     await openPanel();
     render(<AgentPanel tabId="t1" />);
     await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
+    expect(screen.getByTestId("agent-folder")).toHaveTextContent("canvas only");
     fireEvent.click(screen.getByTestId("agent-attach"));
     await waitFor(() => expect(screen.getByTestId("agent-folder")).toHaveTextContent("project"));
     expect(dialog.open).toHaveBeenCalledWith({ directory: true, multiple: false });
     expect(useAgentStore.getState().conversations.t1.attachedFolder).toBe("/Users/me/project");
-    fireEvent.click(screen.getByRole("button", { name: "Detach folder" }));
-    await waitFor(() => expect(screen.queryByTestId("agent-folder")).toBeNull());
+    fireEvent.click(screen.getByTestId("agent-detach"));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-folder")).toHaveTextContent("canvas only"),
+    );
+
+    fireEvent.click(screen.getByTestId("agent-attach"));
+    await waitFor(() => expect(screen.getByTestId("agent-folder")).toHaveTextContent("project"));
+    fireEvent.change(screen.getByTestId("agent-input"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByTestId("agent-send"));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalled());
+    expect(screen.queryByTestId("agent-attach")).toBeNull();
+    expect(screen.queryByTestId("agent-detach")).toBeNull();
+    expect(screen.getByTestId("agent-reveal")).toBeInTheDocument();
+  });
+
+  it("locks the engine after the first prompt and keeps a live model picker", async () => {
+    await openPanel();
+    render(<AgentPanel tabId="t1" />);
+    await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
+    expect(screen.queryByTestId("agent-new")).toBeNull();
+    fireEvent.change(screen.getByTestId("agent-input"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByTestId("agent-send"));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(screen.queryByTestId("agent-engine-select")).toBeNull();
+    expect(screen.getByTestId("agent-engine")).toHaveTextContent("GitHub Copilot");
+
+    emit({ type: "ready", engine: "copilot", version: "1", model: "gpt-5", engineSessionId: "e1" });
+    emit({
+      type: "models",
+      available: [
+        { id: "gpt-5", name: "GPT-5" },
+        { id: "claude-sonnet", name: "Claude Sonnet" },
+      ],
+    });
+    const picker = await screen.findByTestId("agent-model-select");
+    expect(picker).toHaveValue("gpt-5");
+    fireEvent.change(picker, { target: { value: "claude-sonnet" } });
+    await waitFor(() => expect(ipc.agentSetModel).toHaveBeenCalledWith("s1", "claude-sonnet"));
+  });
+
+  it("conversation menu starts a new conversation and reopens an earlier one", async () => {
+    await openPanel();
+    render(<AgentPanel tabId="t1" />);
+    await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId("agent-input"), { target: { value: "Draw a cat" } });
+    fireEvent.click(screen.getByTestId("agent-send"));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(screen.getByTestId("agent-conversations")).toHaveTextContent("Draw a cat");
+    emit({ type: "turnStarted", turnId: "T1" });
+    emit({ type: "turnEnded", turnId: "T1", stopReason: "endTurn", usage: null });
+
+    fireEvent.click(screen.getByTestId("agent-conversations"));
+    fireEvent.click(screen.getByTestId("agent-new"));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-conversations")).toHaveTextContent("New conversation"),
+    );
+    expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("agent-conversations"));
+    const items = screen.getAllByTestId("agent-conversation-item");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("Draw a cat");
+    fireEvent.click(items[0]);
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-conversations")).toHaveTextContent("Draw a cat"),
+    );
+    expect(screen.getByTestId("agent-transcript")).toHaveTextContent("Draw a cat");
   });
 
   it("Close hides the panel", async () => {
