@@ -24,6 +24,7 @@ import {
   agentCancel,
   agentDetect,
   agentPermissionRespond,
+  agentSetAllowAll,
   agentPrompt,
   agentSetModel,
   agentSessionFolder,
@@ -144,6 +145,8 @@ export interface Conversation {
   attachedFolder: string | null;
   /** The folder was attached after the conversation started (see keepSessionCwd). */
   folderAttachedLate: boolean;
+  /** Every permission request is approved without a card. Lasts for this engine session only. */
+  allowAll: boolean;
   lastError: { kind: ErrorKind; message: string } | null;
 }
 
@@ -178,6 +181,7 @@ export function emptyConversation(tabId: string, engine: EngineKind | null = nul
     usage: { ...EMPTY_USAGE },
     attachedFolder: null,
     folderAttachedLate: false,
+    allowAll: false,
     lastError: null,
   };
 }
@@ -335,6 +339,8 @@ export function reduceAgentEvent(conv: Conversation, event: AgentEvent): Convers
       };
     case "plan":
       return { ...conv, plan: event.entries };
+    case "approvalMode":
+      return { ...conv, allowAll: event.allowAll };
     case "turnEnded":
       return {
         ...conv,
@@ -375,6 +381,7 @@ export function reduceAgentEvent(conv: Conversation, event: AgentEvent): Convers
         ...conv,
         status: conv.status === "error" ? "error" : "exited",
         sessionId: null,
+        allowAll: false,
         currentTurnId: null,
         items: expirePermissions(conv.items),
       };
@@ -438,6 +445,8 @@ export interface AgentState {
     requestId: string,
     decision: PermissionDecision,
   ) => Promise<void>;
+  /** Turn off "allow all" approvals for the tab's conversation. */
+  disableAllowAll: (tabId: string) => Promise<void>;
   revertTurn: (tabId: string, turnId: string, force?: boolean) => Promise<void>;
   /** Attach/change/detach the writable folder before the start; afterwards only attach if none. */
   /** The conversation's session folder (its cwd unless a folder was attached first). */
@@ -785,11 +794,20 @@ export const useAgentStore = create<AgentState>((set, get) => {
     async respondPermission(tabId, requestId, decision) {
       const c = conv(tabId);
       if (!aiOn() || !c.sessionId) return;
+      // Allow all also answers every other card still waiting (the backend approves them).
+      const ids = new Set(
+        decision === "allowAll"
+          ? c.items
+              .filter((it) => it.kind === "permission" && it.decision === null)
+              .map((it) => it.id)
+          : [requestId],
+      );
+      ids.add(requestId);
       const mark = (d: PermissionDecision | null) =>
         patch(tabId, (x) => ({
           ...x,
           items: x.items.map((it) =>
-            it.kind === "permission" && it.id === requestId ? { ...it, decision: d } : it,
+            it.kind === "permission" && ids.has(it.id) ? { ...it, decision: d } : it,
           ),
         }));
       mark(decision);
@@ -798,6 +816,21 @@ export const useAgentStore = create<AgentState>((set, get) => {
       } catch (e) {
         log.warn("agentStore: agentPermissionRespond failed", e);
         mark(null);
+        pushError(tabId, e, false);
+      }
+    },
+
+    async disableAllowAll(tabId) {
+      const c = conv(tabId);
+      if (!c.allowAll) return;
+      if (!c.sessionId) {
+        patch(tabId, (x) => ({ ...x, allowAll: false }));
+        return;
+      }
+      try {
+        await agentSetAllowAll(c.sessionId, false);
+      } catch (e) {
+        log.warn("agentStore: agentSetAllowAll failed", e);
         pushError(tabId, e, false);
       }
     },
@@ -834,6 +867,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         attachedFolder: path,
         folderAttachedLate: late,
         sessionId: null,
+        allowAll: false,
         status: "idle",
         currentTurnId: null,
       }));
@@ -860,7 +894,13 @@ export const useAgentStore = create<AgentState>((set, get) => {
     async retry(tabId) {
       const c = conv(tabId);
       await retire(c.sessionId);
-      patch(tabId, (x) => ({ ...x, sessionId: null, status: "idle", lastError: null }));
+      patch(tabId, (x) => ({
+        ...x,
+        sessionId: null,
+        status: "idle",
+        allowAll: false,
+        lastError: null,
+      }));
       await get().ensureSession(tabId);
     },
 
@@ -884,7 +924,13 @@ export const useAgentStore = create<AgentState>((set, get) => {
       for (const c of all) {
         if (c.sessionId) {
           await retire(c.sessionId);
-          patch(c.tabId, (x) => ({ ...x, sessionId: null, status: "idle", currentTurnId: null }));
+          patch(c.tabId, (x) => ({
+            ...x,
+            sessionId: null,
+            status: "idle",
+            currentTurnId: null,
+            allowAll: false,
+          }));
         }
       }
     },

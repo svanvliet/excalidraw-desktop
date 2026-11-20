@@ -21,7 +21,7 @@ export type ErrorKind =
 export type StopReason = "endTurn" | "cancelled" | "maxTurns" | "refusal" | "error";
 export type ToolCallStatus = "pending" | "running" | "completed" | "failed";
 export type ToolSource = "canvas" | "host" | "builtin";
-export type PermissionDecision = "allowOnce" | "allowForConversation" | "deny";
+export type PermissionDecision = "allowOnce" | "allowForConversation" | "allowAll" | "deny";
 
 export interface Usage {
   inputTokens: number | null;
@@ -67,6 +67,8 @@ export type AgentEvent =
       detail: string | null;
     }
   | { type: "plan"; turnId: string; entries: PlanEntry[] }
+  /** The conversation's "allow all" approval mode changed (D-AI4). */
+  | { type: "approvalMode"; allowAll: boolean }
   | { type: "turnEnded"; turnId: string; stopReason: StopReason; usage: Usage | null }
   | { type: "error"; kind: ErrorKind; message: string; fatal: boolean }
   | { type: "exited"; code: number | null };

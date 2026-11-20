@@ -325,6 +325,12 @@ export function agentPermissionRespond(
   return invoke<void>("agent_permission_respond", { sessionId, requestId, decision });
 }
 
+/** Turn a session's "allow all" approval mode on or off; arrives back as `approvalMode`. */
+export function agentSetAllowAll(sessionId: string, allowAll: boolean): Promise<void> {
+  if (!isTauri()) return Promise.reject(unavailable("agent_set_allow_all"));
+  return invoke<void>("agent_set_allow_all", { sessionId, allowAll });
+}
+
 /** Switch a running session's model; result arrives as `modelChanged` or `error`. */
 export function agentSetModel(sessionId: string, model: string): Promise<void> {
   if (!isTauri()) return Promise.reject(unavailable("agent_set_model"));

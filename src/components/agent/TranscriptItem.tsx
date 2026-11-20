@@ -83,9 +83,39 @@ const STOP_TEXT: Record<StopReason, string | null> = {
 const DECISION_TEXT: Record<PermissionDecision | "expired", string> = {
   allowOnce: "Allowed once",
   allowForConversation: "Allowed for this conversation",
+  allowAll: "Allowed all for this conversation",
   deny: "Denied",
   expired: "No longer needed",
 };
+
+/**
+ * What a permission card shows: a one-line heading and the full command or input once.
+ * Older records carry JSON-escaped tool input, and Copilot titles shell requests with the
+ * whole (possibly multi-line) script, so both are normalised here.
+ */
+export function permissionSummary(title: string, detail: string | null) {
+  const heading =
+    title
+      .split("\n")
+      .find((l) => l.trim() !== "")
+      ?.trim() ?? title;
+  let body = detail?.trim() ? detail : null;
+  if (body) {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && "command" in parsed) {
+        const cmd = (parsed as { command: unknown }).command;
+        if (typeof cmd === "string") body = cmd;
+        else if (Array.isArray(cmd) && cmd.every((x) => typeof x === "string"))
+          body = cmd.join(" ");
+      }
+    } catch {
+      // Not JSON: already readable.
+    }
+  }
+  if (!body && title.trim() !== heading) body = title.trim();
+  return { heading, body };
+}
 
 function openExternal(url: string) {
   if (!isSafeUrl(url)) return;
@@ -127,7 +157,8 @@ export function TranscriptItemView({
     case "tool":
       return <ToolRow item={item} engine={engine} />;
 
-    case "permission":
+    case "permission": {
+      const { heading, body } = permissionSummary(item.title, item.detail);
       return (
         <div
           className="agent-card agent-card--permission"
@@ -135,8 +166,14 @@ export function TranscriptItemView({
           aria-label="Permission request"
           data-testid="agent-permission"
         >
-          <strong>{item.title}</strong>
-          {item.detail ? <p className="agent-card__detail">{item.detail}</p> : null}
+          <strong className="agent-card__title" title={item.title}>
+            {heading}
+          </strong>
+          {body ? (
+            <pre className="agent-card__detail" data-testid="agent-permission-detail">
+              {body}
+            </pre>
+          ) : null}
           <span className="agent-card__meta">{item.toolName}</span>
           {item.decision === null ? (
             <div className="agent-card__actions">
@@ -156,6 +193,14 @@ export function TranscriptItemView({
               </button>
               <button
                 type="button"
+                className="icon-btn"
+                title="Approve this and every later request in this conversation without asking"
+                onClick={() => onPermission(item.id, "allowAll")}
+              >
+                Allow all for this conversation
+              </button>
+              <button
+                type="button"
                 className="icon-btn icon-btn--danger"
                 onClick={() => onPermission(item.id, "deny")}
               >
@@ -169,6 +214,7 @@ export function TranscriptItemView({
           )}
         </div>
       );
+    }
 
     case "turnEnd": {
       const note = STOP_TEXT[item.stopReason];
