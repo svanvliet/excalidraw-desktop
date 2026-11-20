@@ -15,7 +15,8 @@ import type { EngineKind } from "../../agent/types";
 import { emptyConversation, useAgentStore } from "../../stores/agentStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ENGINE_META, disclosureText, formatUsage } from "./engineMeta";
-import { TranscriptItemView } from "./TranscriptItem";
+import { ToolGroup, TranscriptItemView } from "./TranscriptItem";
+import { groupTranscript } from "./transcriptGroups";
 import { ConversationSwitcher } from "./ConversationSwitcher";
 import { AgentContextBar } from "./AgentContextBar";
 import { CloseIcon, SendIcon, SettingsIcon, SparklesIcon, StopIcon } from "../icons";
@@ -217,19 +218,27 @@ export function AgentPanel({
           </div>
         ) : null}
 
-        {conv.items.map((item) => (
-          <TranscriptItemView
-            key={item.id}
-            item={item}
-            engine={conv.engine ?? engine}
-            streaming={running && item.kind === "assistant" && item.turnId === conv.currentTurnId}
-            onPermission={(requestId, decision) =>
-              tabId && void store().respondPermission(tabId, requestId, decision)
-            }
-            onRevert={(turnId, force) => tabId && void store().revertTurn(tabId, turnId, force)}
-            onRetry={() => tabId && void store().retry(tabId)}
-          />
-        ))}
+        {groupTranscript(conv.items).map((entry) =>
+          entry.kind === "tools" ? (
+            <ToolGroup key={entry.items[0].id} items={entry.items} engine={conv.engine ?? engine} />
+          ) : (
+            <TranscriptItemView
+              key={entry.item.id}
+              item={entry.item}
+              engine={conv.engine ?? engine}
+              streaming={
+                running &&
+                entry.item.kind === "assistant" &&
+                entry.item.turnId === conv.currentTurnId
+              }
+              onPermission={(requestId, decision) =>
+                tabId && void store().respondPermission(tabId, requestId, decision)
+              }
+              onRevert={(turnId, force) => tabId && void store().revertTurn(tabId, turnId, force)}
+              onRetry={() => tabId && void store().retry(tabId)}
+            />
+          ),
+        )}
 
         {conv.plan && conv.plan.length > 0 ? (
           <ol className="agent-plan" aria-label="Plan" data-testid="agent-plan">

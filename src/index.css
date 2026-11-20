@@ -1384,6 +1384,7 @@ button {
 
 .agent-msg--assistant {
   align-self: stretch;
+  line-height: var(--line-relaxed);
 }
 
 .agent-thinking {
@@ -1526,6 +1527,43 @@ button {
 
 .agent-tool__failed {
   color: var(--danger);
+}
+
+.agent-tool-group {
+  color: var(--fg-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.agent-tool-group summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.agent-tool-group summary::before {
+  content: "▶";
+  font-size: 0.75em;
+}
+
+.agent-tool-group[open] summary::before {
+  content: "▼";
+}
+
+.agent-tool-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-tool-group[data-active] summary .agent-tool__dot {
+  background: var(--accent);
+}
+
+.agent-tool-group__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0 var(--space-5);
 }
 
 .agent-card {

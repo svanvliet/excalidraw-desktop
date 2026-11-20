@@ -100,6 +100,7 @@
   --font-size-xl: 17px;
   --line-tight: 1.25;
   --line-default: 1.45;
+  --line-relaxed: 1.65;
 
   /* Heights — keep the toolbar compact */
   --toolbar-height: 40px;

@@ -10,6 +10,60 @@ import { isSafeUrl } from "./markdownParse";
 import { log } from "../../lib/logger";
 import { RefreshIcon, UndoIcon } from "../icons";
 
+import type { ToolItem } from "./transcriptGroups";
+
+export function ToolGroup({ items, engine }: { items: ToolItem[]; engine: EngineKind | null }) {
+  const active = items.filter((t) => t.status === "running" || t.status === "pending").length;
+  const failed = items.filter((t) => t.status === "failed").length;
+  const noun = items.length === 1 ? "tool call" : "tool calls";
+  const summary = active > 0 ? `Running tools (${items.length})` : `${items.length} ${noun}`;
+  return (
+    <details
+      className="agent-tool-group"
+      data-active={active > 0 || undefined}
+      data-testid="agent-tool-group"
+    >
+      <summary>
+        <span className="agent-tool__dot" aria-hidden="true" />
+        {summary}
+        {failed > 0 ? <span className="agent-tool__failed"> · {failed} failed</span> : null}
+      </summary>
+      <div className="agent-tool-group__list">
+        {items.map((t) => (
+          <ToolRow key={t.id} item={t} engine={engine} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ToolRow({ item, engine }: { item: ToolItem; engine: EngineKind | null }) {
+  const label = toolLabel(item.name, item.title);
+  const source =
+    item.source === "host"
+      ? `${engine ? ENGINE_META[engine].label : "Agent"} tool`
+      : item.source === "builtin"
+        ? "Built-in tool"
+        : null;
+  return (
+    <div
+      className="agent-tool"
+      data-source={item.source}
+      data-status={item.status}
+      data-testid="agent-tool"
+    >
+      <span className="agent-tool__dot" aria-hidden="true" />
+      <span className="agent-tool__label">{label}</span>
+      {source ? (
+        <span className="agent-tool__source" title={item.name}>
+          {source}: {item.name}
+        </span>
+      ) : null}
+      {item.status === "failed" ? <span className="agent-tool__failed">failed</span> : null}
+    </div>
+  );
+}
+
 export interface TranscriptItemProps {
   item: TranscriptItem;
   engine: EngineKind | null;
@@ -71,32 +125,8 @@ export function TranscriptItemView({
         </div>
       );
 
-    case "tool": {
-      const label = toolLabel(item.name, item.title);
-      const source =
-        item.source === "host"
-          ? `${engine ? ENGINE_META[engine].label : "Agent"} tool`
-          : item.source === "builtin"
-            ? "Built-in tool"
-            : null;
-      return (
-        <div
-          className="agent-tool"
-          data-source={item.source}
-          data-status={item.status}
-          data-testid="agent-tool"
-        >
-          <span className="agent-tool__dot" aria-hidden="true" />
-          <span className="agent-tool__label">{label}</span>
-          {source ? (
-            <span className="agent-tool__source" title={item.name}>
-              {source}: {item.name}
-            </span>
-          ) : null}
-          {item.status === "failed" ? <span className="agent-tool__failed">failed</span> : null}
-        </div>
-      );
-    }
+    case "tool":
+      return <ToolRow item={item} engine={engine} />;
 
     case "permission":
       return (
