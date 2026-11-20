@@ -48,7 +48,8 @@ export function extensionGroups(selected: readonly ExcalidrawElement[]): Extensi
     const common: Params = {};
     if (all) {
       for (const [k, v] of Object.entries(params[0] ?? {})) {
-        if (params.every((p) => k in p && JSON.stringify(p[k]) === JSON.stringify(v))) common[k] = v;
+        if (params.every((p) => k in p && JSON.stringify(p[k]) === JSON.stringify(v)))
+          common[k] = v;
       }
     }
     groups.push({
