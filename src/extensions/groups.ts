@@ -20,6 +20,8 @@ export interface ExtensionGroup {
   removable: boolean;
   /** Params shared by every target when all have this extension applied identically. */
   current: Params | null;
+  /** Params every target has applied with the same value (empty unless all targets have it). */
+  common: Params;
   /** Params a choice applies on top of when nothing shared is applied (the default preset). */
   base: Params;
 }
@@ -43,6 +45,12 @@ export function extensionGroups(selected: readonly ExcalidrawElement[]): Extensi
     const base = (ext.presets.find((p) => p.id === ext.defaultPreset) ?? ext.presets[0])?.params as
       | Params
       | undefined;
+    const common: Params = {};
+    if (all) {
+      for (const [k, v] of Object.entries(params[0] ?? {})) {
+        if (params.every((p) => k in p && JSON.stringify(p[k]) === JSON.stringify(v))) common[k] = v;
+      }
+    }
     groups.push({
       id: ext.id,
       title: ext.title,
@@ -64,6 +72,7 @@ export function extensionGroups(selected: readonly ExcalidrawElement[]): Extensi
       },
       removable: links.some((l) => l !== null),
       current,
+      common,
       base: { ...(base ?? {}) },
     });
   }
@@ -86,4 +95,12 @@ export function presetParams(group: ExtensionGroup, presetId: string): Params {
 export function choiceParams(group: ExtensionGroup, value: string | number): Params {
   if (!group.choices) throw new Error(`${group.id} has no choices`);
   return { ...(group.current ?? group.base), [group.choices.param]: value };
+}
+
+/**
+ * Params for changing some values (e.g. just the stroke width): the default preset, then whatever
+ * every target already shares, then `patch` — so one control never resets the others.
+ */
+export function patchParams(group: ExtensionGroup, patch: Params): Params {
+  return { ...group.base, ...group.common, ...patch };
 }
