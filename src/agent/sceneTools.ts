@@ -40,7 +40,7 @@ import { prepareImage, type PreparedImage } from "./scene/images";
 import { isFoldedText, rowOf } from "./scene/summary";
 import { applyPreparedToDraft, EXTENSION_TOOLS, prepareExtensionTool } from "./scene/extensions";
 import type { Prepared } from "../extensions/runner";
-import { extensionStateOf } from "../extensions/registry";
+import { extensionStateOf } from "../extensions/stack";
 import { commitDraft } from "./scene/turns";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";

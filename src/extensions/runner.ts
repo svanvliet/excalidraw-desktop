@@ -15,7 +15,8 @@ import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/t
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { SceneApi } from "../agent/sceneBridge";
 import { log } from "../lib/logger";
-import { getExtension, intentFileIds } from "./registry";
+import { getExtension } from "./registry";
+import { linkOf, readStack, runChain } from "./stack";
 import { validateSchema } from "./schema";
 import type { AnyDesktopExtension, ExtensionContext } from "./types";
 
@@ -113,22 +114,23 @@ export async function prepareExtension(
       skipped.push({ id, reason: `${ext.title} does not apply to a ${el.type}` });
       continue;
     }
-    if (action.kind === "remove" && !ext.getIntent(el)) {
+    const read = readStack(el);
+    if (read.kind === "unreadable") {
+      skipped.push({ id, reason: `its extensions can't be edited: ${read.reason}` });
+      continue;
+    }
+    if (action.kind === "remove" && !linkOf(el, ext.id)) {
       skipped.push({ id, reason: `${ext.title} is not applied` });
       continue;
     }
-    const intent = ext.getIntent(el);
-    if (intent && intentFileIds(intent).some((f) => !files[f])) {
-      // Re-applying and removing both re-derive from the original, which this copy of the
-      // drawing no longer has (e.g. it was saved by stock Excalidraw, which drops unused files).
+    if (read.kind === "ok" && read.current && !files[read.stack.source.fileId]) {
+      // Every change re-renders from the original, which this copy of the drawing no longer has
+      // (e.g. it was saved by stock Excalidraw, which drops unreferenced files).
       skipped.push({ id, reason: `the original image for ${ext.title} is missing` });
       continue;
     }
     try {
-      const res =
-        action.kind === "apply"
-          ? await ext.apply(el, action.params, ctx)
-          : await ext.remove(el, ctx);
+      const res = await runChain(el, ext, action, ctx);
       if (res.element.id !== el.id) throw new Error("extension returned a different element id");
       edits.push({ id, baseVersion: el.version, element: res.element, files: res.files });
     } catch (err) {

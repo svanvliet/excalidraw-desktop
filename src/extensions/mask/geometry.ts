@@ -1,14 +1,8 @@
 /**
- * Pure geometry for the mask extension: params validation, which source pixels
- * become visible, output raster size, new element bounds, and deterministic
- * output file ids. No DOM / canvas here so it is unit-testable in jsdom.
- *
- * Coordinate systems:
- * - "source" = pixels of the decoded image (`naturalWidth × naturalHeight`).
- *   Excalidraw's `element.crop` is expressed in this space (scaled by
- *   `crop.naturalWidth` in case the file was re-encoded at a different size).
- * - "display" = scene units of the element box (`width × height`).
+ * Pure geometry for the mask extension: params validation and the plan step that turns the
+ * image's base plan into a circle / rounded-rectangle plan. No DOM here (see ../pipeline.ts).
  */
+import { clampPx, type ImagePlan } from "../pipeline";
 
 export type MaskShape = "circle" | "roundedRect";
 
@@ -19,11 +13,6 @@ export type MaskParams = {
 };
 
 export const DEFAULT_RADIUS = 15;
-/** Longest side of the baked PNG, in pixels. */
-export const MAX_OUTPUT_PX = 1024;
-/** Minimum px per display unit for vector (SVG) sources, which have no intrinsic resolution. */
-export const VECTOR_DENSITY = 2;
-
 export const maskParamsSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
@@ -63,169 +52,42 @@ export function normalizeMaskParams(input: unknown): MaskParams {
   throw new Error('mask: shape must be "circle" or "roundedRect"');
 }
 
-export type Rect = { x: number; y: number; width: number; height: number };
-
-export type CropLike = Rect & { naturalWidth: number; naturalHeight: number };
-
-export type MaskPlan = {
-  /** Region of the source image to draw, in source pixels. */
-  sourceRect: Rect;
-  /** Output canvas size in pixels. */
-  outWidth: number;
-  outHeight: number;
-  /** Corner radius in output pixels; for circle this is `outWidth / 2`. */
-  cornerRadiusPx: number;
-  shape: MaskShape;
-  /** New element bounds in scene units. */
-  element: Rect;
-};
-
-/** The part of the source image currently shown by the element (honours `crop`). */
-export function visibleSourceRect(
-  crop: CropLike | null,
-  naturalWidth: number,
-  naturalHeight: number,
-): Rect {
-  if (!crop) return { x: 0, y: 0, width: naturalWidth, height: naturalHeight };
-  const kx = crop.naturalWidth > 0 ? naturalWidth / crop.naturalWidth : 1;
-  const ky = crop.naturalHeight > 0 ? naturalHeight / crop.naturalHeight : 1;
-  return { x: crop.x * kx, y: crop.y * ky, width: crop.width * kx, height: crop.height * ky };
-}
-
 /**
- * Flips (`element.scale`) are intentionally NOT baked: Excalidraw mirrors the
- * whole drawn box, and both shapes are centred + symmetric, so the selected
- * region and the mask are flip-invariant. The output keeps the element's
- * `scale`, which stock Excalidraw renders identically.
+ * Circle: the largest centred square of the element (and the matching source region), output at
+ * square pixels, ellipse outline. Rounded rectangle: same bounds, rounded outline. Both shapes are
+ * centred and symmetric, so flips (`element.scale`) don't need baking.
  */
-export function planMask(opts: {
-  params: MaskParams;
-  element: Rect;
-  crop: CropLike | null;
-  naturalWidth: number;
-  naturalHeight: number;
-  isVector?: boolean;
-}): MaskPlan {
-  const { params, element: el } = opts;
-  if (!(el.width > 0) || !(el.height > 0)) throw new Error("mask: element has no size");
-  // SVGs without intrinsic size decode as 0×0; treat the display box as the source.
-  const nw = opts.naturalWidth > 0 ? opts.naturalWidth : (opts.crop?.naturalWidth ?? el.width);
-  const nh = opts.naturalHeight > 0 ? opts.naturalHeight : (opts.crop?.naturalHeight ?? el.height);
-  const src = visibleSourceRect(opts.crop, nw, nh);
-  const dx = src.width / el.width;
-  const dy = src.height / el.height;
-  const density = Math.max(dx, dy, opts.isVector ? VECTOR_DENSITY : 0);
-
+export function maskStep(plan: ImagePlan, params: MaskParams): ImagePlan {
+  const el = plan.element;
+  const src = plan.sourceRect;
   if (params.shape === "circle") {
     const side = Math.min(el.width, el.height);
-    const sw = side * dx;
-    const sh = side * dy;
-    const n = clampPx(side * density);
+    const sw = side * (src.width / el.width);
+    const sh = side * (src.height / el.height);
+    const n = clampPx(side * plan.density);
     return {
-      shape: "circle",
+      ...plan,
       sourceRect: {
         x: src.x + (src.width - sw) / 2,
         y: src.y + (src.height - sh) / 2,
         width: sw,
         height: sh,
       },
-      outWidth: n,
-      outHeight: n,
-      cornerRadiusPx: n / 2,
       element: {
         x: el.x + (el.width - side) / 2,
         y: el.y + (el.height - side) / 2,
         width: side,
         height: side,
       },
+      outWidth: n,
+      outHeight: n,
+      outline: { kind: "ellipse" },
     };
   }
-
-  let w = el.width * density;
-  let h = el.height * density;
-  const longest = Math.max(w, h);
-  if (longest > MAX_OUTPUT_PX) {
-    w = (w * MAX_OUTPUT_PX) / longest;
-    h = (h * MAX_OUTPUT_PX) / longest;
-  }
-  const outWidth = clampPx(w);
-  const outHeight = clampPx(h);
   const pct = params.radius ?? DEFAULT_RADIUS;
+  const { outWidth: w, outHeight: h } = plan;
   return {
-    shape: "roundedRect",
-    sourceRect: src,
-    outWidth,
-    outHeight,
-    cornerRadiusPx: Math.min(
-      (pct / 100) * Math.min(outWidth, outHeight),
-      outWidth / 2,
-      outHeight / 2,
-    ),
-    element: { x: el.x, y: el.y, width: el.width, height: el.height },
+    ...plan,
+    outline: { kind: "roundedRect", radiusPx: Math.min((pct / 100) * Math.min(w, h), w / 2, h / 2) },
   };
-}
-
-function clampPx(v: number): number {
-  return Math.max(1, Math.min(MAX_OUTPUT_PX, Math.round(v)));
-}
-
-/**
- * Bounds to restore on removal. Keeps the element's current centre (so a moved
- * mask restores in place) and scales the original size by any resize applied
- * since masking. With no edits this returns the original bounds exactly
- * (up to float rounding).
- */
-export function restoreBounds(
-  current: Rect,
-  applied: { width: number; height: number },
-  original: { width: number; height: number },
-): Rect {
-  const sx = applied.width > 0 ? current.width / applied.width : 1;
-  const sy = applied.height > 0 ? current.height / applied.height : 1;
-  const width = original.width * sx;
-  const height = original.height * sy;
-  const cx = current.x + current.width / 2;
-  const cy = current.y + current.height / 2;
-  return { x: cx - width / 2, y: cy - height / 2, width, height };
-}
-
-/** cyrb53-style 53-bit hash, seeded; returns 14 hex chars. */
-function hash53(str: string, seed: number): string {
-  let h1 = 0xdeadbeef ^ seed;
-  let h2 = 0x41c6ce57 ^ seed;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, "0");
-}
-
-/**
- * Deterministic output file id: identical source file + visible region +
- * params + output size → identical id, so re-applying never bloats `files`.
- * 40 hex chars to match the shape of Excalidraw's own (SHA-1) file ids.
- */
-export function maskFileId(sourceFileId: string, plan: MaskPlan, version: number): string {
-  const r = plan.sourceRect;
-  const key = JSON.stringify([
-    "mask",
-    version,
-    sourceFileId,
-    plan.shape,
-    round4(r.x),
-    round4(r.y),
-    round4(r.width),
-    round4(r.height),
-    plan.outWidth,
-    plan.outHeight,
-    round4(plan.cornerRadiusPx),
-  ]);
-  return (hash53(key, 1) + hash53(key, 2) + hash53(key, 3)).slice(0, 40);
-}
-
-function round4(n: number): number {
-  return Math.round(n * 1e4) / 1e4;
 }

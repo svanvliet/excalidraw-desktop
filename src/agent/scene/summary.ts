@@ -1,5 +1,5 @@
 /** Compact, model-friendly rows for scene summaries (one row per element). */
-import { extensionStateOf } from "../../extensions/registry";
+import { extensionStateOf } from "../../extensions/stack";
 import { type Draft, type El, isLinear, isText } from "./draft";
 
 export interface SummaryRow {

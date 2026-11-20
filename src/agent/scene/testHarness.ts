@@ -65,7 +65,9 @@ export class FakeApi implements SceneApi {
   appState: Record<string, unknown> = {};
   files: Record<string, unknown> = {};
   scrollToContent = vi.fn();
-  addFiles = vi.fn();
+  addFiles = vi.fn((files: { id: string }[]) => {
+    for (const f of files) this.files[f.id] = f;
+  });
 
   constructor(elements: El[] = []) {
     this.elements = elements;

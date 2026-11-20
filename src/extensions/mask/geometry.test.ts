@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  basePlan,
   MAX_OUTPUT_PX,
-  maskFileId,
-  normalizeMaskParams,
-  planMask,
+  outputFileId,
   restoreBounds,
   visibleSourceRect,
-} from "./geometry";
+  type CropLike,
+  type Rect,
+} from "../pipeline";
+import { maskStep, normalizeMaskParams, type MaskParams } from "./geometry";
+
+const planMask = (o: {
+  params: MaskParams;
+  element: Rect;
+  crop: CropLike | null;
+  naturalWidth: number;
+  naturalHeight: number;
+  isVector?: boolean;
+}) => maskStep(basePlan(o), o.params);
 
 const box = { x: 10, y: 20, width: 200, height: 100 };
 
@@ -61,7 +72,7 @@ describe("planMask circle", () => {
     expect(plan.sourceRect).toEqual({ x: 100, y: 0, width: 200, height: 200 });
     expect(plan.outWidth).toBe(200);
     expect(plan.outHeight).toBe(200);
-    expect(plan.cornerRadiusPx).toBe(100);
+    expect(plan.outline).toEqual({ kind: "ellipse" });
   });
 
   it("selects within the crop region", () => {
@@ -114,7 +125,7 @@ describe("planMask roundedRect", () => {
     expect(plan.element).toEqual(box);
     expect(plan.sourceRect).toEqual({ x: 0, y: 0, width: 400, height: 200 });
     expect([plan.outWidth, plan.outHeight]).toEqual([400, 200]);
-    expect(plan.cornerRadiusPx).toBe(40);
+    expect(plan.outline).toEqual({ kind: "roundedRect", radiusPx: 40 });
   });
 
   it("caps the longest side", () => {
@@ -126,7 +137,7 @@ describe("planMask roundedRect", () => {
       naturalHeight: 2000,
     });
     expect([plan.outWidth, plan.outHeight]).toEqual([1024, 512]);
-    expect(plan.cornerRadiusPx).toBe(256);
+    expect(plan.outline).toEqual({ kind: "roundedRect", radiusPx: 256 });
   });
 
   it("rejects zero-size elements", () => {
@@ -162,7 +173,7 @@ describe("restoreBounds", () => {
   });
 });
 
-describe("maskFileId", () => {
+describe("outputFileId", () => {
   const plan = (radius: number) =>
     planMask({
       params: { shape: "roundedRect", radius },
@@ -171,17 +182,28 @@ describe("maskFileId", () => {
       naturalWidth: 400,
       naturalHeight: 200,
     });
+  const chain = (radius: number, v = 1) => [{ ext: "mask", v, params: { shape: "roundedRect", radius } }];
 
   it("is deterministic and Excalidraw-id shaped", () => {
-    const a = maskFileId("abc", plan(10), 1);
+    const a = outputFileId("abc", plan(10), chain(10));
     expect(a).toMatch(/^[0-9a-f]{40}$/);
-    expect(maskFileId("abc", plan(10), 1)).toBe(a);
+    expect(outputFileId("abc", plan(10), chain(10))).toBe(a);
   });
 
-  it("changes with source, params and version", () => {
-    const a = maskFileId("abc", plan(10), 1);
-    expect(maskFileId("abd", plan(10), 1)).not.toBe(a);
-    expect(maskFileId("abc", plan(11), 1)).not.toBe(a);
-    expect(maskFileId("abc", plan(10), 2)).not.toBe(a);
+  it("changes with source, geometry, chain params and version", () => {
+    const a = outputFileId("abc", plan(10), chain(10));
+    expect(outputFileId("abd", plan(10), chain(10))).not.toBe(a);
+    expect(outputFileId("abc", plan(11), chain(10))).not.toBe(a);
+    expect(outputFileId("abc", plan(10), chain(11))).not.toBe(a);
+    expect(outputFileId("abc", plan(10), chain(10, 2))).not.toBe(a);
+    const border = { ext: "border", v: 1, params: { width: 4, color: "#000000", opacity: 100 } };
+    expect(outputFileId("abc", plan(10), [...chain(10), border])).not.toBe(a);
+  });
+
+  it("ignores params key order", () => {
+    const p = plan(10);
+    expect(outputFileId("abc", p, [{ ext: "x", v: 1, params: { a: 1, b: 2 } }])).toBe(
+      outputFileId("abc", p, [{ ext: "x", v: 1, params: { b: 2, a: 1 } }]),
+    );
   });
 });

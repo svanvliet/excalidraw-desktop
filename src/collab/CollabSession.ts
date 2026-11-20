@@ -25,7 +25,7 @@ import type {
   SocketId,
 } from "@excalidraw/excalidraw/types";
 
-import { sceneFileIds } from "../extensions/registry";
+import { sceneFileIds } from "../extensions/stack";
 import { log } from "../lib/logger";
 import { decrypt, encrypt, importKey } from "./crypto";
 import type { Payload, RelayErrorCode, Role, RolesMap } from "./protocol";

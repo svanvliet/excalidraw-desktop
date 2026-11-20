@@ -8,6 +8,8 @@ import type { ToolContent } from "../types";
 import { setExtensionsForTests } from "../../extensions/registry";
 import { stubExtension } from "../../extensions/testStub";
 
+vi.mock("../../extensions/raster", () => import("../../extensions/testRaster"));
+
 const TAB = "tab-1";
 let api: FakeApi;
 
@@ -68,8 +70,8 @@ describe("extension agent tools", () => {
     });
     expect(res.applied).toEqual(["i1"]);
     expect(res.skipped).toEqual([{ id: "r", reason: "Stub does not apply to a rectangle" }]);
-    expect(fileIdOf("i1")).toBe("file-i1-red");
-    expect(api.addFiles).toHaveBeenCalledWith([expect.objectContaining({ id: "file-i1-red" })]);
+    expect(fileIdOf("i1")).toMatch(/^[0-9a-f]{40}$/);
+    expect(api.addFiles).toHaveBeenCalledWith([expect.objectContaining({ id: fileIdOf("i1") })]);
     expect(api.undoStack).toHaveLength(1);
 
     const summary = await call("get_scene_summary", {});
@@ -117,7 +119,8 @@ describe("extension agent tools", () => {
     await call("apply_extension", { ids: ["i2"], extension: "stub", preset: "blue" });
     endTurn(TAB, "t1");
     expect(api.undoStack).toHaveLength(1);
-    expect(fileIdOf("i2")).toBe("file-i2-blue");
+    expect(fileIdOf("i2")).not.toBe("file-i2");
+    expect(api.files[fileIdOf("i2")]).toBeDefined();
 
     expect(revertTurn(TAB, "t1")).toEqual({ ok: true, reverted: 2 });
     expect(fileIdOf("i1")).toBe("file-i1");

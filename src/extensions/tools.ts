@@ -39,13 +39,13 @@ export function extensionToolDefs(list: readonly AnyDesktopExtension[]): CanvasT
   const catalog = list.length
     ? ` Extensions: ${list.map(catalogLine).join(" ")}`
     : " No extensions are installed.";
-  const common =
-    "Built-in app extensions store their settings in the element's customData and write standard Excalidraw output (ordinary element fields and image files), so the file still renders in stock Excalidraw. get_scene_summary rows show applied extensions as ext and edited-elsewhere ones as extStale.";
+  const order = list.length ? list.map((e) => e.id).join(" → ") : "none";
+  const common = `Built-in app extensions store their settings in the element's customData and write standard Excalidraw output (ordinary element fields and image files), so the file still renders in stock Excalidraw. Extensions on one element stack in a fixed order (${order}); every change re-renders the original through the whole stack, so e.g. a border follows the current mask shape. get_scene_summary rows show applied extensions as ext and edited-elsewhere ones as extStale.`;
   return [
     {
       name: "apply_extension",
       readOnly: false,
-      description: `Apply (or re-apply with new params) an extension to elements, as one undoable change. ${common} Re-applying derives from the original, never from earlier output. Elements it doesn't apply to are returned in skipped.${catalog} Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.`,
+      description: `Apply (or re-apply with new params) an extension to elements, as one undoable change. ${common} Applying one extension keeps the others; re-applying replaces its params. Elements it doesn't apply to are returned in skipped.${catalog} Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.`,
       inputSchema: {
         type: "object",
         properties: {
@@ -63,7 +63,7 @@ export function extensionToolDefs(list: readonly AnyDesktopExtension[]): CanvasT
     {
       name: "remove_extension",
       readOnly: false,
-      description: `Remove an extension from elements, restoring the original from the stored settings, as one undoable change. ${common} Elements where it isn't applied (or is stale) are returned in skipped and left alone. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.`,
+      description: `Remove one extension from elements, keeping the others (removing the last restores the original image), as one undoable change. ${common} Elements where it isn't applied (or is stale) are returned in skipped and left alone. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.`,
       inputSchema: {
         type: "object",
         properties: {

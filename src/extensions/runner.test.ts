@@ -1,11 +1,14 @@
 import { FakeApi } from "../agent/scene/testHarness";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import { extensionStateOf, sceneFileIds, setExtensionsForTests } from "./registry";
+import { setExtensionsForTests } from "./registry";
+import { extensionStateOf, sceneFileIds } from "./stack";
 import { resolveParams, runExtension } from "./runner";
 import { validateSchema } from "./schema";
 import { stubExtension } from "./testStub";
 import { EXT_KEY } from "./types";
+
+vi.mock("./raster", () => import("./testRaster"));
 
 function image(id: string, fileId = `file-${id}`): ExcalidrawElement {
   return {
@@ -48,11 +51,12 @@ describe("runExtension", () => {
     expect(res.skipped).toEqual([{ id: "r", reason: "Stub does not apply to a rectangle" }]);
     expect(api.undoStack).toHaveLength(1);
     expect(api.calls.map((c) => c.captureUpdate)).toEqual(["IMMEDIATELY"]);
+    const out = fileIdOf("i1");
+    expect(out).toMatch(/^[0-9a-f]{40}$/);
     expect(api.addFiles).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "file-i1-red" }),
-      expect.objectContaining({ id: "file-i2-red" }),
+      expect.objectContaining({ id: out }),
+      expect.objectContaining({ id: fileIdOf("i2") }),
     ]);
-    expect(fileIdOf("i1")).toBe("file-i1-red");
     expect(api.byId("i1").version).toBeGreaterThan(1);
     expect(extensionStateOf(api.byId("i1"))).toEqual({
       applied: { stub: { color: "red" } },
@@ -65,8 +69,14 @@ describe("runExtension", () => {
 
   it("re-applies from the stored source and removes back to it", async () => {
     await runExtension(api, ["i1"], "stub", { kind: "apply", params: { color: "red" } });
+    const red = fileIdOf("i1");
     await runExtension(api, ["i1"], "stub", { kind: "apply", params: { color: "blue" } });
-    expect(fileIdOf("i1")).toBe("file-i1-blue");
+    expect(fileIdOf("i1")).not.toBe(red);
+    expect(api.byId("i1").customData?.[EXT_KEY]).toMatchObject({
+      v: 2,
+      chain: [{ ext: "stub", v: 1, params: { color: "blue" } }],
+      source: { fileId: "file-i1" },
+    });
     const res = await runExtension(api, ["i1"], "stub", { kind: "remove" });
     expect(res.applied).toEqual(["i1"]);
     expect(fileIdOf("i1")).toBe("file-i1");
@@ -87,7 +97,8 @@ describe("runExtension", () => {
 
   it("keeps source files referenced and skips when the original is gone", async () => {
     await runExtension(api, ["i1"], "stub", { kind: "apply", params: { color: "red" } });
-    expect(sceneFileIds(api.elements as never)).toEqual(["file-i1-red", "file-i2", "file-i1"]);
+    const red = fileIdOf("i1");
+    expect(sceneFileIds(api.elements as never)).toEqual([red, "file-i2", "file-i1"]);
 
     // e.g. reopened from a stock-Excalidraw save that dropped the unreferenced original.
     delete api.files["file-i1"];
@@ -96,16 +107,16 @@ describe("runExtension", () => {
       applied: [],
       skipped: [{ id: "i1", reason: "the original image for Stub is missing" }],
     });
-    expect(fileIdOf("i1")).toBe("file-i1-red");
+    expect(fileIdOf("i1")).toBe(red);
   });
 
   it("skips elements edited while the extension ran", async () => {
     const slow = {
       ...stubExtension,
-      async apply(...a: Parameters<typeof stubExtension.apply>) {
-        const r = await stubExtension.apply.apply(slow, a);
+      // Runs after the async source load, i.e. while the extension is in flight.
+      plan(plan: Parameters<NonNullable<typeof stubExtension.plan>>[0]) {
         api.externalEdit("i1", { x: 50 });
-        return r;
+        return plan;
       },
     };
     setExtensionsForTests([slow]);
