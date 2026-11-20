@@ -143,19 +143,34 @@ IMMEDIATELY })`. Several selected elements become **one undo step**.
 
 ## 6. UI surface
 
-`src/components/ExtensionsBar.tsx` is a small toolbar anchored above the current selection (or below
-it near the top edge). For each extension that applies to the selection it shows
-`[icon] Title  Preset…  [swatches]  Remove title`, so a masked, bordered image shows both groups. The
-active preset (and swatch) is highlighted when every target carries it. Presets and swatches only
-set their own params: clicking **Thick** keeps the current border colour, and clicking a colour keeps
-the current width (or uses the default preset when no border is applied).
-The bar hides in view mode, for collab viewers, and while drawing, typing, dragging, resizing or
-rotating. It uses `mousedown` `preventDefault`, so Excalidraw keeps focus and Ctrl/Cmd+Z still
-works.
+Image controls live **inside Excalidraw's own properties panel** (the left "selected shape actions"
+island), so an image gets the same Stroke treatment as native shapes.
+`src/components/imageProps/ImagePropertiesPanel.tsx` renders a React portal into the panel when the
+selection contains image elements:
 
-Why this surface: `@excalidraw/excalidraw` 0.18.1 has no prop for adding context-menu items, doesn't
-export its command palette, and `renderTopRightUI` isn't selection-aware. A selection-anchored bar is
-discoverable, needs no fork, and only appears when it's relevant.
+- **Stroke** — a colour picker that mirrors the native one
+  (`src/components/imageProps/StrokeColorPicker.tsx`: the five top picks, the transparent "none"
+  swatch, and a popover with the open-color palette, shades 1–5, the same hotkeys and a hex input);
+  then **Stroke width** (thin / bold / extra bold), **Stroke style** (solid / dashed / dotted) and
+  **Sloppiness** (architect / artist / cartoonist) with Excalidraw's icons. Width, style and
+  sloppiness only show once a border is applied; picking a colour applies one, transparent removes
+  it. Each choice patches only its own param (`patchParams` in `groups.ts`), keeping the others.
+- **Mask** — No mask / Circle / Rounded rectangle.
+
+With a mixed selection the legends read "Image stroke" / "Image mask" because they only affect the
+images. The sections are hidden in view and zen mode, for collab viewers, and while drawing, typing,
+dragging, resizing or rotating. Every click is one `runExtension` call (one undo step); buttons use
+`mousedown` `preventDefault`, so Excalidraw keeps focus and Ctrl/Cmd+Z still works.
+
+**DOM dependency.** 0.18.1 has no API for adding panel sections and doesn't export its colour or
+stroke pickers, so the host attaches to `PANEL_SELECTOR` — `.App-menu__left .panelColumn` on
+desktop and `.App-mobile-menu .panelColumn` for the mobile properties sheet — right after the
+panel's first child (the stroke slot that is empty for images), and reuses Excalidraw's own class
+names (`buttonList`, `color-picker__*`, `Island`) so it matches both themes. A `MutationObserver`
+re-attaches it when Excalidraw remounts the panel. When no panel is in the DOM (the mobile layout
+with its sheet closed, or a future upstream change), the same sections render in a small docked
+`Island` (`data-testid=image-props-dock`) at the top left instead. `e2e/extensions.spec.ts` pins
+this contract: re-run it on every `@excalidraw/excalidraw` bump.
 
 ## 7. MCP tools (agent)
 
@@ -195,7 +210,7 @@ entirely in the webview, make no network calls, and need no Tauri capability or 
 - **Applies to:** image elements with a loaded file.
 - **Params:** `{ shape: "circle" | "roundedRect", radius?: 0–50 }`. `radius` is a percentage of the
   shorter side (default 15).
-- **Presets / UI:** **Circle**, **Rounded rectangle** (radius 15), and **Remove mask**.
+- **Presets / UI:** **Circle**, **Rounded rectangle** (radius 15), and **No mask** (removes it).
 - **Output:** a PNG (longest side ≤ 1024 px; SVG sources are rasterised) with the shape baked into
   its alpha channel, respecting the image's current crop. The element's box is fitted to the masked
   shape and `crop` is cleared.
@@ -213,11 +228,16 @@ Excalidraw 0.18.1 never renders `strokeColor` / `strokeWidth` on image elements
 border is baked into the output PNG.
 
 - **Applies to:** image elements with a loaded file.
-- **Params:** `{ width?: 0.5–100, color?: "#rgb" | "#rrggbb", opacity?: 0–100 }`, defaults
-  `4`, `#868e96` (a mid gray that reads on both light and dark canvases) and `100`. `width` is in
-  scene units at the element's size when applied.
-- **Presets / UI:** **Thin** (2), **Medium** (4), **Thick** (8), colour swatches (Gray, Black, White,
-  Blue, Red), and **Remove border**.
+- **Params (v2):** `{ width?: 0.5–100, color?: "#rgb" | "#rrggbb", opacity?: 0–100, style?:
+"solid" | "dashed" | "dotted", roughness?: 0 | 1 | 2 }`, defaults `2`, `#868e96` (a mid gray that
+  reads on both light and dark canvases), `100`, `"solid"` and `0`. `width` is in scene units at
+  the element's size when applied. v1 intents (no style/roughness) migrate to solid architect.
+- **Presets / UI:** **Thin** (1), **Bold** (2), **Extra bold** (4) — Excalidraw's own stroke widths
+  — plus the stroke colour picker, style and sloppiness (§6). Transparent removes the border.
+- **Rendering:** solid architect strokes are a plain canvas stroke. Dashed, dotted or sloppy borders
+  are drawn with **roughjs** (pinned to the version Excalidraw uses) along the same outline, with
+  Excalidraw's dash arrays and roughness tuning, seeded from `element.seed` so re-renders are
+  identical and output file ids stay deterministic.
 - **Stage:** decoration. Strokes the current outline (rectangle, circle or rounded rectangle)
   **inside** the edge, antialiased, so element bounds never change. The stroke is capped at half the
   shorter side.

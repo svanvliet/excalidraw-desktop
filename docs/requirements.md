@@ -112,10 +112,11 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 ### 4.10 Desktop extensions
 
 - **FR-35** Features beyond Excalidraw's schema MUST be built as built-in extensions (`docs/extensions.md`) that store intent in `element.customData` and always write standard elements and files, so documents render identically in stock Excalidraw, exports and collab. No third-party or document-supplied code is ever loaded.
-- **FR-36** Each extension is defined once and exposed both in the UI (a selection-aware bar) and to the agent (`apply_extension` / `remove_extension`). Applying to several elements is one undo step; collab peers receive it as a normal edit.
+- **FR-36** Each extension is defined once and exposed both in the UI (sections in Excalidraw's properties panel for the selection) and to the agent (`apply_extension` / `remove_extension`). Applying to several elements is one undo step; collab peers receive it as a normal edit.
 - **FR-37** Remove and re-apply MUST derive from the stored source. Image extensions stack in a canonical order (shapes before decorations) on one recorded original; changing any one re-renders the whole chain, and removing the last restores the original. Older single-extension documents MUST keep working. If the element was changed elsewhere so its output no longer matches the intent, it is treated as not applied and left alone. Source files an intent depends on MUST survive save, reload and collab sync.
-- **FR-38** First extension: **Mask** for images — Circle, Rounded rectangle, Remove mask.
-- **FR-39** **Border** for images — Thin / Medium / Thick, colour swatches, Remove border. Drawn inside the current outline (the mask shape when masked), so bounds never change; works with or without a mask.
+- **FR-38** First extension: **Mask** for images — No mask, Circle, Rounded rectangle.
+- **FR-39** **Border** for images, with the same treatment as native shape strokes: a colour picker matching the native one (top picks, palette, shades, hex; transparent removes the border), stroke width (thin / bold / extra bold), stroke style (solid / dashed / dotted) and sloppiness (architect / artist / cartoonist). Drawn inside the current outline (the mask shape when masked), so bounds never change; dashes and sloppiness follow that outline and re-render identically. Works with or without a mask; older borders keep loading.
+- **FR-40** Image controls MUST appear in Excalidraw's own properties panel when images are selected (including the mobile properties sheet), and fall back to a compact docked panel when that panel isn't available — never a long floating strip. Each change is one undo step and keyboard focus stays on the canvas.
 
 ## 5. Non-Functional Requirements
 
