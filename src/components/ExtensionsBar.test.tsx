@@ -1,11 +1,15 @@
 import { FakeApi } from "../agent/scene/testHarness";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { setExtensionsForTests } from "../extensions/registry";
 import { stubExtension } from "../extensions/testStub";
+import { borderExtension } from "../extensions/border";
+import { EXT_KEY } from "../extensions/types";
 import { extensionGroups } from "../extensions/groups";
 import { ExtensionsBar, type ExtensionsBarApi } from "./ExtensionsBar";
+
+vi.mock("../extensions/raster", () => import("../extensions/testRaster"));
 
 function image(id: string, type = "image"): ExcalidrawElement {
   return {
@@ -84,7 +88,8 @@ describe("ExtensionsBar", () => {
       expect(screen.getByRole("button", { name: "Red" })).toHaveAttribute("aria-pressed", "true"),
     );
     expect(api.undoStack).toHaveLength(1);
-    expect(api.addFiles).toHaveBeenCalledWith([expect.objectContaining({ id: "file-i1-red" })]);
+    const out = (api.byId("i1") as unknown as { fileId: string }).fileId;
+    expect(api.addFiles).toHaveBeenCalledWith([expect.objectContaining({ id: out })]);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove stub" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Remove stub" })).toBeNull());
@@ -93,9 +98,11 @@ describe("ExtensionsBar", () => {
 
   it("shows why nothing changed", async () => {
     renderBar();
-    api.select("i2"); // its file is not loaded, so the stub throws
+    api.select("i2"); // its file is not loaded
     fireEvent.click(screen.getByRole("button", { name: "Blue" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("missing file file-i2");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "the image file is not available in this scene",
+    );
   });
 
   it("groups presets with mixed state", () => {
@@ -104,10 +111,9 @@ describe("ExtensionsBar", () => {
       fileId: "file-a-red",
       customData: {
         excalidrawDesktop: {
-          ext: "stub",
-          v: 1,
-          params: { color: "red" },
-          source: { fileId: "file-a" },
+          v: 2,
+          chain: [{ ext: "stub", v: 1, params: { color: "red" } }],
+          source: { fileId: "file-a", x: 0, y: 0, width: 1, height: 1, crop: null, appliedWidth: 1, appliedHeight: 1 },
           outputFileId: "file-a-red",
         },
       },
@@ -116,5 +122,28 @@ describe("ExtensionsBar", () => {
     expect(g).toMatchObject({ id: "stub", ids: ["a", "b"], removable: true });
     expect(g!.presets.map((p) => p.active)).toEqual([false, false]);
     expect(extensionGroups([applied])[0]!.presets.map((p) => p.active)).toEqual([true, false]);
+  });
+
+  it("colour swatches apply with the default width, then keep the chosen preset's colour", async () => {
+    setExtensionsForTests([borderExtension]);
+    renderBar();
+    api.select("i1");
+    const params = () =>
+      (api.byId("i1")!.customData?.[EXT_KEY] as { chain: { params: unknown }[] }).chain[0]!.params;
+
+    fireEvent.click(screen.getByRole("button", { name: "Border red" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Border red" })).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(params()).toEqual({ width: 4, color: "#e03131", opacity: 100 });
+    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Thick" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Thick" })).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(params()).toEqual({ width: 8, color: "#e03131", opacity: 100 });
+    expect(screen.getByRole("button", { name: "Border gray" })).toHaveAttribute("aria-pressed", "false");
+    expect(api.undoStack).toHaveLength(2);
   });
 });

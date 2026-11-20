@@ -137,6 +137,43 @@ button {
   color: var(--accent);
 }
 
+.extensions-bar__swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-left: var(--space-1);
+}
+
+/* --swatch is the option's colour (set inline by ExtensionsBar). */
+.extensions-bar__swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--swatch);
+  cursor: pointer;
+}
+
+.extensions-bar__swatch:hover:not(:disabled) {
+  border-color: var(--fg-muted);
+}
+
+.extensions-bar__swatch[data-pressed] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.extensions-bar__swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.extensions-bar__swatch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .extensions-bar__error {
   padding: 0 var(--space-2);
   color: var(--danger);

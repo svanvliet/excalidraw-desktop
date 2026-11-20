@@ -201,3 +201,9 @@ export const MaskIcon = (props: IconProps) => (
     <circle cx="12" cy="12" r="5" />
   </Icon>
 );
+
+export const BorderIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="4" y="4" width="16" height="16" rx="3" strokeWidth={3.5} />
+  </Icon>
+);

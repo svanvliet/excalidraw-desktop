@@ -4,13 +4,24 @@
  * over the canvas just above the selection and offers each applicable extension's presets plus
  * Remove. Clicking runs the same `runExtension` the agent tools use: one undo step.
  */
-import { useCallback, useEffect, useState, type ComponentType } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+} from "react";
 import { getCommonBounds } from "@excalidraw/excalidraw";
 import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { extensionGroups, type ExtensionGroup } from "../extensions/groups";
+import {
+  choiceParams,
+  extensionGroups,
+  presetParams,
+  type ExtensionGroup,
+} from "../extensions/groups";
 import { runExtension, type ExtensionAction } from "../extensions/runner";
 import { log } from "../lib/logger";
-import { MaskIcon } from "./icons";
+import { BorderIcon, MaskIcon } from "./icons";
 
 export type ExtensionsBarApi = Pick<
   ExcalidrawImperativeAPI,
@@ -24,7 +35,10 @@ export type ExtensionsBarApi = Pick<
   | "onChange"
 >;
 
-const ICONS: Record<string, ComponentType<{ size?: number }>> = { mask: MaskIcon };
+const ICONS: Record<string, ComponentType<{ size?: number }>> = {
+  mask: MaskIcon,
+  border: BorderIcon,
+};
 
 /** Hidden while the user is mid-gesture or typing, and in view mode. */
 function isBusy(s: AppState): boolean {
@@ -139,11 +153,36 @@ export function ExtensionsBar({ api }: { api: ExtensionsBarApi }) {
                 data-pressed={p.active || undefined}
                 aria-pressed={p.active}
                 disabled={busy}
-                onClick={() => void run(g, { kind: "apply", params: p.params })}
+                onClick={() => void run(g, { kind: "apply", params: presetParams(g, p.id) })}
               >
                 {p.label}
               </button>
             ))}
+            {g.choices && (
+              <span
+                className="extensions-bar__swatches"
+                role="group"
+                aria-label={`${g.title} ${g.choices.label.toLowerCase()}`}
+              >
+                {g.choices.options.map((o) => (
+                  <button
+                    key={String(o.value)}
+                    type="button"
+                    className="extensions-bar__swatch"
+                    // Custom property only: the swatch colour is data, styling stays in index.css.
+                    style={{ "--swatch": o.swatch ?? String(o.value) } as CSSProperties}
+                    aria-label={`${g.title} ${o.label.toLowerCase()}`}
+                    title={o.label}
+                    data-pressed={o.active || undefined}
+                    aria-pressed={o.active}
+                    disabled={busy}
+                    onClick={() =>
+                      void run(g, { kind: "apply", params: choiceParams(g, o.value) })
+                    }
+                  />
+                ))}
+              </span>
+            )}
             {g.removable && (
               <button
                 type="button"
