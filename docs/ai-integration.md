@@ -9,7 +9,7 @@
 | #     | Decision                                                                                                                                                                                                                                                                                     |
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D-AI1 | v1 supports **Copilot CLI, Claude Code, and Codex** behind one shared engine layer.                                                                                                                                                                                                          |
-| D-AI2 | Primary surface: **docked right-side chat panel, one conversation per tab**.                                                                                                                                                                                                                 |
+| D-AI2 | Primary surface: **docked right-side chat panel**. Each drawing keeps a list of conversations; one is active per tab.                                                                                                                                                                        |
 | D-AI3 | Agent edits **apply live**; each turn is one undoable step, plus a **Revert turn** button.                                                                                                                                                                                                   |
 | D-AI4 | Canvas-only by default; optional per-conversation **Attach folder** grants read-only access. Engine built-in shell and file-write tools are always disabled.                                                                                                                                 |
 | D-AI5 | Per-engine toggle **"Use my agent's MCPs, skills & plugins"** (default **on**). Tools from those sources that aren't known read-only need in-app approval, with "allow for this conversation".                                                                                               |
@@ -114,8 +114,9 @@ flowchart LR
   (`$SHELL -lic`) on macOS or `where` + PATHEXT on Windows. Users can override the path. Handle `.cmd`
   shims via `cmd /c` or by resolving the real target. Use `CREATE_NO_WINDOW`; a Windows Job Object
   (kill-on-close) and a POSIX process group plus `killpg` for tree teardown. Send `session/cancel`
-  before killing. Each conversation runs in a scratch cwd under `<appData>/agent/<tabId>`, or in the
-  attached folder.
+  before killing. Each conversation runs in a stable scratch cwd under
+  `<appData>/agent/conversations/<conversationId>` (so a resumed session finds its cwd again), or in
+  the attached folder.
 - **Sandboxing per engine** (always on): Copilot gets `--excluded-tools bash,powershell,edit,create,apply_patch`
   and `--deny-tool shell --deny-tool write`, never `--allow-all*`. Claude gets `--disallowedTools
 Bash,Edit,Write,NotebookEdit,MultiEdit`, a built-in allowlist (`--tools Read,Glob,Grep,WebSearch,
@@ -179,13 +180,23 @@ then edit), and the style defaults.
   - Default engine.
   - A terms note.
 - **Agent panel**, toggled from the toolbar button, View → AI Panel, or ⌘/Ctrl+Shift+A:
-  - Docked right, resizable, one panel per tab. The header has an engine and model picker plus New
-    conversation.
+  - Docked right, resizable, one panel per tab. The header title is a **conversation menu**: New
+    conversation, plus this drawing's earlier conversations (title, engine, last used) to reopen or
+    delete.
+  - A context bar under the header shows the active conversation's **Engine**, **Model** and
+    **Folder**. The engine and folder can be picked only before the first prompt, then they're fixed
+    (start a new conversation to change them). The model picker lists what the engine reports
+    (Copilot `configOptions`/`models`, Codex `model/list`, Claude `init.models`, cached per engine so
+    it's available before a session starts). It stays switchable mid-conversation on Copilot
+    (`session/set_config_option`) and Codex (per-turn `model`), and is fixed after the first prompt on
+    Claude. The Settings model is the default for new conversations. Folder shows "None — canvas
+    only" or the read-only folder name (full path on hover) with Attach / Change / Detach before the
+    first prompt and Reveal afterwards. The scratch cwd is never shown: it holds nothing the user
+    put there.
   - The transcript renders Markdown with sanitizing, collapsible "thinking", and tool chips such as
     "Added 12 elements" (click to select them on the canvas).
   - Inline approval cards, a Stop button, and **Revert turn** on each completed turn.
-  - Context chips: auto "Selection (n)", "Attached folder" (picked via a dialog, read-only, removable),
-    and "Snapshot" to send a render.
+  - Context chips: auto "Selection (n)" and "Snapshot" to send a render.
   - Quick actions on empty state: _Diagram from description_, _Explain selection_, _Tidy layout_,
     _Convert to Mermaid_, _Diagram this folder_ (needs Attach).
   - Empty and error states for each failure: not installed (with link to install docs), not logged in,
@@ -196,9 +207,17 @@ then edit), and the style defaults.
   a "conflicts with later edits" confirmation appears).
 - **Excalidraw's own TTD dialog:** render `<TTDDialog onTextSubmit>` and route it through the default
   engine with a "return Mermaid only" prompt. The built-in "Text to diagram…" then works too.
-- **Persistence:** conversations stay in memory per tab. The engine session id is stored in
-  `session.json` so a restarted app can resume via `session/load` / `--resume` / thread resume. We never
-  write anything into the `.excalidraw` file.
+- **Persistence (hybrid):** the engine keeps the real context; the app keeps a small index per drawing
+  in `agent-conversations.json` (`src/agent/conversationStore.ts`), keyed by file path (or `tab:<id>`
+  for untitled drawings, migrated on first save and dropped when an untitled tab closes). Each record
+  holds the title, engine, engine session id, model, folder, usage and a trimmed transcript (last 300
+  items, long tool output truncated); at most 50 conversations per drawing. Reopening a conversation
+  shows its transcript and resumes the engine session on the next prompt (`session/load` /
+  `--resume` / thread resume). Nothing is read or written while AI is off, and nothing goes into the
+  `.excalidraw` file.
+- **Engine notices:** Copilot prints CLI notices (e.g. "Info: Disabled tools: …") as
+  `agent_message_chunk`s without a `messageId`; the adapter logs and drops them instead of showing
+  them as assistant text. Excluded tool names are limited to ones the CLI knows.
 - **Collab:** a host's agent edits sync like local edits, and the panel shows "Edits are shared with N
   participants". Agent tools refuse to run in a viewer tab. Browser guests have no agent.
 
