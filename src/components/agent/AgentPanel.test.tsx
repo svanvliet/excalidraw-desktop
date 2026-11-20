@@ -148,6 +148,39 @@ describe("AgentPanel", () => {
     expect(screen.getByTestId("agent-footer")).toHaveTextContent("1 premium request · 120 tokens");
   });
 
+  it("shows the streaming cursor only on the newest reply in a turn", async () => {
+    await openPanel();
+    render(<AgentPanel tabId="t1" />);
+    await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
+    const input = screen.getByTestId<HTMLTextAreaElement>("agent-input");
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+
+    const tool = {
+      type: "toolCall" as const,
+      turnId: "T1",
+      callId: "c1",
+      name: "add_elements",
+      title: null,
+      source: "canvas" as const,
+      input: {},
+      output: "ok",
+      status: "completed" as const,
+    };
+    emit({ type: "turnStarted", turnId: "T1" });
+    emit({ type: "textDelta", turnId: "T1", text: "first" });
+    emit(tool);
+    emit({ type: "textDelta", turnId: "T1", text: "second" });
+    const replies = screen.getAllByTestId("agent-msg-assistant");
+    expect(replies).toHaveLength(2);
+    expect(replies[0].querySelector(".agent-cursor")).toBeNull();
+    expect(replies[1].querySelector(".agent-cursor")).not.toBeNull();
+
+    emit({ ...tool, callId: "c2", status: "running", output: null });
+    expect(document.querySelectorAll(".agent-cursor")).toHaveLength(0);
+  });
+
   it("permission card buttons respond and then show the decision", async () => {
     await openPanel();
     render(<AgentPanel tabId="t1" />);

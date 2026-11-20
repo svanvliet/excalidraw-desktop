@@ -229,7 +229,8 @@ export function AgentPanel({
               streaming={
                 running &&
                 entry.item.kind === "assistant" &&
-                entry.item.turnId === conv.currentTurnId
+                entry.item.turnId === conv.currentTurnId &&
+                entry.item.id === conv.items[conv.items.length - 1]?.id
               }
               onPermission={(requestId, decision) =>
                 tabId && void store().respondPermission(tabId, requestId, decision)
