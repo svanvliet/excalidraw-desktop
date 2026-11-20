@@ -33,7 +33,11 @@ Run every scenario for each cell. Record build version, engine version, and pass
 11. **Stop / crash:** Stop mid-turn cancels within 2 s. Kill the engine process; the panel shows Retry, and no orphaned processes remain after closing the tab or quitting.
 12. **Collab:** host a session with a browser guest. Agent edits appear for the guest. In a viewer tab, the agent is disabled.
 13. **Resume:** quit and relaunch. The conversation's engine session resumes (or a clear "started a new session" notice appears).
-14. **Text-to-diagram dialog:** Excalidraw's "Text to diagram…" generates through the default engine.
+14. **Images:**
+    - Put `alice.jpg` and `logo.svg` in the session folder (Folder → Reveal) or an attached folder. Ask "draw a 3-person org chart with alice.jpg as the photo on each card". The images appear inside the cards, the turn is a single ⌘/Ctrl+Z, and the photos survive save and reopen.
+    - Ask it to use an image from `~/Pictures`, or from an `https://` URL. It refuses, or the tool returns an error. Nothing is read outside the conversation's folders, and nothing is downloaded.
+    - An SVG containing `<script>` is rejected.
+15. **Text-to-diagram dialog:** Excalidraw's "Text to diagram…" generates through the default engine.
 
 ## Release gate
 

@@ -172,6 +172,7 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `delete_elements`    | Tombstones elements and cascades to bound text and arrows                                        |
 | `connect`            | Draws an arrow between existing shapes using manual bindings                                     |
 | `add_mermaid`        | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
+| `add_image`          | Places a png/jpeg/gif/webp/svg (≤10 MB) from a conversation-folder `path` or inline `data`       |
 | `arrange`            | align / distribute / grid / group / z-order / frame (put into or take out of a frame)            |
 | `set_viewport`       | Moves the viewport, without an undo step                                                         |
 | `find_elements`      | Searches by text or regex, type, color, group, frame and bbox                                    |
@@ -185,6 +186,21 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 
 A system prompt (appended) explains the coordinate system, the tool workflow (summary, then render,
 then edit), and the style defaults.
+
+**`add_image` and files.** `add_image` takes either `path` or `data` + `mimeType`, plus optional
+`x`/`y`, `width`/`height` (the aspect ratio is kept when only one is given; the default is the image's
+own size, capped at 400px), and `inside` (a card, shape or frame id to fit the image into, with
+`padding`; a frame also adopts it). It returns the new element id and `fileId`. A `path` never reaches
+the webview. The MCP server (`src-tauri/src/agent/mcp/images.rs`) resolves it against the
+conversation's file roots: the writable roots (the cwd and an attached folder) plus the session
+folder. Relative paths resolve against the cwd. The server rejects `~`, traversal, and symlinks that
+escape after canonicalization. It then reads at most 10 MB, sniffs the magic bytes, and forwards the
+call with base64 `data` instead. This also applies to `add_image` ops inside `apply_ops`. The webview
+(`src/agent/scene/images.ts`) re-checks the cap and the magic bytes against the declared type. It
+rejects SVG that has `<script>`, `<foreignObject>`, `on*` handlers, external `href`/`url()`, or
+`@import`. It then registers the file via `addFiles`. There are no URL downloads, no new Tauri
+command or capability, and no CSP change: `img-src` already allows `data:`. The system prompt tells
+agents that images are supported, for example photos on org-chart cards.
 
 ## UX
 
