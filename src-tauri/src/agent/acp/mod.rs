@@ -687,7 +687,7 @@ impl AcpAdapter {
         let detail = state
             .input
             .as_ref()
-            .map(|v| truncate(&compact_json(v), MAX_SUMMARY_CHARS));
+            .map(|v| truncate(&permission_detail(v), MAX_SUMMARY_CHARS));
         out.events.push(AgentEvent::PermissionRequest {
             turn_id: self.current_turn.clone().unwrap_or_default(),
             request_id: request_id.clone(),
@@ -1079,6 +1079,19 @@ fn is_async_shell(input: Option<&Value>) -> bool {
         i.get("mode").and_then(Value::as_str) == Some("async")
             || i.get("detach").and_then(Value::as_bool) == Some(true)
     })
+}
+
+/// Card body: a shell command as the user would read it, otherwise the raw input.
+fn permission_detail(input: &Value) -> String {
+    match input.get("command") {
+        Some(Value::String(c)) => c.clone(),
+        Some(Value::Array(parts)) if parts.iter().all(Value::is_string) => parts
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => compact_json(input),
+    }
 }
 
 fn compact_json(v: &Value) -> String {

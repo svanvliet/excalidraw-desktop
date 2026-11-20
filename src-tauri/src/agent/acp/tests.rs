@@ -779,6 +779,17 @@ fn shell_permission_line(id: u64, call: &str, command: &str) -> String {
 }
 
 #[test]
+fn shell_permission_detail_is_the_readable_command() {
+    let (mut a, _) = ready(AcpAdapter::copilot(), &cfg());
+    a.prompt("t1", "x");
+    let out = a.on_line(&shell_permission_line(80, "c1", "cd /tmp\nls -la"));
+    assert!(matches!(
+        &out.events[..],
+        [.., AgentEvent::PermissionRequest { detail: Some(d), .. }] if d == "cd /tmp\nls -la"
+    ));
+}
+
+#[test]
 fn shell_grant_for_conversation_covers_only_that_command() {
     let (mut a, _) = ready(AcpAdapter::copilot(), &cfg());
     a.prompt("t1", "x");

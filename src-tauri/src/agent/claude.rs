@@ -620,7 +620,8 @@ impl ClaudeAdapter {
             .or_else(|| str_field(&request, "title"))
             .unwrap_or(&tool_name)
             .to_string();
-        let detail = str_field(&request, "description")
+        let detail = str_field(&input, "command")
+            .or_else(|| str_field(&request, "description"))
             .map(str::to_string)
             .or_else(|| Some(truncate(&input.to_string(), DETAIL_PREVIEW_CHARS)));
         out.events.push(AgentEvent::PermissionRequest {
