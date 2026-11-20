@@ -22,6 +22,7 @@ const ipc = vi.hoisted(() => ({
   agentCancel: vi.fn(),
   agentPermissionRespond: vi.fn(),
   agentStop: vi.fn(),
+  agentSetModel: vi.fn(),
 }));
 vi.mock("../ipc/commands", () => ipc);
 
@@ -43,6 +44,7 @@ import {
   useAgentStore,
   type Conversation,
 } from "./agentStore";
+import { __setConversationStoreForTest, flushConversations } from "../agent/conversationStore";
 import { __resetSettingsForTests, useSettingsStore } from "./settingsStore";
 import { useTabsStore } from "./tabsStore";
 
@@ -65,6 +67,20 @@ const READY: EngineInfo[] = [
   },
 ];
 
+const conversationKv = {
+  data: new Map<string, unknown>(),
+  async get<T>(key: string) {
+    return conversationKv.data.get(key) as T | undefined;
+  },
+  async set(key: string, value: unknown) {
+    conversationKv.data.set(key, value);
+  },
+  async delete(key: string) {
+    return conversationKv.data.delete(key);
+  },
+  async save() {},
+};
+
 function emit(tabId: string, sessionId: string, event: AgentEvent) {
   events.handler?.({ tabId, sessionId, event });
 }
@@ -84,6 +100,9 @@ beforeEach(() => {
   ipc.agentCancel.mockResolvedValue(undefined);
   ipc.agentPermissionRespond.mockResolvedValue(undefined);
   ipc.agentStop.mockResolvedValue(undefined);
+  ipc.agentSetModel.mockResolvedValue(undefined);
+  conversationKv.data.clear();
+  __setConversationStoreForTest(conversationKv);
 });
 
 async function enableAi(acceptDisclosure = true) {
@@ -260,6 +279,7 @@ describe("agentStore session flow", () => {
       model: "m",
       attachedFolder: null,
       resumeId: null,
+      conversationId: useAgentStore.getState().conversations.t1.id,
     });
     expect(ipc.agentPrompt).toHaveBeenCalledWith("s1", "hello");
 
@@ -374,9 +394,52 @@ describe("agentStore session flow", () => {
     expect(ipc.agentPrompt).not.toHaveBeenCalled();
   });
 
-  it("attaching a folder restarts the session with the folder and resume id", async () => {
+  it("attaches a folder only before the conversation starts", async () => {
     await enableAi();
+    await useAgentStore.getState().setAttachedFolder("t1", "/Users/me/proj");
     await useAgentStore.getState().send("t1", "go");
+    expect(ipc.agentStart).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attachedFolder: "/Users/me/proj" }),
+    );
+    await useAgentStore.getState().setAttachedFolder("t1", null);
+    expect(useAgentStore.getState().conversations.t1.attachedFolder).toBe("/Users/me/proj");
+    expect(ipc.agentStop).not.toHaveBeenCalled();
+  });
+
+  it("locks the engine once the conversation starts", async () => {
+    await enableAi();
+    await useAgentStore.getState().selectEngine("t1", "codex");
+    expect(useAgentStore.getState().conversations.t1.engine).toBe("codex");
+    await useAgentStore.getState().selectEngine("t1", "copilot");
+    await useAgentStore.getState().send("t1", "go");
+    await useAgentStore.getState().selectEngine("t1", "claude");
+    expect(useAgentStore.getState().conversations.t1.engine).toBe("copilot");
+  });
+
+  it("uses the picked model at start and switches live where supported", async () => {
+    await enableAi();
+    await useAgentStore.getState().setModel("t1", "gpt-5");
+    await useAgentStore.getState().send("t1", "go");
+    expect(ipc.agentStart).toHaveBeenLastCalledWith(expect.objectContaining({ model: "gpt-5" }));
+    emit("t1", "s1", { type: "models", available: [{ id: "gpt-5", name: "GPT-5" }] });
+    expect(useAgentStore.getState().knownModels.copilot).toEqual([{ id: "gpt-5", name: "GPT-5" }]);
+    await useAgentStore.getState().setModel("t1", "claude-sonnet");
+    expect(ipc.agentSetModel).toHaveBeenCalledWith("s1", "claude-sonnet");
+    emit("t1", "s1", { type: "modelChanged", model: "claude-sonnet" });
+    expect(useAgentStore.getState().conversations.t1.model).toBe("claude-sonnet");
+  });
+
+  it("keeps Claude's model fixed after the first prompt", async () => {
+    await enableAi();
+    await useAgentStore.getState().selectEngine("t1", "claude");
+    await useAgentStore.getState().send("t1", "go");
+    await useAgentStore.getState().setModel("t1", "opus");
+    expect(ipc.agentSetModel).not.toHaveBeenCalled();
+  });
+
+  it("keeps earlier conversations and resumes them by engine session id", async () => {
+    await enableAi();
+    await useAgentStore.getState().send("t1", "first question\nmore");
     emit("t1", "s1", {
       type: "ready",
       engine: "copilot",
@@ -384,16 +447,70 @@ describe("agentStore session flow", () => {
       model: null,
       engineSessionId: "eng-1",
     });
-    await useAgentStore.getState().setAttachedFolder("t1", "/Users/me/proj");
+    const firstId = useAgentStore.getState().conversations.t1.id;
+    expect(useAgentStore.getState().conversations.t1.title).toBe("first question");
+
+    // "New conversation" on an empty one is a no-op.
+    await useAgentStore.getState().newConversation("t1");
+    expect(useAgentStore.getState().history.t1).toHaveLength(1);
     expect(ipc.agentStop).toHaveBeenCalledWith("s1");
+    const second = useAgentStore.getState().conversations.t1;
+    expect(second.id).not.toBe(firstId);
+    expect(second.items).toEqual([]);
+    expect(second.engine).toBe("copilot");
+    await useAgentStore.getState().newConversation("t1");
+    expect(useAgentStore.getState().conversations.t1.id).toBe(second.id);
+
     ipc.agentStart.mockResolvedValueOnce("s2");
-    await useAgentStore.getState().send("t1", "again");
+    await useAgentStore.getState().send("t1", "second");
+    await useAgentStore.getState().openConversation("t1", firstId);
+    expect(ipc.agentStop).toHaveBeenCalledWith("s2");
+    const reopened = useAgentStore.getState().conversations.t1;
+    expect(reopened.id).toBe(firstId);
+    expect(useAgentStore.getState().history.t1.map((r) => r.title)).toEqual(["second"]);
+
+    ipc.agentStart.mockResolvedValueOnce("s3");
+    await useAgentStore.getState().send("t1", "follow up");
     expect(ipc.agentStart).toHaveBeenLastCalledWith(
-      expect.objectContaining({ attachedFolder: "/Users/me/proj", resumeId: "eng-1" }),
+      expect.objectContaining({ resumeId: "eng-1", conversationId: firstId }),
     );
-    // Late events from the retired session are ignored.
+    // Late events from a retired session are ignored.
     emit("t1", "s1", { type: "turnStarted", turnId: "old" });
     expect(useAgentStore.getState().conversations.t1.currentTurnId).toBeNull();
+
+    await useAgentStore.getState().deleteConversation("t1", firstId);
+    expect(useAgentStore.getState().conversations.t1.items).toEqual([]);
+    expect(useAgentStore.getState().history.t1.map((r) => r.title)).toEqual(["second"]);
+  });
+
+  it("persists a tab's conversations and restores them", async () => {
+    const dispose = installAgentStore();
+    await enableAi();
+    const tab = useTabsStore.getState().openTab("/d/a.excalidraw", {} as never);
+    await useAgentStore.getState().hydrate(tab);
+    await useAgentStore.getState().send(tab, "draw a cat");
+    emit(tab, "s1", {
+      type: "ready",
+      engine: "copilot",
+      version: "1",
+      model: "gpt-5",
+      engineSessionId: "eng-9",
+    });
+    await flushConversations();
+    const docs = conversationKv.data.get("docs") as Record<string, { activeId: string }>;
+    expect(docs["/d/a.excalidraw"].activeId).toBe(useAgentStore.getState().conversations[tab].id);
+
+    __resetAgentStoreForTests();
+    await useAgentStore.getState().hydrate(tab);
+    const restored = useAgentStore.getState().conversations[tab];
+    expect(restored).toMatchObject({ title: "draw a cat", engineSessionId: "eng-9" });
+    expect(restored.items[0]).toMatchObject({ kind: "user", text: "draw a cat" });
+    dispose();
+  });
+
+  it("does not touch storage while AI is off", async () => {
+    await useAgentStore.getState().hydrate("t1");
+    expect(useAgentStore.getState().hydrated.t1).toBeUndefined();
   });
 
   it("closing a tab or turning AI off stops sessions", async () => {

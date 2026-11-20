@@ -25,9 +25,24 @@ import {
   agentDetect,
   agentPermissionRespond,
   agentPrompt,
+  agentSetModel,
   agentStart,
   agentStop,
 } from "../ipc/commands";
+import {
+  deleteConversationsKey,
+  docKey,
+  flushConversations,
+  loadConversations,
+  loadKnownModels,
+  renameConversationsKey,
+  saveConversations,
+  saveKnownModels,
+  titleFrom,
+  type ConversationIndex,
+  type ConversationRecord,
+} from "../agent/conversationStore";
+import { ENGINE_CAPS } from "../components/agent/engineCaps";
 import { onAgentEvent } from "../ipc/agentEvents";
 import { ENGINE_KINDS, useSettingsStore } from "./settingsStore";
 import { useTabsStore } from "./tabsStore";
@@ -104,8 +119,15 @@ export type TranscriptItem =
 export type ConversationStatus = "idle" | "starting" | "ready" | "running" | "error" | "exited";
 
 export interface Conversation {
+  /** App-side id; keys the persisted record and the engine's scratch cwd. */
+  id: string;
   tabId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
   engine: EngineKind | null;
+  /** Model picked in the panel; overrides the Settings default when the session starts. */
+  requestedModel: string | null;
   sessionId: string | null;
   status: ConversationStatus;
   version: string | null;
@@ -124,10 +146,23 @@ export interface Conversation {
 
 const EMPTY_USAGE: Usage = { inputTokens: null, outputTokens: null, premiumRequests: null };
 
+let conversationCounter = 0;
+function newConversationId(): string {
+  conversationCounter += 1;
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `c-${Date.now().toString(36)}-${rand}${conversationCounter}`;
+}
+
 export function emptyConversation(tabId: string, engine: EngineKind | null = null): Conversation {
+  const now = Date.now();
   return {
+    id: newConversationId(),
     tabId,
+    title: "",
+    createdAt: now,
+    updatedAt: now,
     engine,
+    requestedModel: null,
     sessionId: null,
     status: "idle",
     version: null,
@@ -140,6 +175,48 @@ export function emptyConversation(tabId: string, engine: EngineKind | null = nul
     usage: { ...EMPTY_USAGE },
     attachedFolder: null,
     lastError: null,
+  };
+}
+
+/**
+ * Engine, model (for engines without a live switch) and folder are fixed once the
+ * conversation has started: the engine session already exists with them.
+ */
+export function isLocked(c: Conversation): boolean {
+  return c.engineSessionId !== null || c.items.some((it) => it.kind === "user");
+}
+
+/** Persistable snapshot, or null for a conversation that never got a prompt. */
+export function toRecord(c: Conversation): ConversationRecord | null {
+  if (!c.engine || !c.items.some((it) => it.kind === "user")) return null;
+  return {
+    id: c.id,
+    engine: c.engine,
+    engineSessionId: c.engineSessionId,
+    title: c.title,
+    model: c.model ?? c.requestedModel,
+    attachedFolder: c.attachedFolder,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    items: c.items,
+    usage: c.usage,
+  };
+}
+
+/** Rehydrate a stored conversation; it resumes the engine session on the next prompt. */
+export function fromRecord(tabId: string, r: ConversationRecord): Conversation {
+  return {
+    ...emptyConversation(tabId, r.engine),
+    id: r.id,
+    title: r.title,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    requestedModel: r.model,
+    model: r.model,
+    engineSessionId: r.engineSessionId,
+    attachedFolder: r.attachedFolder,
+    items: r.items,
+    usage: r.usage,
   };
 }
 
@@ -309,7 +386,14 @@ export interface PendingDisclosure {
 }
 
 export interface AgentState {
+  /** The active conversation of each tab. */
   conversations: Record<string, Conversation>;
+  /** Other (stored) conversations of each tab, most recent first. */
+  history: Record<string, ConversationRecord[]>;
+  /** Tabs whose stored conversations were loaded (saving waits for this). */
+  hydrated: Record<string, boolean>;
+  /** Last model list each engine reported (drives the picker before a session exists). */
+  knownModels: Partial<Record<EngineKind, ModelOption[]>>;
   panelOpen: boolean;
   panelWidth: number;
   engines: EngineInfo[];
@@ -325,7 +409,15 @@ export interface AgentState {
   availableEngines: () => EngineKind[];
   /** Engine a tab's conversation uses (explicit pick → default → first available). */
   engineFor: (tabId: string) => EngineKind | null;
+  /** Pick the engine of a conversation that hasn't started yet. */
   selectEngine: (tabId: string, engine: EngineKind) => Promise<void>;
+  /** Pick the model: before the first prompt, or live where the engine supports it. */
+  setModel: (tabId: string, model: string | null) => Promise<void>;
+  /** Load a tab's stored conversations (no-op with AI off or when already loaded). */
+  hydrate: (tabId: string) => Promise<void>;
+  /** Switch to a stored conversation; its engine session resumes on the next prompt. */
+  openConversation: (tabId: string, id: string) => Promise<void>;
+  deleteConversation: (tabId: string, id: string) => Promise<void>;
   /** Start (or reuse) the engine session for a tab. Null if gated/declined. */
   ensureSession: (tabId: string) => Promise<string | null>;
   send: (tabId: string, text: string) => Promise<void>;
@@ -338,12 +430,13 @@ export interface AgentState {
     decision: PermissionDecision,
   ) => Promise<void>;
   revertTurn: (tabId: string, turnId: string, force?: boolean) => Promise<void>;
+  /** Attach/detach the read-only folder; only before the conversation starts. */
   setAttachedFolder: (tabId: string, path: string | null) => Promise<void>;
-  /** Drop the session (keeps engine) so the next prompt starts fresh. */
+  /** Keep the current conversation in history and start an empty one. */
   newConversation: (tabId: string) => Promise<void>;
   /** Restart a crashed/exited session, resuming the engine thread if possible. */
   retry: (tabId: string) => Promise<void>;
-  /** Tab closed → stop its session and forget the conversation. */
+  /** Tab closed → stop its session; untitled tabs also drop their stored conversations. */
   closeTab: (tabId: string) => Promise<void>;
   /** AI turned off → stop everything. */
   stopAll: () => Promise<void>;
@@ -414,6 +507,20 @@ export const useAgentStore = create<AgentState>((set, get) => {
     const { kind, message } = describeError(e);
     patch(tabId, (c) => reduceAgentEvent(c, { type: "error", kind, message, fatal }));
   };
+  /** Move the active conversation into history (if it has content) and stop its session. */
+  const archiveActive = async (tabId: string) => {
+    const c = get().conversations[tabId];
+    if (!c) return;
+    await retire(c.sessionId);
+    const rec = toRecord(c);
+    if (!rec) return;
+    set((s) => ({
+      history: {
+        ...s.history,
+        [tabId]: [rec, ...(s.history[tabId] ?? []).filter((r) => r.id !== rec.id)],
+      },
+    }));
+  };
   const retire = async (sessionId: string | null) => {
     if (!sessionId) return;
     retiredSessions.add(sessionId);
@@ -426,6 +533,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
   return {
     conversations: {},
+    history: {},
+    hydrated: {},
+    knownModels: {},
     panelOpen: false,
     panelWidth: DEFAULT_PANEL_WIDTH,
     engines: [],
@@ -487,12 +597,87 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     async selectEngine(tabId, engine) {
       const c = conv(tabId);
-      if (c.engine === engine) return;
+      if (c.engine === engine || isLocked(c)) return;
       await retire(c.sessionId);
       patch(tabId, (x) => ({
         ...emptyConversation(tabId, engine),
+        id: x.id,
         attachedFolder: x.attachedFolder,
         items: x.items,
+      }));
+      void loadKnownModelsFor(engine);
+    },
+
+    async setModel(tabId, model) {
+      const c = conv(tabId);
+      const next = model?.trim() || null;
+      if (!isLocked(c)) {
+        patch(tabId, (x) => ({ ...x, requestedModel: next }));
+        return;
+      }
+      const engine = c.engine;
+      if (!next || !engine || !ENGINE_CAPS[engine].liveModelSwitch || next === c.model) return;
+      // Remembered for a resume; applied live when a session is running.
+      patch(tabId, (x) => ({ ...x, requestedModel: next }));
+      if (!aiOn() || !c.sessionId) {
+        patch(tabId, (x) => ({ ...x, model: next }));
+        return;
+      }
+      try {
+        await agentSetModel(c.sessionId, next);
+      } catch (e) {
+        log.warn("agentStore: agentSetModel failed", e);
+        pushError(tabId, e, false);
+      }
+    },
+
+    async hydrate(tabId) {
+      if (!aiOn() || get().hydrated[tabId]) return;
+      const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      const index = await loadConversations(docKey(tab));
+      set((s) => {
+        const list = index?.list ?? [];
+        const current = s.conversations[tabId];
+        const active =
+          !current || !isLocked(current) ? list.find((r) => r.id === index?.activeId) : undefined;
+        const known = new Set(current && isLocked(current) ? [current.id] : []);
+        if (active) known.add(active.id);
+        return {
+          hydrated: { ...s.hydrated, [tabId]: true },
+          history: {
+            ...s.history,
+            [tabId]: [...list.filter((r) => !known.has(r.id)), ...(s.history[tabId] ?? [])].sort(
+              (a, b) => b.updatedAt - a.updatedAt,
+            ),
+          },
+          conversations: active
+            ? { ...s.conversations, [tabId]: fromRecord(tabId, active) }
+            : s.conversations,
+        };
+      });
+      const engine = get().engineFor(tabId);
+      if (engine) void loadKnownModelsFor(engine);
+    },
+
+    async openConversation(tabId, id) {
+      const rec = (get().history[tabId] ?? []).find((r) => r.id === id);
+      if (!rec || get().conversations[tabId]?.id === id) return;
+      await archiveActive(tabId);
+      set((s) => ({
+        history: { ...s.history, [tabId]: (s.history[tabId] ?? []).filter((r) => r.id !== id) },
+        conversations: { ...s.conversations, [tabId]: fromRecord(tabId, rec) },
+      }));
+    },
+
+    async deleteConversation(tabId, id) {
+      if (get().conversations[tabId]?.id === id) {
+        const c = conv(tabId);
+        await retire(c.sessionId);
+        patch(tabId, () => emptyConversation(tabId));
+      }
+      set((s) => ({
+        history: { ...s.history, [tabId]: (s.history[tabId] ?? []).filter((r) => r.id !== id) },
       }));
     },
 
@@ -516,9 +701,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
           engine,
           pathOverride: es.pathOverride.trim() || null,
           useHostConfig: es.useHostConfig,
-          model: es.model.trim() || null,
+          model: c.requestedModel ?? (es.model.trim() || null),
           attachedFolder: c.attachedFolder,
           resumeId: c.engineSessionId,
+          conversationId: c.id,
         });
         patch(tabId, (x) => ({
           ...x,
@@ -544,6 +730,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
       patch(tabId, (c) => ({
         ...c,
+        engine: c.engine ?? engine,
+        title: c.title || titleFrom(trimmed),
+        updatedAt: Date.now(),
         items: [...c.items, { kind: "user", id: nextItemId("u"), text: trimmed }],
       }));
       const sessionId = await get().ensureSession(tabId);
@@ -620,8 +809,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     async setAttachedFolder(tabId, path) {
       const c = conv(tabId);
-      if (c.attachedFolder === path) return;
-      // The folder is a session start option: restart, resuming the engine thread.
+      if (c.attachedFolder === path || isLocked(c)) return;
+      // The folder is a session start option.
       await retire(c.sessionId);
       patch(tabId, (x) => ({
         ...x,
@@ -634,7 +823,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     async newConversation(tabId) {
       const c = conv(tabId);
-      await retire(c.sessionId);
+      if (!isLocked(c)) return;
+      await archiveActive(tabId);
       patch(tabId, (x) => ({ ...emptyConversation(tabId, x.engine) }));
     },
 
@@ -647,13 +837,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     async closeTab(tabId) {
       const c = get().conversations[tabId];
-      if (!c) return;
       set((s) => {
-        const next = { ...s.conversations };
-        delete next[tabId];
-        return { conversations: next };
+        const conversations = { ...s.conversations };
+        const history = { ...s.history };
+        const hydrated = { ...s.hydrated };
+        delete conversations[tabId];
+        delete history[tabId];
+        delete hydrated[tabId];
+        return { conversations, history, hydrated };
       });
-      await retire(c.sessionId);
+      if (c) await retire(c.sessionId);
     },
 
     async stopAll() {
@@ -680,6 +873,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
       set((s) => ({ conversations: { ...s.conversations, [env.tabId]: next } }));
 
       const e = env.event;
+      if (e.type === "models" && next.engine) {
+        const engine = next.engine;
+        set((s) => ({ knownModels: { ...s.knownModels, [engine]: e.available } }));
+        if (aiOn()) void saveKnownModels(engine, e.available);
+      }
       try {
         if (e.type === "turnStarted") {
           turnController.beginTurn(env.tabId, e.turnId);
@@ -707,6 +905,23 @@ export const useAgentStore = create<AgentState>((set, get) => {
   };
 });
 
+async function loadKnownModelsFor(engine: EngineKind): Promise<void> {
+  if (!aiOn() || useAgentStore.getState().knownModels[engine]) return;
+  const models = await loadKnownModels(engine);
+  if (models.length === 0) return;
+  useAgentStore.setState((s) =>
+    s.knownModels[engine] ? s : { knownModels: { ...s.knownModels, [engine]: models } },
+  );
+}
+
+/** Persisted shape of a tab: the active conversation first, then history. */
+export function snapshotTab(state: AgentState, tabId: string): ConversationIndex {
+  const active = state.conversations[tabId];
+  const rec = active ? toRecord(active) : null;
+  const history = (state.history[tabId] ?? []).filter((r) => r.id !== rec?.id);
+  return { activeId: rec?.id ?? null, list: rec ? [rec, ...history] : history };
+}
+
 /**
  * Wire the store to app lifecycle: stop sessions when AI is switched off and
  * when a tab closes. Call once from App; returns a disposer.
@@ -717,14 +932,39 @@ export function installAgentStore(): () => void {
   });
   const unsubTabs = useTabsStore.subscribe((s, prev) => {
     if (s.tabs === prev.tabs) return;
-    const open = new Set(s.tabs.map((t) => t.id));
+    const open = new Map(s.tabs.map((t) => [t.id, t]));
     for (const t of prev.tabs) {
-      if (!open.has(t.id)) void useAgentStore.getState().closeTab(t.id);
+      const now = open.get(t.id);
+      if (!now) {
+        void useAgentStore.getState().closeTab(t.id);
+        // Untitled drawings are gone for good; file-backed ones keep their history.
+        if (t.path === null && aiOn()) void deleteConversationsKey(docKey(t));
+      } else if (now.path !== t.path && aiOn()) {
+        void renameConversationsKey(docKey(t), docKey(now));
+      }
     }
   });
+  // Persist conversations (debounced in conversationStore) once a tab's stored state is loaded.
+  const unsubAgent = useAgentStore.subscribe((s, prev) => {
+    if (!aiOn() || (s.conversations === prev.conversations && s.history === prev.history)) return;
+    const tabs = useTabsStore.getState().tabs;
+    for (const tab of tabs) {
+      if (!s.hydrated[tab.id]) continue;
+      if (
+        s.conversations[tab.id] === prev.conversations[tab.id] &&
+        s.history[tab.id] === prev.history[tab.id]
+      )
+        continue;
+      saveConversations(docKey(tab), snapshotTab(s, tab.id));
+    }
+  });
+  const flush = () => void flushConversations();
+  window.addEventListener("beforeunload", flush);
   return () => {
     unsubSettings();
     unsubTabs();
+    unsubAgent();
+    window.removeEventListener("beforeunload", flush);
     unlistenEvents?.();
     unlistenEvents = null;
   };
@@ -734,6 +974,9 @@ export function installAgentStore(): () => void {
 export function __resetAgentStoreForTests(): void {
   useAgentStore.setState({
     conversations: {},
+    history: {},
+    hydrated: {},
+    knownModels: {},
     panelOpen: false,
     panelWidth: DEFAULT_PANEL_WIDTH,
     engines: [],
