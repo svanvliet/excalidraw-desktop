@@ -11,7 +11,10 @@
  * - "display" = scene units of the element box (`width × height`).
  * - "output" = pixels of the baked PNG (`outWidth × outHeight`).
  */
-import type { ExcalidrawElement, ExcalidrawImageElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  ExcalidrawElement,
+  ExcalidrawImageElement,
+} from "@excalidraw/excalidraw/element/types";
 
 /** Longest side of the baked PNG, in pixels. */
 export const MAX_OUTPUT_PX = 1024;

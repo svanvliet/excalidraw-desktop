@@ -67,7 +67,9 @@ const stageOf = (id: string) => getExtension(id)?.stage ?? Number.MAX_SAFE_INTEG
 export function canonicalChain(chain: readonly ExtensionLink[]): ExtensionLink[] {
   const byId = new Map<string, ExtensionLink>();
   for (const l of chain) byId.set(l.ext, l);
-  return [...byId.values()].sort((a, b) => stageOf(a.ext) - stageOf(b.ext) || (a.ext < b.ext ? -1 : 1));
+  return [...byId.values()].sort(
+    (a, b) => stageOf(a.ext) - stageOf(b.ext) || (a.ext < b.ext ? -1 : 1),
+  );
 }
 
 /**
@@ -106,11 +108,19 @@ export function readStack(el: ExcalidrawElement): StackRead {
     const { ext: id, v, params } = item as Record<string, unknown>;
     const ext = typeof id === "string" ? getExtension(id) : undefined;
     if (!ext) {
-      return { kind: "unreadable", ids, reason: `it uses an unknown extension ${JSON.stringify(id)}` };
+      return {
+        kind: "unreadable",
+        ids,
+        reason: `it uses an unknown extension ${JSON.stringify(id)}`,
+      };
     }
     if (typeof v !== "number" || !Number.isInteger(v) || v < 1) return damaged;
     if (v > ext.version) {
-      return { kind: "unreadable", ids, reason: `${ext.title} was saved by a newer version of the app` };
+      return {
+        kind: "unreadable",
+        ids,
+        reason: `${ext.title} was saved by a newer version of the app`,
+      };
     }
     let p =
       params && typeof params === "object" && !Array.isArray(params)
@@ -232,9 +242,7 @@ function bump(el: ExcalidrawElement, patch: Partial<ExcalidrawImageElement>): Ex
   } as ExcalidrawElement;
 }
 
-export type ChainAction =
-  | { kind: "apply"; params: Record<string, unknown> }
-  | { kind: "remove" };
+export type ChainAction = { kind: "apply"; params: Record<string, unknown> } | { kind: "remove" };
 
 /**
  * Applies (or re-parameterises) / removes `ext` on `el`, re-rendering the original through the
@@ -302,7 +310,11 @@ export async function runChain(
   const outId = outputFileId(base.fileId, plan, chain) as FileId;
   const steps: RenderStep[] = exts
     .filter(({ ext: e }) => e.render)
-    .map(({ link, ext: e }) => (c, p) => e.render!(c, p, link.params));
+    .map(
+      ({ link, ext: e }) =>
+        (c, p) =>
+          e.render!(c, p, link.params),
+    );
   const outFile: BinaryFileData = ctx.getFile(outId) ?? {
     id: outId,
     mimeType: "image/png",

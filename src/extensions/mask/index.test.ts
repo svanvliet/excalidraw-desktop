@@ -8,8 +8,11 @@ import { maskExtension } from "./index";
 
 vi.mock("../raster", () => import("../testRaster"));
 
-const apply = (el: Parameters<typeof runChain>[0], params: unknown, ctx: Parameters<typeof runChain>[3]) =>
-  runChain(el, maskExtension, { kind: "apply", params: params as never }, ctx);
+const apply = (
+  el: Parameters<typeof runChain>[0],
+  params: unknown,
+  ctx: Parameters<typeof runChain>[3],
+) => runChain(el, maskExtension, { kind: "apply", params: params as never }, ctx);
 const remove = (el: Parameters<typeof runChain>[0], ctx: Parameters<typeof runChain>[3]) =>
   runChain(el, maskExtension, { kind: "remove" }, ctx);
 

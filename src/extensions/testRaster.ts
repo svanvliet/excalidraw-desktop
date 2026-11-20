@@ -21,9 +21,12 @@ export const renders: RenderCall[] = [];
 
 export function recordingContext(ops: string[]): RenderTarget {
   return new Proxy({} as Record<string, unknown>, {
-    get: (_t, key) =>
+    get:
+      (_t, key) =>
       (...args: unknown[]) => {
-        ops.push(`${String(key)}(${args.map((a) => (typeof a === "number" ? +a.toFixed(3) : a)).join(",")})`);
+        ops.push(
+          `${String(key)}(${args.map((a) => (typeof a === "number" ? +a.toFixed(3) : a)).join(",")})`,
+        );
       },
     set: (_t, key, value) => {
       ops.push(`${String(key)}=${value}`);

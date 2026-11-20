@@ -4,13 +4,7 @@
  * over the canvas just above the selection and offers each applicable extension's presets plus
  * Remove. Clicking runs the same `runExtension` the agent tools use: one undo step.
  */
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type ComponentType,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useState, type ComponentType, type CSSProperties } from "react";
 import { getCommonBounds } from "@excalidraw/excalidraw";
 import type { AppState, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import {
@@ -176,9 +170,7 @@ export function ExtensionsBar({ api }: { api: ExtensionsBarApi }) {
                     data-pressed={o.active || undefined}
                     aria-pressed={o.active}
                     disabled={busy}
-                    onClick={() =>
-                      void run(g, { kind: "apply", params: choiceParams(g, o.value) })
-                    }
+                    onClick={() => void run(g, { kind: "apply", params: choiceParams(g, o.value) })}
                   />
                 ))}
               </span>

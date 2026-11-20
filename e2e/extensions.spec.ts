@@ -100,7 +100,10 @@ test("stacks a border on the mask that traces the circle, then the rectangle", a
   await bar.getByRole("button", { name: "Circle" }).click();
   await bar.getByRole("button", { name: "Thick" }).click();
   await bar.getByRole("button", { name: "Border blue" }).click();
-  await expect(bar.getByRole("button", { name: "Border blue" })).toHaveAttribute("aria-pressed", "true");
+  await expect(bar.getByRole("button", { name: "Border blue" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(bar.getByRole("button", { name: "Circle" })).toHaveAttribute("aria-pressed", "true");
   await expect(bar.getByRole("button", { name: "Thick" })).toHaveAttribute("aria-pressed", "true");
 
@@ -122,7 +125,13 @@ test("stacks a border on the mask that traces the circle, then the rectangle", a
   await expect(bar.getByRole("button", { name: "Thick" })).toHaveAttribute("aria-pressed", "true");
   await expect
     .poll(() => sample(page, points).then((r) => r.px))
-    .toEqual({ centre: "red", leftEdge: "blue", topEdge: "blue", corner: "blue", insideRing: "red" });
+    .toEqual({
+      centre: "red",
+      leftEdge: "blue",
+      topEdge: "blue",
+      corner: "blue",
+      insideRing: "red",
+    });
 
   // Every action above was one undo step: undo the removal, the colour, the width, the mask.
   for (let i = 0; i < 4; i++) await page.keyboard.press("ControlOrMeta+z");

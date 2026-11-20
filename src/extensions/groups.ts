@@ -25,8 +25,7 @@ export interface ExtensionGroup {
 }
 
 const stableJson = (p: Params) => JSON.stringify(p, Object.keys(p).sort());
-const isSubset = (sub: Params, of: Params) =>
-  Object.entries(sub).every(([k, v]) => of[k] === v);
+const isSubset = (sub: Params, of: Params) => Object.entries(sub).every(([k, v]) => of[k] === v);
 
 /** Extensions applicable to the selection and their preset / choice / remove state. */
 export function extensionGroups(selected: readonly ExcalidrawElement[]): ExtensionGroup[] {
@@ -41,8 +40,9 @@ export function extensionGroups(selected: readonly ExcalidrawElement[]): Extensi
       all && params.every((p) => stableJson(p) === stableJson(params[0])) ? params[0] : null;
     // Every target has it applied and its params include all the given ones.
     const activeFor = (p: Params) => all && params.every((lp) => isSubset(p, lp));
-    const base = (ext.presets.find((p) => p.id === ext.defaultPreset) ?? ext.presets[0])
-      ?.params as Params | undefined;
+    const base = (ext.presets.find((p) => p.id === ext.defaultPreset) ?? ext.presets[0])?.params as
+      | Params
+      | undefined;
     groups.push({
       id: ext.id,
       title: ext.title,

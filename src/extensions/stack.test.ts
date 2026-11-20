@@ -29,7 +29,8 @@ async function run(el: ExcalidrawElement, ext: AnyDesktopExtension, action: Chai
 }
 const apply = (el: ExcalidrawElement, ext: AnyDesktopExtension, params: Record<string, unknown>) =>
   run(el, ext, { kind: "apply", params });
-const remove = (el: ExcalidrawElement, ext: AnyDesktopExtension) => run(el, ext, { kind: "remove" });
+const remove = (el: ExcalidrawElement, ext: AnyDesktopExtension) =>
+  run(el, ext, { kind: "remove" });
 const stored = (el: ExcalidrawElement) => el.customData?.[EXT_KEY] as Record<string, unknown>;
 const lastOps = () => renders[renders.length - 1]!.ops;
 
@@ -82,7 +83,10 @@ describe("extension stacks", () => {
   it("re-parameterising one link keeps the others and re-renders from the original", async () => {
     let el = await apply(await apply(image(), maskExtension, CIRCLE), borderExtension, THICK_BLUE);
     el = await apply(el, borderExtension, { width: 2, color: "#1971c2" });
-    expect(stored(el).chain).toMatchObject([{ ext: "mask" }, { ext: "border", params: { width: 2 } }]);
+    expect(stored(el).chain).toMatchObject([
+      { ext: "mask" },
+      { ext: "border", params: { width: 2 } },
+    ]);
     expect(renders.every((r) => r.source === SRC)).toBe(true);
     expect(lastOps()).toContain("lineWidth=8");
     expect(extensionStateOf(el)?.applied).toEqual({
@@ -128,7 +132,11 @@ describe("extension stacks", () => {
 
   it("reports and refuses stale stacks as fresh originals", async () => {
     s.add([{ ...s.ctx.getFile(SRC)!, id: "swapped" as FileId }]);
-    const el = await apply(await apply(image(), maskExtension, CIRCLE), borderExtension, THICK_BLUE);
+    const el = await apply(
+      await apply(image(), maskExtension, CIRCLE),
+      borderExtension,
+      THICK_BLUE,
+    );
     const swapped = { ...el, fileId: "swapped" } as ExcalidrawElement;
     expect(extensionStateOf(swapped)).toEqual({ applied: {}, stale: ["mask", "border"] });
     const fresh = await apply(swapped, borderExtension, {});
@@ -181,16 +189,55 @@ describe("v1 single-extension format", () => {
 });
 
 describe("unreadable stacks", () => {
-  const src = { fileId: SRC, x: 0, y: 0, width: 1, height: 1, crop: null, appliedWidth: 1, appliedHeight: 1 };
+  const src = {
+    fileId: SRC,
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    crop: null,
+    appliedWidth: 1,
+    appliedHeight: 1,
+  };
   const withRaw = (raw: unknown) =>
     image({ fileId: "out" as FileId, customData: { [EXT_KEY]: raw } });
 
   it.each([
-    ["a newer stack format", { v: 3, chain: [{ ext: "mask", v: 1, params: CIRCLE }], source: src, outputFileId: "out" }, /newer version/],
-    ["a newer link version", { v: 2, chain: [{ ext: "mask", v: 9, params: CIRCLE }], source: src, outputFileId: "out" }, /Mask was saved by a newer/],
-    ["an unknown extension", { v: 2, chain: [{ ext: "glow", v: 1, params: {} }], source: src, outputFileId: "out" }, /unknown extension "glow"/],
-    ["invalid params", { v: 2, chain: [{ ext: "mask", v: 1, params: { shape: "star" } }], source: src, outputFileId: "out" }, /Mask settings are invalid/],
-    ["a damaged source", { v: 2, chain: [{ ext: "mask", v: 1, params: CIRCLE }], source: { fileId: SRC }, outputFileId: "out" }, /damaged/],
+    [
+      "a newer stack format",
+      { v: 3, chain: [{ ext: "mask", v: 1, params: CIRCLE }], source: src, outputFileId: "out" },
+      /newer version/,
+    ],
+    [
+      "a newer link version",
+      { v: 2, chain: [{ ext: "mask", v: 9, params: CIRCLE }], source: src, outputFileId: "out" },
+      /Mask was saved by a newer/,
+    ],
+    [
+      "an unknown extension",
+      { v: 2, chain: [{ ext: "glow", v: 1, params: {} }], source: src, outputFileId: "out" },
+      /unknown extension "glow"/,
+    ],
+    [
+      "invalid params",
+      {
+        v: 2,
+        chain: [{ ext: "mask", v: 1, params: { shape: "star" } }],
+        source: src,
+        outputFileId: "out",
+      },
+      /Mask settings are invalid/,
+    ],
+    [
+      "a damaged source",
+      {
+        v: 2,
+        chain: [{ ext: "mask", v: 1, params: CIRCLE }],
+        source: { fileId: SRC },
+        outputFileId: "out",
+      },
+      /damaged/,
+    ],
   ])("%s: reported stale, files kept, edits refused", async (_name, raw, reason) => {
     const el = withRaw(raw);
     const read = readStack(el);

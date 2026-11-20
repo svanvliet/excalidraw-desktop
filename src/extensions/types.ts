@@ -82,7 +82,11 @@ export interface ExtensionPreset<P> {
 export interface ExtensionChoices {
   param: string;
   label: string;
-  options: { value: string | number; label: string; /** CSS colour for a swatch. */ swatch?: string }[];
+  options: {
+    value: string | number;
+    label: string;
+    /** CSS colour for a swatch. */ swatch?: string;
+  }[];
 }
 
 /** Canvas API stages may draw with (a CanvasRenderingContext2D). */

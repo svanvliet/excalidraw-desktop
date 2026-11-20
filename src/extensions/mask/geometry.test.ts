@@ -182,7 +182,9 @@ describe("outputFileId", () => {
       naturalWidth: 400,
       naturalHeight: 200,
     });
-  const chain = (radius: number, v = 1) => [{ ext: "mask", v, params: { shape: "roundedRect", radius } }];
+  const chain = (radius: number, v = 1) => [
+    { ext: "mask", v, params: { shape: "roundedRect", radius } },
+  ];
 
   it("is deterministic and Excalidraw-id shaped", () => {
     const a = outputFileId("abc", plan(10), chain(10));

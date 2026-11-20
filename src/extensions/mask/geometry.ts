@@ -88,6 +88,9 @@ export function maskStep(plan: ImagePlan, params: MaskParams): ImagePlan {
   const { outWidth: w, outHeight: h } = plan;
   return {
     ...plan,
-    outline: { kind: "roundedRect", radiusPx: Math.min((pct / 100) * Math.min(w, h), w / 2, h / 2) },
+    outline: {
+      kind: "roundedRect",
+      radiusPx: Math.min((pct / 100) * Math.min(w, h), w / 2, h / 2),
+    },
   };
 }

@@ -113,7 +113,16 @@ describe("ExtensionsBar", () => {
         excalidrawDesktop: {
           v: 2,
           chain: [{ ext: "stub", v: 1, params: { color: "red" } }],
-          source: { fileId: "file-a", x: 0, y: 0, width: 1, height: 1, crop: null, appliedWidth: 1, appliedHeight: 1 },
+          source: {
+            fileId: "file-a",
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            crop: null,
+            appliedWidth: 1,
+            appliedHeight: 1,
+          },
           outputFileId: "file-a-red",
         },
       },
@@ -133,7 +142,10 @@ describe("ExtensionsBar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Border red" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Border red" })).toHaveAttribute("aria-pressed", "true"),
+      expect(screen.getByRole("button", { name: "Border red" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
     );
     expect(params()).toEqual({ width: 4, color: "#e03131", opacity: 100 });
     expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
@@ -143,7 +155,10 @@ describe("ExtensionsBar", () => {
       expect(screen.getByRole("button", { name: "Thick" })).toHaveAttribute("aria-pressed", "true"),
     );
     expect(params()).toEqual({ width: 8, color: "#e03131", opacity: 100 });
-    expect(screen.getByRole("button", { name: "Border gray" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Border gray" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     expect(api.undoStack).toHaveLength(2);
   });
 });
