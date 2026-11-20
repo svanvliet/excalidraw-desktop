@@ -982,7 +982,12 @@ fn round_trip_with_fake_acp_agent() {
     let _ = child.kill();
     let _ = child.wait();
 
-    assert!(matches!(&events[0], AgentEvent::Ready { version: Some(v), .. } if v == "0.1.0"));
+    // A `models` notice may precede Ready; Ready is the first non-model event.
+    let first = events
+        .iter()
+        .find(|e| !matches!(e, AgentEvent::Models { .. }))
+        .expect("events");
+    assert!(matches!(first, AgentEvent::Ready { version: Some(v), .. } if v == "0.1.0"));
     let text: String = events
         .iter()
         .filter_map(|e| match e {
