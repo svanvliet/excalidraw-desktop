@@ -1780,6 +1780,11 @@ button {
   line-height: var(--line-default);
 }
 
+/* The composer's accent border already shows focus; skip the global ring. */
+.agent-composer__input:focus-visible {
+  box-shadow: none;
+}
+
 .agent-composer__input::placeholder {
   color: var(--fg-subtle);
 }
