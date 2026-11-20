@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { TranscriptItem } from "../../stores/agentStore";
-import { ToolGroup, TranscriptItemView, permissionSummary } from "./TranscriptItem";
+import { ToolGroup, TranscriptItemView } from "./TranscriptItem";
+import { permissionSummary } from "./permissionSummary";
 import { groupTranscript } from "./transcriptGroups";
 
 const tool = (id: string, status = "completed") =>
