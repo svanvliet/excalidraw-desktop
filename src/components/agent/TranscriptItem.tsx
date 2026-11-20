@@ -24,7 +24,6 @@ export function ToolGroup({ items, engine }: { items: ToolItem[]; engine: Engine
       data-testid="agent-tool-group"
     >
       <summary>
-        <span className="agent-tool__dot" aria-hidden="true" />
         {summary}
         {failed > 0 ? <span className="agent-tool__failed"> · {failed} failed</span> : null}
       </summary>

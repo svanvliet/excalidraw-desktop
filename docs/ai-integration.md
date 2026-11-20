@@ -193,8 +193,10 @@ then edit), and the style defaults.
     only" or the read-only folder name (full path on hover) with Attach / Change / Detach before the
     first prompt and Reveal afterwards. The scratch cwd is never shown: it holds nothing the user
     put there.
-  - The transcript renders Markdown with sanitizing, collapsible "thinking", and tool chips such as
-    "Added 12 elements" (click to select them on the canvas).
+  - The transcript renders GitHub-flavored Markdown (react-markdown + remark-gfm: tables, fenced
+    code, task lists; raw HTML escaped, images shown as alt text, only http(s) links), collapsible
+    "thinking", and each run of consecutive tool calls folded into one collapsible "N tool calls"
+    group in the flow.
   - Inline approval cards, a Stop button, and **Revert turn** on each completed turn.
   - Context chips: auto "Selection (n)" and "Snapshot" to send a render.
   - Quick actions on empty state: _Diagram from description_, _Explain selection_, _Tidy layout_,

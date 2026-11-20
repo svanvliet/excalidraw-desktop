@@ -1,15 +1,38 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { Markdown } from "./Markdown";
-import { isSafeUrl, parseBlocks } from "./markdownParse";
+import { isSafeUrl } from "./markdownParse";
 
 describe("Markdown", () => {
-  it("parses headings, lists, fenced code, quotes and paragraphs", () => {
-    const blocks = parseBlocks(
-      "# Title\n\nSome text\nmore\n\n- a\n- b\n\n1. one\n2. two\n\n```js\nconst x = 1;\n```\n> quoted",
+  it("renders headings, lists, fenced code, quotes, tables and paragraphs", () => {
+    const { container } = render(
+      <Markdown
+        text={
+          "# Title\n\nSome text\n\n- a\n  - nested\n- b\n\n1. one\n2. two\n\n```js\nconst x = 1;\n```\n\n> quoted\n\n| Name | Area |\n|---|---|\n| DJ | Devices |\n\n- [x] done\n\n~~old~~"
+        }
+      />,
     );
-    expect(blocks.map((b) => b.type)).toEqual(["h", "p", "ul", "ol", "code", "quote"]);
-    expect(blocks[4]).toEqual({ type: "code", lang: "js", text: "const x = 1;" });
+    expect(container.querySelector("h3")).toHaveTextContent("Title");
+    expect(container.querySelector("ul ul li")).toHaveTextContent("nested");
+    expect(container.querySelectorAll("ol li")).toHaveLength(2);
+    expect(container.querySelector("pre code")).toHaveTextContent("const x = 1;");
+    expect(container.querySelector("blockquote")).toHaveTextContent("quoted");
+    expect([...container.querySelectorAll("th")].map((th) => th.textContent)).toEqual([
+      "Name",
+      "Area",
+    ]);
+    expect([...container.querySelectorAll("td")].map((td) => td.textContent)).toEqual([
+      "DJ",
+      "Devices",
+    ]);
+    expect(container.querySelector('input[type="checkbox"]')).toBeChecked();
+    expect(container.querySelector("del")).toHaveTextContent("old");
+  });
+
+  it("shows images as alt text instead of loading them", () => {
+    const { container } = render(<Markdown text={"![diagram](https://example.com/x.png)"} />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toBe("[diagram]");
   });
 
   it("renders inline formatting as elements", () => {
