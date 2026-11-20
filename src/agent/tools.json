@@ -1,5 +1,5 @@
 {
-  "$comment": "Canvas tool contract (docs/ai-integration.md \u00a7 Agent tool set). Advertised by the Rust MCP server (include_str!) and executed by src/agent/sceneTools.ts. Every tool accepts optional tabId (default: active tab). Read tools return `revision`; edit tools accept `expectedRevision` and fail with a conflict if the scene changed.",
+  "$comment": "Canvas tool contract (docs/ai-integration.md § Agent tool set). Advertised by the Rust MCP server (include_str!) and executed by src/agent/sceneTools.ts. Every tool accepts optional tabId (default: active tab). Read tools return `revision`; edit tools accept `expectedRevision` and fail with a conflict if the scene changed.",
   "tools": [
     {
       "name": "list_tabs",
@@ -545,7 +545,7 @@
     {
       "name": "apply_extension",
       "readOnly": false,
-      "description": "Apply (or re-apply with new params) an extension to elements, as one undoable change. Built-in app extensions store their settings in the element's customData and write standard Excalidraw output (ordinary element fields and image files), so the file still renders in stock Excalidraw. get_scene_summary rows show applied extensions as ext and edited-elsewhere ones as extStale. Re-applying derives from the original, never from earlier output. Elements it doesn't apply to are returned in skipped. No extensions are installed. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Apply (or re-apply with new params) an extension to elements, as one undoable change. Built-in app extensions store their settings in the element's customData and write standard Excalidraw output (ordinary element fields and image files), so the file still renders in stock Excalidraw. get_scene_summary rows show applied extensions as ext and edited-elsewhere ones as extStale. Re-applying derives from the original, never from earlier output. Elements it doesn't apply to are returned in skipped. Extensions: mask: Mask; presets circle (Circle), roundedRect (Rounded rectangle). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -564,15 +564,38 @@
             "maxItems": 200
           },
           "extension": {
-            "type": "string"
+            "type": "string",
+            "enum": ["mask"]
           },
           "preset": {
             "type": "string",
-            "description": "A preset of the chosen extension (the same actions the app UI offers)."
+            "description": "A preset of the chosen extension (the same actions the app UI offers).",
+            "enum": ["circle", "roundedRect"]
           },
           "params": {
             "type": "object",
-            "description": "Extension parameters; merged over the preset's params when both are given. Schema per extension below."
+            "description": "Extension parameters; merged over the preset's params when both are given. Schema per extension below.",
+            "anyOf": [
+              {
+                "title": "mask",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["shape"],
+                "properties": {
+                  "shape": {
+                    "type": "string",
+                    "enum": ["circle", "roundedRect"]
+                  },
+                  "radius": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 50,
+                    "default": 15,
+                    "description": "roundedRect corner radius, % of the shorter side"
+                  }
+                }
+              }
+            ]
           }
         },
         "required": ["ids", "extension"],
@@ -601,7 +624,8 @@
             "maxItems": 200
           },
           "extension": {
-            "type": "string"
+            "type": "string",
+            "enum": ["mask"]
           }
         },
         "required": ["ids", "extension"],

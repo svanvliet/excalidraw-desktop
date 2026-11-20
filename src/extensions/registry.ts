@@ -4,9 +4,10 @@
  * `npm run extensions:sync-tools` so src/agent/tools.json advertises it to the agent.
  */
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { maskExtension } from "./mask";
 import { EXT_KEY, type AnyDesktopExtension, type ExtensionIntent } from "./types";
 
-export const BUILTIN_EXTENSIONS: readonly AnyDesktopExtension[] = [];
+export const BUILTIN_EXTENSIONS: readonly AnyDesktopExtension[] = [maskExtension];
 
 let registry: readonly AnyDesktopExtension[] = BUILTIN_EXTENSIONS;
 
