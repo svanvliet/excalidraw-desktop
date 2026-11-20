@@ -154,6 +154,8 @@ export const CANVAS_TOOL_NAMES = [
   "duplicate_elements",
   "set_canvas",
   "apply_ops",
+  "apply_extension",
+  "remove_extension",
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
 

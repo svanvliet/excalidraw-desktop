@@ -48,6 +48,8 @@ export interface DesktopExtension<P = Record<string, unknown>> {
   version: number;
   /** Human title, e.g. "Mask". */
   title: string;
+  /** Optional one-line description for the agent (falls back to `title`). */
+  description?: string;
   appliesTo(el: ExcalidrawElement): boolean;
   /** JSON Schema for `params` (embedded in the MCP tool schemas). */
   paramsSchema: Record<string, unknown>;
