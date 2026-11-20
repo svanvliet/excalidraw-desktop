@@ -208,6 +208,20 @@ export function sceneFileIds(elements: readonly ExcalidrawElement[]): string[] {
   return [...ids];
 }
 
+/**
+ * The subset of `files` the given (non-deleted) elements still need. Excalidraw keeps every file
+ * it has seen in memory, including superseded extension outputs, so saving `getFiles()` as-is
+ * would grow the document with each re-render.
+ */
+export function referencedFiles<T>(
+  elements: readonly ExcalidrawElement[],
+  files: Readonly<Record<string, T>>,
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const id of sceneFileIds(elements)) if (id in files) out[id] = files[id];
+  return out;
+}
+
 type Base = Rect & { fileId: FileId; crop: ImageCrop | null };
 
 /** The undecorated state of `el`: its stored original (if current), else the element itself. */

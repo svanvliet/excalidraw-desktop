@@ -7,6 +7,7 @@ import {
   extensionStateOf,
   readStack,
   runChain,
+  referencedFiles,
   sceneFileIds,
   type ChainAction,
 } from "./stack";
@@ -251,5 +252,15 @@ describe("unreadable stacks", () => {
     expect(extensionStateOf(el)?.stale.length).toBeGreaterThan(0);
     expect(sceneFileIds([el])).toEqual(["out", SRC]);
     await expect(apply(el, borderExtension, {})).rejects.toThrow(/can't be edited/);
+  });
+});
+
+describe("referencedFiles", () => {
+  it("keeps image and extension source files and drops superseded outputs", () => {
+    const el = image({
+      fileId: "out" as FileId,
+      customData: { [EXT_KEY]: { v: 2, chain: [], source: { fileId: SRC }, outputFileId: "out" } },
+    });
+    expect(referencedFiles([el], { out: 1, [SRC]: 2, stale: 3 })).toEqual({ out: 1, [SRC]: 2 });
   });
 });

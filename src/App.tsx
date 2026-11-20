@@ -1,3 +1,4 @@
+import { referencedFiles } from "./extensions/stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -146,7 +147,7 @@ export function App() {
     return serializeScene(
       api.getSceneElements(),
       api.getAppState() as unknown as Record<string, unknown>,
-      api.getFiles() as unknown as Record<string, unknown>,
+      referencedFiles(api.getSceneElements(), api.getFiles()) as unknown as Record<string, unknown>,
     );
   }, []);
 
@@ -475,7 +476,7 @@ export function App() {
     const contents = serializeScene(
       api.getSceneElements(),
       api.getAppState() as unknown as Record<string, unknown>,
-      api.getFiles() as unknown as Record<string, unknown>,
+      referencedFiles(api.getSceneElements(), api.getFiles()) as unknown as Record<string, unknown>,
     );
     await saveFile(path, contents);
   }, []);

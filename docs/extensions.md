@@ -71,18 +71,18 @@ v2 stack.
 **Source files.** The original image (`source.fileId`) is referenced by no element, so the app
 keeps it alive explicitly:
 
-| Path                              | Behaviour                                                                                                                   |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `.excalidraw` save / autosave     | `serializeScene` writes every file in `getFiles()`; originals are kept.                                                     |
-| Reload / session restore          | `restore()` keeps all files from the document; the component doesn't garbage-collect files.                                 |
-| Collab                            | File sync uses `sceneFileIds()` (image `fileId`s plus `extensionReferencedFileIds()`), so originals are sent and requested. |
-| PNG export with embedded scene    | Uses Excalidraw's own `serializeAsJSON`, which keeps only files that elements reference: **the original is dropped**.       |
-| Stock Excalidraw / excalidraw.com | May drop unreferenced files on save: **the original may be lost**.                                                          |
+| Path                              | Behaviour                                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `.excalidraw` save / autosave     | Saves `referencedFiles()`: files used by live elements via `sceneFileIds()`, so originals are kept and stale outputs pruned. |
+| Reload / session restore          | `restore()` keeps all files from the document; the component doesn't garbage-collect files.                                  |
+| Collab                            | File sync uses `sceneFileIds()` (image `fileId`s plus `extensionReferencedFileIds()`), so originals are sent and requested.  |
+| PNG export with embedded scene    | Uses Excalidraw's own `serializeAsJSON`, which keeps only files that elements reference: **the original is dropped**.        |
+| Stock Excalidraw / excalidraw.com | May drop unreferenced files on save: **the original may be lost**.                                                           |
 
 When the original is missing, the output still renders. The runner skips Re-apply and Remove with
-"the original image for <Extension> is missing", and the UI shows that message. Intermediate output
-files (for example the mask-only PNG after a border is added) stay in the scene's files; nothing
-garbage-collects them.
+"the original image for <Extension> is missing", and the UI shows that message. Superseded output
+files (for example the PNG from a previous border colour) stay in memory so undo works, but are
+dropped on the next save.
 
 ## 4. Contract
 
