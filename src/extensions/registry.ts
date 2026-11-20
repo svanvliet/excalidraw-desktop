@@ -32,6 +32,41 @@ export function storedIntent(el: ExcalidrawElement): ExtensionIntent | null {
   return raw as ExtensionIntent;
 }
 
+/**
+ * Files an intent depends on beyond the element's own `fileId` — by convention
+ * `source.fileId` / `source.fileIds` (e.g. the unmasked original image). Nothing in the element
+ * references these files, so stock Excalidraw treats them as unused.
+ */
+export function intentFileIds(intent: ExtensionIntent): string[] {
+  const src = intent.source ?? {};
+  const ids = [src.fileId, ...(Array.isArray(src.fileIds) ? src.fileIds : [])];
+  return ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/** Extension source files referenced by these elements' intents (callers filter deleted ones). */
+export function extensionReferencedFileIds(elements: readonly ExcalidrawElement[]): string[] {
+  const ids = new Set<string>();
+  for (const el of elements) {
+    const intent = storedIntent(el);
+    if (intent) for (const id of intentFileIds(intent)) ids.add(id);
+  }
+  return [...ids];
+}
+
+/**
+ * Every file the scene needs: image elements' `fileId`s plus extension source files. Use this
+ * wherever files are filtered by reference (collab sync, PNG embedding) so originals survive.
+ * Deleted elements are included; callers filter them when that matters.
+ */
+export function sceneFileIds(elements: readonly ExcalidrawElement[]): string[] {
+  const ids = new Set<string>();
+  for (const el of elements) {
+    if (el.type === "image" && el.fileId) ids.add(el.fileId);
+  }
+  for (const id of extensionReferencedFileIds(elements)) ids.add(id);
+  return [...ids];
+}
+
 export interface ElementExtensionState {
   /** Applied extensions → their params. */
   applied: Record<string, Record<string, unknown>>;

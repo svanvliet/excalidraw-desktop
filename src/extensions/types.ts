@@ -20,7 +20,11 @@ export type ExtensionIntent = {
   /** Extension schema version. */
   v: number;
   params: Record<string, unknown>;
-  /** Whatever is needed to restore / re-derive (e.g. original fileId, width, height, crop). */
+  /**
+   * Whatever is needed to restore / re-derive (e.g. original fileId, width, height, crop).
+   * Files the intent depends on MUST be named `source.fileId` or `source.fileIds` so the app keeps
+   * them in saves, PNG exports and collab sync (see `sceneFileIds`).
+   */
   source?: Record<string, unknown>;
   /** The output file this intent produced; a different `fileId` on the element means stale. */
   outputFileId?: FileId;

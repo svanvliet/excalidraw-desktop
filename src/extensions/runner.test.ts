@@ -1,7 +1,7 @@
 import { FakeApi } from "../agent/scene/testHarness";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import { extensionStateOf, setExtensionsForTests } from "./registry";
+import { extensionStateOf, sceneFileIds, setExtensionsForTests } from "./registry";
 import { resolveParams, runExtension } from "./runner";
 import { validateSchema } from "./schema";
 import { stubExtension } from "./testStub";
@@ -83,6 +83,20 @@ describe("runExtension", () => {
     expect(res).toEqual({ applied: [], skipped: [{ id: "i1", reason: "Stub is not applied" }] });
     expect(api.undoStack).toHaveLength(before);
     expect(fileIdOf("i1")).toBe("file-other");
+  });
+
+  it("keeps source files referenced and skips when the original is gone", async () => {
+    await runExtension(api, ["i1"], "stub", { kind: "apply", params: { color: "red" } });
+    expect(sceneFileIds(api.elements as never)).toEqual(["file-i1-red", "file-i2", "file-i1"]);
+
+    // e.g. reopened from a stock-Excalidraw save that dropped the unreferenced original.
+    delete api.files["file-i1"];
+    const res = await runExtension(api, ["i1"], "stub", { kind: "remove" });
+    expect(res).toEqual({
+      applied: [],
+      skipped: [{ id: "i1", reason: "the original image for Stub is missing" }],
+    });
+    expect(fileIdOf("i1")).toBe("file-i1-red");
   });
 
   it("skips elements edited while the extension ran", async () => {

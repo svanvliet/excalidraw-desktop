@@ -391,6 +391,28 @@ describe("CollabSession", () => {
     expect(b.api.files.f1).toBeDefined();
   });
 
+  it("syncs extension source files that no element's fileId references", async () => {
+    const relay = new MemoryRelay();
+    const masked = {
+      ...image("img", "a0", "out"),
+      customData: {
+        excalidrawDesktop: { ext: "mask", v: 1, params: {}, source: { fileId: "orig" } },
+      },
+    };
+    makePeer(relay, {
+      username: "Host",
+      isHost: true,
+      elements: [masked],
+      files: { out: file("out"), orig: file("orig") },
+    });
+    await settle(relay);
+    const guest = makePeer(relay, { username: "Guest" });
+    await settle(relay);
+
+    expect(guest.api.files.out).toBeDefined();
+    expect(guest.api.files.orig).toBeDefined();
+  });
+
   it("reports 'ended' and clears collaborators when the host ends the session", async () => {
     const relay = new MemoryRelay();
     const a = makePeer(relay, { username: "A", isHost: true });

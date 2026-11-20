@@ -15,7 +15,7 @@ import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/t
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { SceneApi } from "../agent/sceneBridge";
 import { log } from "../lib/logger";
-import { getExtension } from "./registry";
+import { getExtension, intentFileIds } from "./registry";
 import { validateSchema } from "./schema";
 import type { AnyDesktopExtension, ExtensionContext } from "./types";
 
@@ -115,6 +115,13 @@ export async function prepareExtension(
     }
     if (action.kind === "remove" && !ext.getIntent(el)) {
       skipped.push({ id, reason: `${ext.title} is not applied` });
+      continue;
+    }
+    const intent = ext.getIntent(el);
+    if (intent && intentFileIds(intent).some((f) => !files[f])) {
+      // Re-applying and removing both re-derive from the original, which this copy of the
+      // drawing no longer has (e.g. it was saved by stock Excalidraw, which drops unused files).
+      skipped.push({ id, reason: `the original image for ${ext.title} is missing` });
       continue;
     }
     try {
