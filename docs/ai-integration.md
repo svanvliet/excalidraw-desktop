@@ -11,7 +11,7 @@
 | D-AI1 | v1 supports **Copilot CLI, Claude Code, and Codex** behind one shared engine layer.                                                                                                                                                                                                          |
 | D-AI2 | Primary surface: **docked right-side chat panel**. Each drawing keeps a list of conversations; one is active per tab.                                                                                                                                                                        |
 | D-AI3 | Agent edits **apply live**; each turn is one undoable step, plus a **Revert turn** button.                                                                                                                                                                                                   |
-| D-AI4 | Canvas-only by default; optional per-conversation **Attach folder** grants read-only access. Engine built-in shell and file-write tools are always disabled.                                                                                                                                 |
+| D-AI4 | The agent works in a **working folder** (its per-conversation session folder, or an attached one). Writes inside it are auto-approved; shell and anything outside need approval or are blocked. Never blanket access.                                                                        |
 | D-AI5 | Per-engine toggle **"Use my agent's MCPs, skills & plugins"** (default **on**). Tools from those sources that aren't known read-only need in-app approval, with "allow for this conversation".                                                                                               |
 | D-AI6 | Claude Code is **bring-your-own-binary**. If `claude` is installed and logged in, we use it. We never read, store, or proxy credentials. Settings shows a one-line "your Claude/Copilot/OpenAI terms apply" note, and legal review is a release-gate item (T3 Code ships this same pattern). |
 | D-AI7 | **No API keys anywhere.** Remove `openAiKey` and migrate it out of `settings.json`. SEC-3 becomes "the app stores no AI credentials".                                                                                                                                                        |
@@ -22,7 +22,8 @@
 - **Copilot CLI:** `copilot --acp --stdio` is a native ACP server (public preview), with NDJSON JSON-RPC
   (`initialize`, `session/new {cwd, mcpServers}`, `session/prompt`, `session/update`,
   `session/request_permission`, `session/cancel`). Tool filters are set per process:
-  `--available-tools` / `--excluded-tools`, `--deny-tool shell/write`, and `--no-custom-instructions` /
+  `--available-tools` / `--excluded-tools`, `--allow-tool` / `--deny-tool` rules (e.g. a path-scoped
+  `write(<dir>/**)`), `--add-dir`, `--disallow-temp-dir`, and `--no-custom-instructions` /
   `--disable-builtin-mcps` when the "my MCPs" toggle is off. The login lives in the OS credential store.
   There is no `auth status` command, so we detect an auth error on the first `session/new`. Each prompt
   uses a premium request. The Copilot SDK (MIT, now has a Rust crate) is an alternative; ACP is simpler
@@ -39,9 +40,13 @@ Bash,Edit,Write,NotebookEdit`, `--permission-prompt-tool stdio` (approvals arriv
   `ANTHROPIC_BASE_URL`.
 - **Codex:** `codex app-server` speaks JSON-RPC over stdio and handles threads and approval requests
   (it is what the Codex IDE extension uses, and what T3 Code uses). It is marked experimental, so we
-  pin a minimum version (`codex::CODEX_MIN_VERSION`, 0.156.0). The read-only sandbox is set three
-  ways: launch `-c sandbox_mode="read-only" -c approval_policy="on-request"`, the thread's `sandbox`,
-  and every turn's `sandboxPolicy` (no network). Our server is added as `mcp_servers.excalidraw` with
+  pin a minimum version (`codex::CODEX_MIN_VERSION`, 0.156.0). The workspace-write sandbox is set
+  three ways: launch `-c sandbox_mode="workspace-write" -c approval_policy="on-request"
+-c sandbox_workspace_write.network_access=false`, the thread's `sandbox` + config
+  (`sandbox_workspace_write.writable_roots`), and every turn's `sandboxPolicy`
+  (`workspaceWrite { writableRoots, networkAccess: false }`). Codex 0.170 removed
+  `approval_policy="untrusted"`, so commands run inside that sandbox without asking; only escalations
+  (writes outside the roots, network) ask. Our server is added as `mcp_servers.excalidraw` with
   `bearer_token_env_var`, so the token never appears in argv. We strip `OPENAI_API_KEY` and
   `CODEX_API_KEY` so the user's ChatGPT sign-in is used instead of API billing. `codex exec --json`
   is a documented fallback but is not implemented. `codex-acp` also exists.
@@ -114,16 +119,28 @@ flowchart LR
   (`$SHELL -lic`) on macOS or `where` + PATHEXT on Windows. Users can override the path. Handle `.cmd`
   shims via `cmd /c` or by resolving the real target. Use `CREATE_NO_WINDOW`; a Windows Job Object
   (kill-on-close) and a POSIX process group plus `killpg` for tree teardown. Send `session/cancel`
-  before killing. Each conversation runs in a stable scratch cwd under
-  `<appData>/agent/conversations/<conversationId>` (so a resumed session finds its cwd again), or in
-  the attached folder.
-- **Sandboxing per engine** (always on): Copilot gets `--excluded-tools bash,powershell,edit,create,apply_patch`
-  and `--deny-tool shell --deny-tool write`, never `--allow-all*`. Claude gets `--disallowedTools
-Bash,Edit,Write,NotebookEdit,MultiEdit`, a built-in allowlist (`--tools Read,Glob,Grep,WebSearch,
-WebFetch,ToolSearch`), `--permission-mode default`, and `--permission-prompt-tool stdio`.
-  Codex gets `--sandbox read-only` and on-request approvals. Our own canvas tools are pre-approved. Any
-  other permission request becomes an inline approval card (Allow once / Allow for this conversation /
-  Deny).
+  before killing. Each conversation has a stable **session folder** under
+  `<appData>/agent/conversations/<conversationId>` (so a resumed session finds its cwd again). The cwd
+  is the attached folder if one was attached before the first prompt, otherwise the session folder.
+  The **writable roots** are the cwd plus, when a folder is attached mid-conversation, that folder
+  (`StartRequest::keep_session_cwd`: the engine restarts and resumes with the session folder still the
+  cwd, since Claude and Copilot tie resume to it). Paths are checked with `adapter::resolve_path` /
+  `is_within_roots` (canonical, `..` and symlink escapes rejected).
+- **Sandboxing per engine** (always on, never `--allow-all*` / `bypassPermissions`):
+  - Copilot: `--allow-tool=write(<root>/**)` per root, `--add-dir=<root>` for roots other than the
+    cwd, `--disallow-temp-dir`, `--allow-tool=excalidraw`, `--no-ask-user`. Shell and out-of-root
+    writes arrive as ACP `session/request_permission` and become cards; a conversation grant for a
+    shell command covers only that exact command.
+  - Claude: `--tools` adds `Edit,Write,MultiEdit,NotebookEdit,Bash` to the read-only built-ins,
+    `--disallowedTools BashOutput,KillShell,KillBash,PowerShell`, `--add-dir` per extra root,
+    `--permission-mode default`, `--permission-prompt-tool stdio`. Our `can_use_tool` handler
+    auto-allows write tools whose target is inside a root; Bash (keyed per command) and other writes
+    get a card.
+  - Codex: the workspace-write sandbox above (writable roots, no network, `/tmp` and `$TMPDIR`
+    excluded). File-change approvals are auto-accepted when every path is inside the roots, otherwise
+    carded; conversation grants are keyed by the exact file set.
+  - Our own canvas tools are pre-approved. Any other permission request becomes an inline approval
+    card (Allow once / Allow for this conversation / Deny).
 - **"Use my MCPs, skills & plugins" OFF:** Copilot gets `--disable-builtin-mcps`,
   `--no-custom-instructions`, and only our MCP server. Claude gets `--strict-mcp-config`. Codex merges `-c`
   overrides recursively, so `-c mcp_servers={}` would not remove anything: instead we `config/read`
@@ -189,10 +206,11 @@ then edit), and the style defaults.
     (Copilot `configOptions`/`models`, Codex `model/list`, Claude `init.models`, cached per engine so
     it's available before a session starts). It stays switchable mid-conversation on Copilot
     (`session/set_config_option`) and Codex (per-turn `model`), and is fixed after the first prompt on
-    Claude. The Settings model is the default for new conversations. Folder shows "None — canvas
-    only" or the read-only folder name (full path on hover) with Attach / Change / Detach before the
-    first prompt and Reveal afterwards. The scratch cwd is never shown: it holds nothing the user
-    put there.
+    Claude. The Settings model is the default for new conversations. Folder shows "Session folder"
+    (the agent's own per-conversation folder, where files it writes land) or the attached folder's
+    name (full path on hover), with Reveal. Before the first prompt it offers Attach / Change /
+    Detach; afterwards only Attach, and only while no folder is set and no turn is running. Attaching
+    then restarts the engine and resumes the same conversation (`folderAttachedLate` is persisted).
   - The transcript renders GitHub-flavored Markdown (react-markdown + remark-gfm: tables, fenced
     code, task lists; raw HTML escaped, images shown as alt text, only http(s) links), collapsible
     "thinking", and each run of consecutive tool calls folded into one collapsible "N tool calls"
@@ -236,7 +254,11 @@ then edit), and the style defaults.
   - Each adapter's translation, using recorded fixtures.
   - MCP server auth (a wrong token gets 401) and per-session token isolation.
   - Kill-tree.
-  - Argument builders, asserting the sandbox flags are always present.
+  - Argument builders, asserting the sandbox flags are always present and never allow-all.
+  - In-root writes auto-approved, out-of-root writes and shell carded (per adapter), path resolution
+    escapes (`..`, symlinks, sibling prefixes, `~`).
+  - Live (ignored, `cargo test --lib commands::agent::live_tests -- --ignored`): `live_*_writes`
+    asks each engine to create `hello.txt` and checks it lands in the session folder with no card.
 - **Playwright:**
   - With AI off, no `agent_*` invoke and zero requests.
   - A panel flow against the fake ACP agent (which emits tool calls that draw a box), then undo and

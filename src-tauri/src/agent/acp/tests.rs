@@ -14,6 +14,7 @@ fn cfg() -> SessionConfig {
         binary: PathBuf::from("/usr/local/bin/copilot"),
         cwd: PathBuf::from("/tmp/ws"),
         attached_folder: None,
+        writable_roots: vec![PathBuf::from("/tmp/ws")],
         use_host_config: false,
         model: None,
         mcp: McpEndpoint {
@@ -93,20 +94,15 @@ fn copilot_sandbox_flags_are_always_present() {
             let spec = AcpAdapter::copilot().launch_spec(&c);
             let a = &spec.args;
             assert_eq!(&a[..2], ["--acp", "--stdio"]);
-            let excluded = a
+            // Writes are pre-approved only inside the session's root; never unscoped `write`
+            // (which would also approve shell redirections anywhere) and never shell.
+            let allows: Vec<&str> = a
                 .iter()
-                .find_map(|x| x.strip_prefix("--excluded-tools="))
-                .expect("--excluded-tools");
-            for tool in ["bash", "powershell", "edit", "create", "apply_patch"] {
-                assert!(excluded.split(',').any(|t| t == tool), "{tool} excluded");
-            }
-            // Unknown to current Copilot builds; listing them prints an "Info:" notice.
-            for tool in ["write_bash", "write_powershell"] {
-                assert!(!excluded.split(',').any(|t| t == tool), "{tool} not listed");
-            }
-            assert!(a.contains(&"--deny-tool=shell".to_owned()));
-            assert!(a.contains(&"--deny-tool=write".to_owned()));
-            assert!(a.contains(&"--allow-tool=excalidraw".to_owned()));
+                .filter_map(|x| x.strip_prefix("--allow-tool="))
+                .collect();
+            assert_eq!(allows, ["write(/tmp/ws/**)", "excalidraw"]);
+            assert!(a.contains(&"--disallow-temp-dir".to_owned()));
+            assert!(!a.iter().any(|x| x.starts_with("--add-dir")));
             assert!(a.contains(&"--no-ask-user".to_owned()));
             assert!(!a
                 .iter()
@@ -128,6 +124,20 @@ fn copilot_sandbox_flags_are_always_present() {
             assert_eq!(spec.cwd, c.cwd);
         }
     }
+}
+
+#[test]
+fn copilot_folder_attached_mid_conversation_is_a_second_scoped_root() {
+    let mut c = cfg();
+    c.attached_folder = Some(PathBuf::from("/work/proj/"));
+    c.writable_roots = vec![PathBuf::from("/tmp/ws"), PathBuf::from("/work/proj/")];
+    let a = AcpAdapter::copilot().launch_spec(&c).args;
+    assert!(a.contains(&"--allow-tool=write(/tmp/ws/**)".to_owned()));
+    assert!(a.contains(&"--allow-tool=write(/work/proj/**)".to_owned()));
+    assert!(a.contains(&"--add-dir=/work/proj/".to_owned()));
+    assert!(!a
+        .iter()
+        .any(|x| x == "--allow-tool=write" || x == "--allow-tool=shell"));
 }
 
 #[test]
@@ -739,6 +749,35 @@ fn permission_decisions_map_to_option_ids() {
         .iter()
         .all(|e| !matches!(e, AgentEvent::PermissionRequest { .. })));
     assert_eq!(parse(&out.writes[0])["result"]["outcome"]["optionId"], "a1");
+}
+
+fn shell_permission_line(id: u64, call: &str, command: &str) -> String {
+    json!({"jsonrpc":"2.0","id":id,"method":"session/request_permission","params":{
+        "sessionId":"s1","toolCall":{"toolCallId":call,"title":"Run shell command","kind":"execute",
+            "rawInput":{"command":command}},
+        "options":[{"optionId":"a1","name":"Allow","kind":"allow_once"},
+                   {"optionId":"r1","name":"Reject","kind":"reject_once"}]}})
+    .to_string()
+}
+
+#[test]
+fn shell_grant_for_conversation_covers_only_that_command() {
+    let (mut a, _) = ready(AcpAdapter::copilot(), &cfg());
+    a.prompt("t1", "x");
+    let rid = first_request_id(&a.on_line(&shell_permission_line(70, "c1", "npm test")));
+    a.respond_permission(&rid, PermissionDecision::AllowForConversation);
+    let same = a.on_line(&shell_permission_line(71, "c2", "npm test"));
+    assert!(same
+        .events
+        .iter()
+        .all(|e| !matches!(e, AgentEvent::PermissionRequest { .. })));
+    assert_eq!(
+        parse(&same.writes[0])["result"]["outcome"]["optionId"],
+        "a1"
+    );
+    let other = a.on_line(&shell_permission_line(72, "c3", "rm -rf ~"));
+    assert!(other.writes.is_empty());
+    first_request_id(&other);
 }
 
 #[test]

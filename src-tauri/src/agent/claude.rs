@@ -6,8 +6,8 @@
 //!
 //! Portions adapted from T3 Code (https://github.com/pingdotgg/t3code), Copyright (c) 2026 T3 Tools Inc., MIT License.
 use super::adapter::{
-    AdapterOutput, EngineAdapter, LaunchSpec, SessionConfig, MCP_SERVER_NAME, MCP_TOKEN_ENV,
-    MCP_URL_ENV,
+    is_within_roots, AdapterOutput, EngineAdapter, LaunchSpec, SessionConfig, MCP_SERVER_NAME,
+    MCP_TOKEN_ENV, MCP_URL_ENV,
 };
 use super::events::{
     AgentEvent, EngineKind, ErrorKind, PermissionDecision, StopReason, ToolCallStatus, ToolSource,
@@ -15,23 +15,19 @@ use super::events::{
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
-/// Built-in tools that can run commands or modify files. Always disallowed (SEC-6), even
-/// though `--tools` already omits them, so a future CLI that ignores `--tools` stays sandboxed.
-pub const DISALLOWED_TOOLS: &[&str] = &[
-    "Bash",
-    "BashOutput",
-    "KillShell",
-    "KillBash",
-    "PowerShell",
-    "Edit",
-    "Write",
-    "MultiEdit",
-    "NotebookEdit",
-];
+/// Built-in tools that are always disallowed (SEC-6), even though `--tools` already omits them:
+/// background shells (which would outlive an approved command) and PowerShell.
+pub const DISALLOWED_TOOLS: &[&str] = &["BashOutput", "KillShell", "KillBash", "PowerShell"];
+
+/// File-writing tools: auto-approved only when their target resolves inside a writable root.
+pub const WRITE_TOOLS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
 /// Built-in tool allowlist (`--tools`). MCP tools are unaffected by it. `ToolSearch` is
-/// required: Claude defers MCP tool schemas and loads them via `ToolSearch select:`.
+/// required: Claude defers MCP tool schemas and loads them via `ToolSearch select:`. `Bash`
+/// always goes through an approval card (never `--allowedTools`, never `acceptEdits`, which
+/// would also auto-run filesystem commands).
 pub const BUILTIN_TOOLS: &[&str] = &[
     "Read",
     "Glob",
@@ -39,6 +35,11 @@ pub const BUILTIN_TOOLS: &[&str] = &[
     "WebSearch",
     "WebFetch",
     "ToolSearch",
+    "Edit",
+    "Write",
+    "MultiEdit",
+    "NotebookEdit",
+    "Bash",
 ];
 
 /// Credentials that would silently switch billing away from the user's Claude login (SEC-6),
@@ -138,13 +139,34 @@ fn build_args(cfg: &SessionConfig, new_session_id: &str) -> Vec<String> {
             args.push(new_session_id.to_string());
         }
     }
-    if let Some(folder) = &cfg.attached_folder {
-        if folder != &cfg.cwd {
-            args.push("--add-dir".into());
-            args.push(folder.to_string_lossy().into_owned());
-        }
+    for root in cfg.writable_roots.iter().filter(|r| **r != cfg.cwd) {
+        args.push("--add-dir".into());
+        args.push(root.to_string_lossy().into_owned());
     }
     args
+}
+
+/// The path a write tool targets, if it is one.
+fn write_target(tool_name: &str, input: &Value) -> Option<String> {
+    if !WRITE_TOOLS.contains(&tool_name) {
+        return None;
+    }
+    str_field(input, "file_path")
+        .or_else(|| str_field(input, "notebook_path"))
+        .map(str::to_string)
+}
+
+/// "Allow for conversation" key: Bash grants cover only that exact command, and write grants
+/// only that file, so a single click never becomes blanket shell or write access.
+fn allowance_key(tool_name: &str, input: &Value) -> String {
+    if tool_name == "Bash" {
+        return format!("Bash:{}", str_field(input, "command").unwrap_or_default());
+    }
+    match write_target(tool_name, input) {
+        Some(path) => format!("write:{path}"),
+        None if WRITE_TOOLS.contains(&tool_name) => format!("write:{input}"),
+        None => tool_name.to_string(),
+    }
 }
 
 fn new_uuid_v4() -> String {
@@ -229,7 +251,7 @@ fn deny_line(request_id: &str) -> String {
 }
 
 struct PendingPermission {
-    tool_name: String,
+    allowance_key: String,
     input: Value,
 }
 
@@ -253,6 +275,8 @@ pub struct ClaudeAdapter {
     tool_names: HashMap<String, String>,
     streaming_message: Option<String>,
     streamed_messages: HashSet<String>,
+    cwd: PathBuf,
+    writable_roots: Vec<PathBuf>,
 }
 
 impl Default for ClaudeAdapter {
@@ -281,6 +305,8 @@ impl ClaudeAdapter {
             tool_names: HashMap::new(),
             streaming_message: None,
             streamed_messages: HashSet::new(),
+            cwd: PathBuf::new(),
+            writable_roots: Vec::new(),
         }
     }
 
@@ -580,8 +606,12 @@ impl ClaudeAdapter {
             .unwrap_or_default()
             .to_string();
         let input = request.get("input").cloned().unwrap_or_else(|| json!({}));
+        let key = allowance_key(&tool_name, &input);
+        let in_root = write_target(&tool_name, &input)
+            .is_some_and(|p| is_within_roots(Path::new(&p), &self.cwd, &self.writable_roots));
         if tool_source(&tool_name) == ToolSource::Canvas
-            || self.allowed_for_conversation.contains(&tool_name)
+            || in_root
+            || self.allowed_for_conversation.contains(&key)
         {
             out.writes.push(allow_line(request_id, &input));
             return;
@@ -602,7 +632,10 @@ impl ClaudeAdapter {
         });
         self.pending.insert(
             request_id.to_string(),
-            PendingPermission { tool_name, input },
+            PendingPermission {
+                allowance_key: key,
+                input,
+            },
         );
     }
 
@@ -719,6 +752,8 @@ impl EngineAdapter for ClaudeAdapter {
     }
 
     fn start(&mut self, cfg: &SessionConfig) -> AdapterOutput {
+        self.cwd = cfg.cwd.clone();
+        self.writable_roots = cfg.writable_roots.clone();
         self.requested_model = cfg.model.clone().filter(|m| !m.is_empty());
         self.model = self.requested_model.clone();
         self.session_id = Some(
@@ -792,7 +827,7 @@ impl EngineAdapter for ClaudeAdapter {
             PermissionDecision::Deny => deny_line(request_id),
             PermissionDecision::AllowOnce => allow_line(request_id, &p.input),
             PermissionDecision::AllowForConversation => {
-                self.allowed_for_conversation.insert(p.tool_name);
+                self.allowed_for_conversation.insert(p.allowance_key);
                 allow_line(request_id, &p.input)
             }
         });
@@ -874,6 +909,7 @@ mod tests {
             binary: PathBuf::from("/usr/local/bin/claude"),
             cwd: PathBuf::from("/tmp/scratch"),
             attached_folder: None,
+            writable_roots: vec![PathBuf::from("/tmp/scratch")],
             use_host_config,
             model: None,
             mcp: McpEndpoint {
@@ -927,21 +963,23 @@ mod tests {
             assert_eq!(arg_after(args, "--input-format"), Some("stream-json"));
             assert_eq!(arg_after(args, "--output-format"), Some("stream-json"));
             let disallowed = arg_after(args, "--disallowedTools").unwrap();
-            for t in [
-                "Bash",
-                "Edit",
-                "Write",
-                "MultiEdit",
-                "NotebookEdit",
-                "PowerShell",
-            ] {
+            for t in ["BashOutput", "KillShell", "KillBash", "PowerShell"] {
                 assert!(disallowed.split(',').any(|d| d == t), "{t} not disallowed");
             }
             let tools: Vec<&str> = arg_after(args, "--tools").unwrap().split(',').collect();
             assert!(tools.contains(&"ToolSearch"));
+            for t in ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"] {
+                assert!(tools.contains(&t), "{t} enabled (gated by can_use_tool)");
+            }
             for t in DISALLOWED_TOOLS {
                 assert!(!tools.contains(t), "{t} must not be enabled");
             }
+            // Only canvas tools are pre-approved; Bash and writes go through can_use_tool.
+            assert_eq!(arg_after(args, "--allowedTools"), Some("mcp__excalidraw"));
+            assert!(!args.iter().any(|a| a == "acceptEdits"
+                || a == "bypassPermissions"
+                || a == "--dangerously-skip-permissions"));
+            assert!(arg_after(args, "--add-dir").is_none());
             assert_eq!(tools.contains(&"Skill"), host);
             assert_eq!(args.contains(&"--strict-mcp-config".to_string()), !host);
             assert_eq!(
@@ -1000,6 +1038,10 @@ mod tests {
         c.resume_id = Some("abc".into());
         c.model = Some("haiku".into());
         c.attached_folder = Some(PathBuf::from("/Users/user/notes"));
+        c.writable_roots = vec![
+            PathBuf::from("/tmp/scratch"),
+            PathBuf::from("/Users/user/notes"),
+        ];
         let args = a.launch_spec(&c).args;
         assert_eq!(arg_after(&args, "--resume"), Some("abc"));
         assert!(arg_after(&args, "--session-id").is_none());
@@ -1227,6 +1269,94 @@ mod tests {
         a.on_line(&can_use_tool("r3", "WebSearch"));
         a.respond_permission("r3", PermissionDecision::AllowOnce);
         assert_eq!(a.on_line(&can_use_tool("r4", "WebSearch")).events.len(), 1);
+    }
+
+    fn tool_request(id: &str, tool: &str, input: Value) -> String {
+        json!({"type":"control_request","request_id":id,"request":{"subtype":"can_use_tool",
+            "tool_name":tool,"input":input,"tool_use_id":"toolu_x"}})
+        .to_string()
+    }
+
+    fn is_allow(out: &AdapterOutput) -> bool {
+        out.events.is_empty()
+            && out.writes.len() == 1
+            && parse(&out.writes[0])["response"]["response"]["behavior"] == "allow"
+    }
+
+    #[test]
+    fn writes_inside_roots_are_auto_approved_others_need_a_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let mut c = cfg(false);
+        c.cwd = root.clone();
+        c.writable_roots = vec![root.clone()];
+        let mut a = ClaudeAdapter::new();
+        a.start(&c);
+        let inside = root.join("notes/hello.txt").to_string_lossy().into_owned();
+        for (tool, input) in [
+            ("Write", json!({"file_path": inside, "content": "hi"})),
+            (
+                "Edit",
+                json!({"file_path": "hello.txt", "old_string": "a", "new_string": "b"}),
+            ),
+            (
+                "NotebookEdit",
+                json!({"notebook_path": "nb.ipynb", "new_source": ""}),
+            ),
+        ] {
+            assert!(
+                is_allow(&a.on_line(&tool_request("w", tool, input))),
+                "{tool}"
+            );
+        }
+        for (i, path) in ["../escape.txt", "/etc/hosts", "~/.zshrc"]
+            .iter()
+            .enumerate()
+        {
+            let out = a.on_line(&tool_request(
+                &format!("o{i}"),
+                "Write",
+                json!({"file_path": path}),
+            ));
+            assert!(out.writes.is_empty(), "{path} must not be auto-approved");
+            assert!(matches!(
+                &out.events[..],
+                [AgentEvent::PermissionRequest { .. }]
+            ));
+        }
+        // An outside-root grant covers only that file.
+        a.respond_permission("o1", PermissionDecision::AllowForConversation);
+        assert!(is_allow(&a.on_line(&tool_request(
+            "o3",
+            "Write",
+            json!({"file_path": "/etc/hosts"})
+        ))));
+        let out = a.on_line(&tool_request(
+            "o4",
+            "Write",
+            json!({"file_path": "/etc/passwd"}),
+        ));
+        assert!(out.writes.is_empty());
+    }
+
+    #[test]
+    fn bash_always_needs_approval_and_grants_are_per_command() {
+        let (mut a, _) = started(HI);
+        let out = a.on_line(&tool_request("b1", "Bash", json!({"command": "ls"})));
+        assert!(out.writes.is_empty());
+        assert!(matches!(
+            &out.events[..],
+            [AgentEvent::PermissionRequest { .. }]
+        ));
+        a.respond_permission("b1", PermissionDecision::AllowForConversation);
+        assert!(is_allow(&a.on_line(&tool_request(
+            "b2",
+            "Bash",
+            json!({"command": "ls"})
+        ))));
+        let out = a.on_line(&tool_request("b3", "Bash", json!({"command": "rm -rf /"})));
+        assert!(out.writes.is_empty());
+        assert_eq!(out.events.len(), 1);
     }
 
     #[test]

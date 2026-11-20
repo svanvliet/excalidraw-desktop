@@ -127,6 +127,11 @@ export interface AgentStartOptions {
   resumeId: string | null;
   /** App-side conversation id; gives each conversation a stable scratch cwd. */
   conversationId?: string | null;
+  /**
+   * The folder was attached after the conversation started: keep the session folder as
+   * the cwd (engines tie resume to it) and add the folder as a second writable root.
+   */
+  keepSessionCwd?: boolean;
 }
 
 export const CANVAS_TOOL_NAMES = [

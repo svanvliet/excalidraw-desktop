@@ -2,7 +2,7 @@
 //! `manager` spawns the [`LaunchSpec`], feeds every stdout line to [`EngineAdapter::on_line`],
 //! and writes returned lines to stdin. This keeps adapters testable against recorded fixtures.
 use super::events::{AgentEvent, EngineKind, PermissionDecision};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 /// How engines reach our canvas MCP server.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,9 +27,13 @@ pub struct SessionConfig {
     pub tab_id: String,
     /// Resolved engine binary (from `detect`).
     pub binary: PathBuf,
-    /// Scratch dir `<appData>/agent/<tabId>` or the attached (read-only) folder.
+    /// The conversation's session folder (`<appData>/agent/conversations/<id>`), or the
+    /// attached folder when it was attached before the conversation started.
     pub cwd: PathBuf,
     pub attached_folder: Option<PathBuf>,
+    /// Canonical directories the agent may write to without asking: `cwd`, plus the attached
+    /// folder when that is not the cwd (attached mid-conversation). Nothing else is writable.
+    pub writable_roots: Vec<PathBuf>,
     /// D-AI5 "Use my agent's MCPs, skills & plugins".
     pub use_host_config: bool,
     pub model: Option<String>,
@@ -38,6 +42,66 @@ pub struct SessionConfig {
     pub system_prompt: String,
     /// Engine-native session id to resume, if any.
     pub resume_id: Option<String>,
+}
+
+/// Lexically normalise `path` (relative paths resolve against `base`) and resolve symlinks in
+/// the deepest existing ancestor, so `/var/…` and `/private/var/…` compare equal on macOS and a
+/// symlink can't smuggle a write out of a root. `None` if `..` climbs above the filesystem root.
+pub fn resolve_path(path: &Path, base: &Path) -> Option<PathBuf> {
+    // `~` is expanded by some engines but not by us: never treat it as relative to `base`.
+    if path.starts_with("~") {
+        return None;
+    }
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    };
+    let mut lexical = PathBuf::new();
+    for c in joined.components() {
+        match c {
+            Component::ParentDir => {
+                // Resolve symlinks before popping, as the OS would (`link/..` is link's parent).
+                if let Ok(canon) = lexical.canonicalize() {
+                    lexical = canon;
+                }
+                if !lexical.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            other => lexical.push(other.as_os_str()),
+        }
+    }
+    let mut existing = lexical.clone();
+    let mut rest = Vec::new();
+    loop {
+        if let Ok(canon) = existing.canonicalize() {
+            let mut out = canon;
+            for part in rest.iter().rev() {
+                out.push(part);
+            }
+            return Some(out);
+        }
+        match (
+            existing.file_name().map(|n| n.to_os_string()),
+            existing.parent(),
+        ) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                existing = parent.to_path_buf();
+            }
+            _ => return Some(lexical),
+        }
+    }
+}
+
+/// True iff `path` (relative to `base`) resolves inside one of `roots` (already canonical).
+pub fn is_within_roots(path: &Path, base: &Path, roots: &[PathBuf]) -> bool {
+    match resolve_path(path, base) {
+        Some(p) => roots.iter().any(|r| p.starts_with(r)),
+        None => false,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -87,5 +151,36 @@ pub trait EngineAdapter: Send {
             }],
             writes: vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn within_roots_resolves_relative_dotdot_and_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("root");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let roots = vec![root.canonicalize().unwrap()];
+        assert!(is_within_roots(Path::new("a.txt"), &root, &roots));
+        assert!(is_within_roots(Path::new("sub/new/b.md"), &root, &roots));
+        assert!(is_within_roots(&root.join("sub/../c.txt"), &root, &roots));
+        assert!(!is_within_roots(Path::new("../escape.txt"), &root, &roots));
+        assert!(!is_within_roots(&root.join("sub/../../x"), &root, &roots));
+        assert!(!is_within_roots(Path::new("/etc/passwd"), &root, &roots));
+        // Sibling with a common string prefix is outside.
+        assert!(!is_within_roots(&tmp.path().join("rootx/f"), &root, &roots));
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(tmp.path(), root.join("link")).unwrap();
+            assert!(!is_within_roots(Path::new("link/out.txt"), &root, &roots));
+            // `link/..` is the symlink target's parent, not `root`.
+            std::fs::create_dir_all(tmp.path().join("t/u")).unwrap();
+            std::os::unix::fs::symlink(tmp.path().join("t/u"), root.join("hop")).unwrap();
+            assert!(!is_within_roots(Path::new("hop/../x.txt"), &root, &roots));
+        }
+        assert!(!is_within_roots(Path::new("~/.zshrc"), &root, &roots));
     }
 }

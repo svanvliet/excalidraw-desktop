@@ -177,7 +177,7 @@ pub struct ThreadParams {
     pub thread_id: Option<String>,
     pub approval_policy: &'static str,
     pub approvals_reviewer: &'static str,
-    /// `SandboxMode`: always `read-only` (SEC-6).
+    /// `SandboxMode`: always `workspace-write` (SEC-6); roots are pinned per turn.
     pub sandbox: &'static str,
     pub cwd: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -195,7 +195,13 @@ pub struct ThreadParams {
     rename_all_fields = "camelCase"
 )]
 pub enum SandboxPolicy {
-    ReadOnly { network_access: bool },
+    /// Writes only inside `writable_roots`; no network; `$TMPDIR` and `/tmp` excluded.
+    WorkspaceWrite {
+        writable_roots: Vec<String>,
+        network_access: bool,
+        exclude_tmpdir_env_var: bool,
+        exclude_slash_tmp: bool,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -535,10 +541,17 @@ mod tests {
 
     #[test]
     fn sandbox_policy_wire_shape() {
-        let v = serde_json::to_value(SandboxPolicy::ReadOnly {
+        let v = serde_json::to_value(SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec!["/s".into()],
             network_access: false,
+            exclude_tmpdir_env_var: true,
+            exclude_slash_tmp: true,
         })
         .unwrap();
-        assert_eq!(v, json!({"type": "readOnly", "networkAccess": false}));
+        assert_eq!(
+            v,
+            json!({"type": "workspaceWrite", "writableRoots": ["/s"], "networkAccess": false,
+                   "excludeTmpdirEnvVar": true, "excludeSlashTmp": true})
+        );
     }
 }

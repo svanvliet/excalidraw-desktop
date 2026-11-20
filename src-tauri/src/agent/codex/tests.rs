@@ -11,6 +11,7 @@ fn cfg() -> SessionConfig {
         binary: PathBuf::from("/usr/local/bin/codex"),
         cwd: PathBuf::from("/tmp/scratch"),
         attached_folder: None,
+        writable_roots: vec![PathBuf::from("/tmp/scratch")],
         use_host_config: true,
         model: None,
         mcp: McpEndpoint {
@@ -108,7 +109,7 @@ fn notify(a: &mut CodexAdapter, method: &str, params: Value) -> AdapterOutput {
 // ---- launch spec / handshake ----
 
 #[test]
-fn launch_spec_always_read_only_with_token_in_env_only() {
+fn launch_spec_always_workspace_write_with_token_in_env_only() {
     for use_host_config in [true, false] {
         let mut c = cfg();
         c.use_host_config = use_host_config;
@@ -116,11 +117,16 @@ fn launch_spec_always_read_only_with_token_in_env_only() {
         assert_eq!(spec.program, c.binary);
         assert_eq!(spec.args[0], "app-server");
         let joined = spec.args.join(" ");
-        assert!(joined.contains("-c sandbox_mode=\"read-only\""), "{joined}");
+        assert!(
+            joined.contains("-c sandbox_mode=\"workspace-write\""),
+            "{joined}"
+        );
         assert!(
             joined.contains("-c approval_policy=\"on-request\""),
             "{joined}"
         );
+        assert!(joined.contains("-c sandbox_workspace_write.network_access=false"));
+        assert!(!joined.contains("danger-full-access") && !joined.contains("never"));
         assert!(!joined.contains("secret-token"));
         assert!(spec
             .env_set
@@ -150,8 +156,13 @@ fn handshake_starts_read_only_thread_with_canvas_mcp() {
     assert_eq!(parse(&out.writes[0]), json!({ "method": "initialized" }));
     find_req(&out.writes, M_ACCOUNT_READ);
     let (tid, p) = find_req(&out.writes, M_THREAD_START);
-    assert_eq!(p["sandbox"], "read-only");
+    assert_eq!(p["sandbox"], "workspace-write");
     assert_eq!(p["approvalPolicy"], "on-request");
+    assert_eq!(
+        p["config"]["sandbox_workspace_write.writable_roots"],
+        json!(["/tmp/scratch"])
+    );
+    assert_eq!(p["config"]["sandbox_workspace_write.network_access"], false);
     assert_eq!(p["approvalsReviewer"], "user");
     assert_eq!(p["cwd"], "/tmp/scratch");
     assert_eq!(p["model"], "gpt-5.5");
@@ -194,7 +205,8 @@ fn handshake_starts_read_only_thread_with_canvas_mcp() {
     );
     assert_eq!(
         p["sandboxPolicy"],
-        json!({ "type": "readOnly", "networkAccess": false })
+        json!({ "type": "workspaceWrite", "writableRoots": ["/tmp/scratch"],
+                "networkAccess": false, "excludeTmpdirEnvVar": true, "excludeSlashTmp": true })
     );
     assert_eq!(p["approvalPolicy"], "on-request");
 }
@@ -250,7 +262,7 @@ fn resume_falls_back_to_new_thread() {
     let out = respond(&mut a, id, json!({ "userAgent": "codex/0.156.1" }));
     let (rid, p) = find_req(&out.writes, M_THREAD_RESUME);
     assert_eq!(p["threadId"], "old-thread");
-    assert_eq!(p["sandbox"], "read-only");
+    assert_eq!(p["sandbox"], "workspace-write");
     let out = a.on_line(
         &json!({ "id": rid, "error": { "code": -32600, "message": "thread not found: old-thread" } })
             .to_string(),
@@ -572,6 +584,97 @@ fn command_approval_round_trips_and_remembers_session_grant() {
     assert_eq!(
         parse(&out.writes[0]),
         json!({ "id": 2, "result": { "decision": "decline" } })
+    );
+}
+
+fn file_change(a: &mut CodexAdapter, rpc: u64, item: &str, paths: &[&str]) -> AdapterOutput {
+    let changes: Vec<Value> = paths
+        .iter()
+        .map(|p| json!({ "path": p, "kind": {"type": "add"}, "diff": "" }))
+        .collect();
+    notify(
+        a,
+        N_ITEM_STARTED,
+        json!({ "threadId": THREAD, "turnId": "turn-1",
+                "item": { "type": "fileChange", "id": item, "changes": changes, "status": "inProgress" } }),
+    );
+    a.on_line(
+        &json!({ "id": rpc, "method": R_FILE_CHANGE_APPROVAL, "params": {
+            "threadId": THREAD, "turnId": "turn-1", "itemId": item } })
+        .to_string(),
+    )
+}
+
+#[test]
+fn file_changes_inside_roots_are_auto_accepted_outside_need_a_card() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let mut c = cfg();
+    c.cwd = root.clone();
+    c.writable_roots = vec![root.clone()];
+    let (mut a, _) = ready(&c);
+    start_turn(&mut a, "turn-1");
+    let inside = root.join("sub/new.md").to_string_lossy().into_owned();
+    let out = file_change(&mut a, 20, "fc1", &[&inside, "hello.txt"]);
+    assert!(out
+        .events
+        .iter()
+        .all(|e| !matches!(e, AgentEvent::PermissionRequest { .. })));
+    assert_eq!(
+        parse(out.writes.last().unwrap()),
+        json!({ "id": 20, "result": { "decision": "accept" } })
+    );
+
+    // One path outside the root: the whole change needs approval.
+    let out = file_change(&mut a, 21, "fc2", &["hello.txt", "/etc/hosts"]);
+    assert!(out.writes.is_empty());
+    let rid = out
+        .events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::PermissionRequest {
+                request_id, detail, ..
+            } => {
+                assert!(detail.as_deref().unwrap_or_default().contains("/etc/hosts"));
+                Some(request_id.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    // "Allow for conversation" stays scoped to that file set and is never Codex's
+    // session-wide patch approval.
+    let out = a.respond_permission(&rid, PermissionDecision::AllowForConversation);
+    assert_eq!(
+        parse(&out.writes[0])["result"],
+        json!({ "decision": "accept" })
+    );
+    let out = file_change(&mut a, 22, "fc3", &["/etc/hosts", "hello.txt"]);
+    assert_eq!(parse(out.writes.last().unwrap())["id"], 22);
+    let out = file_change(&mut a, 23, "fc4", &["/etc/passwd"]);
+    assert!(out.writes.is_empty());
+
+    // Unknown item (no paths) or a grant root outside the roots never auto-accepts.
+    let out = a.on_line(
+        &json!({ "id": 24, "method": R_FILE_CHANGE_APPROVAL, "params": {
+            "threadId": THREAD, "turnId": "turn-1", "itemId": "nope" } })
+        .to_string(),
+    );
+    assert!(out.writes.is_empty());
+    let out = a.on_line(
+        &json!({ "id": 25, "method": R_APPLY_PATCH_APPROVAL_V1, "params": {
+            "conversationId": THREAD, "callId": "c", "fileChanges": { inside.clone(): {} },
+            "grantRoot": "/" } })
+        .to_string(),
+    );
+    assert!(out.writes.is_empty());
+    let out = a.on_line(
+        &json!({ "id": 26, "method": R_APPLY_PATCH_APPROVAL_V1, "params": {
+            "conversationId": THREAD, "callId": "c", "fileChanges": { inside: {} } } })
+        .to_string(),
+    );
+    assert_eq!(
+        parse(&out.writes[0]),
+        json!({ "id": 26, "result": { "decision": "approved" } })
     );
 }
 

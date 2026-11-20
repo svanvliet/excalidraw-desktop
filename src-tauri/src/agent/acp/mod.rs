@@ -76,7 +76,22 @@ struct ToolState {
 struct PendingPermission {
     rpc_id: Value,
     options: Vec<PermissionOption>,
-    tool_name: String,
+    /// What "allow for conversation" remembers (see [`allowance_key`]).
+    allowance_key: String,
+}
+
+/// Shell commands and file edits outside the writable roots are granted per exact input, so
+/// "allow for conversation" never turns into blanket shell or write access; other tools by name.
+fn allowance_key(state: &ToolState) -> String {
+    let scoped = matches!(
+        state.kind.as_deref(),
+        Some("execute") | Some("edit") | Some("delete") | Some("move")
+    );
+    match (&state.input, scoped) {
+        (Some(input), true) => format!("{}:{}", state.name, compact_json(input)),
+        (None, true) => format!("{}:{}", state.name, state.title.as_deref().unwrap_or("")),
+        _ => state.name.clone(),
+    }
 }
 
 pub struct AcpAdapter {
@@ -657,8 +672,9 @@ impl AcpAdapter {
             }
         };
         let state = self.upsert_tool(&req.tool_call);
-        let auto = state.source == ToolSource::Canvas
-            || self.allowed_for_conversation.contains(&state.name);
+        let key = allowance_key(&state);
+        let auto =
+            state.source == ToolSource::Canvas || self.allowed_for_conversation.contains(&key);
         if auto {
             out.writes.push(permission_reply(
                 &id,
@@ -684,7 +700,7 @@ impl AcpAdapter {
             PendingPermission {
                 rpc_id: id,
                 options: req.options,
-                tool_name: state.name,
+                allowance_key: key,
             },
         );
     }
@@ -818,7 +834,8 @@ impl EngineAdapter for AcpAdapter {
             PermissionDecision::Deny => &["reject_once", "reject_always"],
         };
         if decision == PermissionDecision::AllowForConversation {
-            self.allowed_for_conversation.insert(p.tool_name.clone());
+            self.allowed_for_conversation
+                .insert(p.allowance_key.clone());
         }
         out.writes.push(permission_reply(
             &p.rpc_id,

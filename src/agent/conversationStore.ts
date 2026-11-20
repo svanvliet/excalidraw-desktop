@@ -27,6 +27,8 @@ export interface ConversationRecord {
   title: string;
   model: string | null;
   attachedFolder: string | null;
+  /** Folder attached mid-conversation; the session folder stays the cwd. */
+  folderAttachedLate?: boolean;
   createdAt: number;
   updatedAt: number;
   items: TranscriptItem[];

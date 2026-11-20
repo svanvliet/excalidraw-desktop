@@ -19,6 +19,9 @@ vi.mock("@tauri-apps/plugin-store", () => {
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => dialog);
 
+const opener = vi.hoisted(() => ({ revealItemInDir: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => opener);
+
 const ipc = vi.hoisted(() => ({
   agentDetect: vi.fn(),
   agentStart: vi.fn(),
@@ -27,6 +30,7 @@ const ipc = vi.hoisted(() => ({
   agentPermissionRespond: vi.fn(),
   agentStop: vi.fn(),
   agentSetModel: vi.fn(),
+  agentSessionFolder: vi.fn(),
 }));
 vi.mock("../../ipc/commands", () => ipc);
 
@@ -86,6 +90,8 @@ beforeEach(() => {
   ipc.agentPermissionRespond.mockResolvedValue(undefined);
   ipc.agentStop.mockResolvedValue(undefined);
   ipc.agentSetModel.mockResolvedValue(undefined);
+  ipc.agentSessionFolder.mockResolvedValue("/app/agent/t1/c-1");
+  opener.revealItemInDir.mockReset();
 });
 
 describe("AgentPanel", () => {
@@ -250,14 +256,14 @@ describe("AgentPanel", () => {
     await openPanel();
     render(<AgentPanel tabId="t1" />);
     await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
-    expect(screen.getByTestId("agent-folder")).toHaveTextContent("canvas only");
+    expect(screen.getByTestId("agent-folder")).toHaveTextContent("Session folder");
     fireEvent.click(screen.getByTestId("agent-attach"));
     await waitFor(() => expect(screen.getByTestId("agent-folder")).toHaveTextContent("project"));
     expect(dialog.open).toHaveBeenCalledWith({ directory: true, multiple: false });
     expect(useAgentStore.getState().conversations.t1.attachedFolder).toBe("/Users/me/project");
     fireEvent.click(screen.getByTestId("agent-detach"));
     await waitFor(() =>
-      expect(screen.getByTestId("agent-folder")).toHaveTextContent("canvas only"),
+      expect(screen.getByTestId("agent-folder")).toHaveTextContent("Session folder"),
     );
 
     fireEvent.click(screen.getByTestId("agent-attach"));
@@ -268,6 +274,45 @@ describe("AgentPanel", () => {
     expect(screen.queryByTestId("agent-attach")).toBeNull();
     expect(screen.queryByTestId("agent-detach")).toBeNull();
     expect(screen.getByTestId("agent-reveal")).toBeInTheDocument();
+  });
+
+  it("shows the session folder, and attaches a folder once mid-conversation", async () => {
+    dialog.open.mockResolvedValue("/Users/me/project");
+    await openPanel();
+    render(<AgentPanel tabId="t1" />);
+    await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("agent-reveal-session"));
+    await waitFor(() => expect(opener.revealItemInDir).toHaveBeenCalledWith("/app/agent/t1/c-1"));
+    const id = useAgentStore.getState().conversations.t1.id;
+    expect(ipc.agentSessionFolder).toHaveBeenCalledWith("t1", id);
+
+    fireEvent.change(screen.getByTestId("agent-input"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByTestId("agent-send"));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    emit({ type: "ready", engine: "copilot", version: "1", model: "gpt-5", engineSessionId: "e1" });
+    emit({ type: "turnStarted", turnId: "T1" });
+    expect(screen.getByTestId("agent-attach")).toBeDisabled();
+    emit({ type: "turnEnded", turnId: "T1", stopReason: "endTurn", usage: null });
+    expect(screen.queryByTestId("agent-detach")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("agent-attach"));
+    await waitFor(() => expect(screen.getByTestId("agent-folder")).toHaveTextContent("project"));
+    expect(ipc.agentStop).toHaveBeenCalledWith("s1");
+    expect(screen.queryByTestId("agent-attach")).toBeNull();
+    expect(screen.queryByTestId("agent-detach")).toBeNull();
+
+    ipc.agentStart.mockResolvedValueOnce("s2");
+    fireEvent.change(screen.getByTestId("agent-input"), { target: { value: "again" } });
+    fireEvent.click(screen.getByTestId("agent-send"));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledTimes(2));
+    expect(ipc.agentStart).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        attachedFolder: "/Users/me/project",
+        resumeId: "e1",
+        conversationId: id,
+        keepSessionCwd: true,
+      }),
+    );
   });
 
   it("locks the engine after the first prompt and keeps a live model picker", async () => {

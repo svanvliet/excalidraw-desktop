@@ -34,6 +34,9 @@ pub struct AgentStartOptions {
     pub resume_id: Option<String>,
     #[serde(default)]
     pub conversation_id: Option<String>,
+    /// The folder was attached mid-conversation (see `StartRequest::keep_session_cwd`).
+    #[serde(default)]
+    pub keep_session_cwd: bool,
 }
 
 pub type AgentState = Arc<AgentManager>;
@@ -153,9 +156,24 @@ pub async fn agent_start(
             model: options.model.filter(|m| !m.trim().is_empty()),
             resume_id: options.resume_id.filter(|r| !r.trim().is_empty()),
             conversation_id: options.conversation_id.filter(|c| !c.trim().is_empty()),
+            keep_session_cwd: options.keep_session_cwd,
             spawn_env,
         })
         .await
+        .map_err(AppError::Other)
+}
+
+/// The conversation's session folder (created if missing), shown in the panel's Folder row.
+#[tauri::command]
+pub async fn agent_session_folder(
+    state: State<'_, AgentState>,
+    tab_id: String,
+    conversation_id: Option<String>,
+) -> Result<String, AppError> {
+    let conversation_id = conversation_id.filter(|c| !c.trim().is_empty());
+    state
+        .session_folder(&tab_id, conversation_id.as_deref())
+        .map(|p| p.to_string_lossy().into_owned())
         .map_err(AppError::Other)
 }
 
@@ -268,11 +286,19 @@ mod live_tests {
         }
     }
 
-    async fn smoke(engine: EngineKind) {
+    struct TurnRun {
+        ended: Option<StopReason>,
+        events: Vec<AgentEvent>,
+        tools: Vec<String>,
+        session_folder: PathBuf,
+        _root: tempfile::TempDir,
+    }
+
+    async fn run_turn(engine: EngineKind, prompt: &str) -> Option<TurnRun> {
         let probe = ProbeEnv::system().await;
         let Some(binary) = detect::resolve_binary(engine, None, &probe).await else {
             eprintln!("{engine:?} not installed; skipping");
-            return;
+            return None;
         };
         let canvas = Arc::new(FakeCanvas(Mutex::new(None), Mutex::new(vec![])));
         let server = McpServer::bind(canvas.clone(), McpServerOptions::default())
@@ -308,16 +334,12 @@ mod live_tests {
                 model: None,
                 resume_id: None,
                 conversation_id: None,
+                keep_session_cwd: false,
                 spawn_env: probe.shell.for_binary(&binary),
             })
             .await
             .unwrap();
-        mgr.prompt(
-            &session,
-            "Add one rectangle labelled Hello to the canvas using the excalidraw add_elements \
-             tool, then reply with the single word done.",
-        )
-        .unwrap();
+        mgr.prompt(&session, prompt).unwrap();
         let ended = tokio::time::timeout(Duration::from_secs(180), async {
             while let Some(e) = rx.recv().await {
                 match e {
@@ -332,16 +354,64 @@ mod live_tests {
         .expect("turn timed out");
         mgr.stop(&session).await.unwrap();
         server.shutdown();
-
-        assert_eq!(ended, Some(StopReason::EndTurn));
+        let session_folder = mgr.session_folder("tab-1", None).unwrap();
         let tools = canvas.1.lock().unwrap().clone();
+        let events = events.lock().unwrap().clone();
+        Some(TurnRun {
+            ended,
+            events,
+            tools,
+            session_folder,
+            _root: root,
+        })
+    }
+
+    async fn smoke(engine: EngineKind) {
+        let Some(run) = run_turn(
+            engine,
+            "Add one rectangle labelled Hello to the canvas using the excalidraw add_elements \
+             tool, then reply with the single word done.",
+        )
+        .await
+        else {
+            return;
+        };
+        assert_eq!(run.ended, Some(StopReason::EndTurn));
         assert!(
-            tools.iter().any(|t| t == "add_elements"),
-            "canvas tools called: {tools:?}"
+            run.tools.iter().any(|t| t == "add_elements"),
+            "canvas tools called: {:?}",
+            run.tools
         );
-        let events = events.lock().unwrap();
-        assert!(events.iter().any(|e| matches!(e, AgentEvent::Ready { .. })));
-        assert!(!events
+        assert!(run
+            .events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::Ready { .. })));
+        assert!(!run
+            .events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::PermissionRequest { .. })));
+    }
+
+    /// A file written with the engine's own edit tool lands in the session folder without an
+    /// approval card.
+    async fn writes_to_session_folder(engine: EngineKind) {
+        let Some(run) = run_turn(
+            engine,
+            "Using your file-editing tool (not a shell command), create a file named hello.txt \
+             in the current working directory containing exactly the text hi. Then reply with \
+             the single word done.",
+        )
+        .await
+        else {
+            return;
+        };
+        assert_eq!(run.ended, Some(StopReason::EndTurn));
+        let file = run.session_folder.join("hello.txt");
+        let body = std::fs::read_to_string(&file)
+            .unwrap_or_else(|e| panic!("{} not written: {e}", file.display()));
+        assert_eq!(body.trim(), "hi");
+        assert!(!run
+            .events
             .iter()
             .any(|e| matches!(e, AgentEvent::PermissionRequest { .. })));
     }
@@ -362,5 +432,23 @@ mod live_tests {
     #[ignore = "runs a real model turn"]
     async fn live_copilot() {
         smoke(EngineKind::Copilot).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_claude_writes() {
+        writes_to_session_folder(EngineKind::Claude).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_codex_writes() {
+        writes_to_session_folder(EngineKind::Codex).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_copilot_writes() {
+        writes_to_session_folder(EngineKind::Copilot).await;
     }
 }

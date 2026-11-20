@@ -26,6 +26,7 @@ import {
   agentPermissionRespond,
   agentPrompt,
   agentSetModel,
+  agentSessionFolder,
   agentStart,
   agentStop,
 } from "../ipc/commands";
@@ -141,6 +142,8 @@ export interface Conversation {
   /** Cumulative usage across the conversation's turns. */
   usage: Usage;
   attachedFolder: string | null;
+  /** The folder was attached after the conversation started (see keepSessionCwd). */
+  folderAttachedLate: boolean;
   lastError: { kind: ErrorKind; message: string } | null;
 }
 
@@ -174,13 +177,15 @@ export function emptyConversation(tabId: string, engine: EngineKind | null = nul
     plan: null,
     usage: { ...EMPTY_USAGE },
     attachedFolder: null,
+    folderAttachedLate: false,
     lastError: null,
   };
 }
 
 /**
  * Engine, model (for engines without a live switch) and folder are fixed once the
- * conversation has started: the engine session already exists with them.
+ * conversation has started: the engine session already exists with them. The one
+ * exception is attaching a folder to a conversation that has none (setAttachedFolder).
  */
 export function isLocked(c: Conversation): boolean {
   return c.engineSessionId !== null || c.items.some((it) => it.kind === "user");
@@ -196,6 +201,7 @@ export function toRecord(c: Conversation): ConversationRecord | null {
     title: c.title,
     model: c.model ?? c.requestedModel,
     attachedFolder: c.attachedFolder,
+    ...(c.folderAttachedLate ? { folderAttachedLate: true } : {}),
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     items: c.items,
@@ -215,6 +221,7 @@ export function fromRecord(tabId: string, r: ConversationRecord): Conversation {
     model: r.model,
     engineSessionId: r.engineSessionId,
     attachedFolder: r.attachedFolder,
+    folderAttachedLate: !!r.folderAttachedLate && !!r.attachedFolder,
     items: r.items,
     usage: r.usage,
   };
@@ -432,7 +439,9 @@ export interface AgentState {
     decision: PermissionDecision,
   ) => Promise<void>;
   revertTurn: (tabId: string, turnId: string, force?: boolean) => Promise<void>;
-  /** Attach/detach the read-only folder; only before the conversation starts. */
+  /** Attach/change/detach the writable folder before the start; afterwards only attach if none. */
+  /** The conversation's session folder (its cwd unless a folder was attached first). */
+  sessionFolder: (tabId: string) => Promise<string | null>;
   setAttachedFolder: (tabId: string, path: string | null) => Promise<void>;
   /** Keep the current conversation in history and start an empty one. */
   newConversation: (tabId: string) => Promise<void>;
@@ -708,6 +717,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           attachedFolder: c.attachedFolder,
           resumeId: c.engineSessionId,
           conversationId: c.id,
+          keepSessionCwd: c.folderAttachedLate,
         });
         patch(tabId, (x) => ({
           ...x,
@@ -812,16 +822,32 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     async setAttachedFolder(tabId, path) {
       const c = conv(tabId);
-      if (c.attachedFolder === path || isLocked(c)) return;
-      // The folder is a session start option.
+      if (c.attachedFolder === path) return;
+      // Once started, a folder can only be added (never changed or removed), and not mid-turn.
+      const late = isLocked(c);
+      if (late && (c.attachedFolder !== null || path === null || c.status === "running")) return;
+      // The folder is a session start option: restart the engine, resuming the same
+      // conversation with the folder as an extra writable root.
       await retire(c.sessionId);
       patch(tabId, (x) => ({
         ...x,
         attachedFolder: path,
+        folderAttachedLate: late,
         sessionId: null,
         status: "idle",
         currentTurnId: null,
       }));
+    },
+
+    async sessionFolder(tabId) {
+      // Materialise the conversation so its id (and so the folder) stays stable.
+      patch(tabId, (x) => x);
+      try {
+        return await agentSessionFolder(tabId, conv(tabId).id);
+      } catch (e) {
+        log.warn("agentStore: agentSessionFolder failed", e);
+        return null;
+      }
     },
 
     async newConversation(tabId) {

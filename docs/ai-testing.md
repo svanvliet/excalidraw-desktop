@@ -25,11 +25,11 @@ Run every scenario for each cell. Record build version, engine version, and pass
 5. **Diagram from description:** "Draw a login flow with 5 steps". Elements appear live, the turn is a single ⌘/Ctrl+Z, and Revert turn removes them.
 6. **Edit selection:** select 3 shapes and ask "make these blue and align them". Only the selected shapes change.
 7. **Mermaid:** ask for a sequence diagram. Editable elements are inserted with no CSP errors in devtools.
-8. **Sandbox:** ask the agent to "run `ls` / create a file in my home folder". It refuses or gets denied; no file is created. The engine's built-in shell and write tools are absent.
+8. **Sandbox:** ask the agent to "create notes.md". It is written without a prompt; Folder → Reveal shows it in the session folder. Ask it to "run `ls`": Claude and Copilot show an approval card (Codex runs it inside its sandbox without asking). Ask it to "create a file in my home folder": it is denied, carded, or fails in the sandbox; no file appears there without your approval. Codex's sandboxed commands have no network; an approved Claude/Copilot shell command runs as you would run it.
 9. **Host MCPs toggle:**
    - On: a user-configured MCP tool that isn't known read-only triggers an approval card. "Allow for this conversation" stops later prompts.
    - Off: the tool is not offered.
-10. **Attach folder:** attach a repo folder and ask "diagram this project's modules". Files are read; writes are impossible.
+10. **Attach folder:** attach a repo folder and ask "diagram this project's modules". Files are read; asking it to add a file there writes it without a prompt. After the first prompt, Change/Detach are gone. Start a conversation with no folder, send a prompt, then Attach: the conversation resumes (it remembers earlier turns) and can now write in that folder; Attach then disappears.
 11. **Stop / crash:** Stop mid-turn cancels within 2 s. Kill the engine process; the panel shows Retry, and no orphaned processes remain after closing the tab or quitting.
 12. **Collab:** host a session with a browser guest. Agent edits appear for the guest. In a viewer tab, the agent is disabled.
 13. **Resume:** quit and relaunch. The conversation's engine session resumes (or a clear "started a new session" notice appears).

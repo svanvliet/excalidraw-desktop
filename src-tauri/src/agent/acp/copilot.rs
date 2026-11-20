@@ -12,27 +12,6 @@ pub const META_KEY: &str = "github.com/copilot";
 /// Extension notification carrying Copilot's native session events.
 pub const SESSION_EVENT_METHOD: &str = "github.com/copilot/sessionEvent";
 
-/// Built-in tools removed from the model's tool list (SEC-6). Shell + file-write tools; `view`,
-/// `glob`, `grep` stay so the agent can read an attached folder. Only names the CLI knows: an
-/// unknown name makes Copilot print an "Unknown tool name" notice (`write_bash`/`write_powershell`
-/// were dropped in 1.0.106; `--deny-tool=shell` still covers any shell tool).
-pub const EXCLUDED_TOOLS: &[&str] = &[
-    "bash",
-    "powershell",
-    "list_bash",
-    "read_bash",
-    "stop_bash",
-    "list_powershell",
-    "read_powershell",
-    "stop_powershell",
-    "edit",
-    "create",
-    "apply_patch",
-];
-
-/// Permission kinds denied outright. Deny beats any allow (including the user's own config).
-pub const DENIED_TOOL_KINDS: &[&str] = &["shell", "write"];
-
 /// Env vars that would silently widen permissions or change behavior behind our back.
 pub const ENV_REMOVE: &[&str] = &[
     "COPILOT_ALLOW_ALL",
@@ -51,14 +30,19 @@ pub const SUBSCRIBED_EVENTS: &[&str] = &[
     "tool.execution_start",
 ];
 
-/// `copilot` arguments. Sandbox flags are unconditional; never emits `--allow-all*`.
+/// `copilot` arguments. Never emits `--allow-all*`: writes are pre-approved only under the
+/// session's writable roots (`write(<root>/**)`); shell commands and anything else that asks
+/// arrive as `session/request_permission` and become approval cards.
 pub fn launch_args(cfg: &SessionConfig) -> Vec<String> {
-    let mut args = vec![
-        "--acp".to_owned(),
-        "--stdio".to_owned(),
-        format!("--excluded-tools={}", EXCLUDED_TOOLS.join(",")),
-    ];
-    args.extend(DENIED_TOOL_KINDS.iter().map(|k| format!("--deny-tool={k}")));
+    let mut args = vec!["--acp".to_owned(), "--stdio".to_owned()];
+    for root in &cfg.writable_roots {
+        args.push(format!("--allow-tool=write({})", write_glob(root)));
+        if *root != cfg.cwd {
+            args.push(format!("--add-dir={}", root.display()));
+        }
+    }
+    // File access is otherwise limited to the cwd, --add-dir and the temp dir; drop the latter.
+    args.push("--disallow-temp-dir".to_owned());
     // Our canvas server's tools never prompt (server-scoped allow; deny rules still win).
     args.push(format!("--allow-tool={MCP_SERVER_NAME}"));
     args.push("--no-ask-user".to_owned());
@@ -78,6 +62,13 @@ pub fn launch_args(cfg: &SessionConfig) -> Vec<String> {
         args.push(format!("--model={model}"));
     }
     args
+}
+
+/// `<root>/**` with the path separator Copilot's glob matcher expects.
+fn write_glob(root: &std::path::Path) -> String {
+    let r = root.to_string_lossy();
+    let r = r.trim_end_matches(['/', '\\']);
+    format!("{r}/**")
 }
 
 pub fn env_remove(cfg: &SessionConfig) -> Vec<String> {
