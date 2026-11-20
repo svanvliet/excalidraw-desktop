@@ -29,6 +29,7 @@ Run every scenario for each cell. Record build version, engine version, and pass
 9. **Host MCPs toggle:**
    - On: a user-configured MCP tool that isn't known read-only triggers an approval card. "Allow for this conversation" stops later prompts.
    - Off: the tool is not offered.
+   - Allow all: on a shell approval card choose "Allow all for this conversation". The card title is one line and the command shows once without a horizontal scrollbar. Ask for two more shell commands: they run with no card but still show as tool calls, and the Approvals row reads "Allow all". Turn off, then ask again: the card returns. A new conversation starts with it off.
 10. **Attach folder:** attach a repo folder and ask "diagram this project's modules". Files are read; asking it to add a file there writes it without a prompt. After the first prompt, Change/Detach are gone. Start a conversation with no folder, send a prompt, then Attach: the conversation resumes (it remembers earlier turns) and can now write in that folder; Attach then disappears.
 11. **Stop / crash:** Stop mid-turn cancels within 2 s. Kill the engine process; the panel shows Retry, and no orphaned processes remain after closing the tab or quitting.
 12. **Collab:** host a session with a browser guest. Agent edits appear for the guest. In a viewer tab, the agent is disabled.

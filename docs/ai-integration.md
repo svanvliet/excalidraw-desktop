@@ -6,16 +6,16 @@
 
 ## Decisions
 
-| #     | Decision                                                                                                                                                                                                                                                                                     |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-AI1 | v1 supports **Copilot CLI, Claude Code, and Codex** behind one shared engine layer.                                                                                                                                                                                                          |
-| D-AI2 | Primary surface: **docked right-side chat panel**. Each drawing keeps a list of conversations; one is active per tab.                                                                                                                                                                        |
-| D-AI3 | Agent edits **apply live**; each turn is one undoable step, plus a **Revert turn** button.                                                                                                                                                                                                   |
-| D-AI4 | The agent works in a **working folder** (its per-conversation session folder, or an attached one). Writes inside it are auto-approved; shell and anything outside need approval or are blocked. Never blanket access.                                                                        |
-| D-AI5 | Per-engine toggle **"Use my agent's MCPs, skills & plugins"** (default **on**). Tools from those sources that aren't known read-only need in-app approval, with "allow for this conversation".                                                                                               |
-| D-AI6 | Claude Code is **bring-your-own-binary**. If `claude` is installed and logged in, we use it. We never read, store, or proxy credentials. Settings shows a one-line "your Claude/Copilot/OpenAI terms apply" note, and legal review is a release-gate item (T3 Code ships this same pattern). |
-| D-AI7 | **No API keys anywhere.** Remove `openAiKey` and migrate it out of `settings.json`. SEC-3 becomes "the app stores no AI credentials".                                                                                                                                                        |
-| D-AI9 | **Port from T3 Code (MIT), don't embed it.** Engine adapters stay in Rust; we port T3 Code's protocol schemas, engine quirks, PATH discovery, MCP bridge, and replay-fixture test approach. We don't ship its Node/Effect server or its Tailwind UI. See "Reuse from T3 Code".               |
+| #     | Decision                                                                                                                                                                                                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D-AI1 | v1 supports **Copilot CLI, Claude Code, and Codex** behind one shared engine layer.                                                                                                                                                                                                                                       |
+| D-AI2 | Primary surface: **docked right-side chat panel**. Each drawing keeps a list of conversations; one is active per tab.                                                                                                                                                                                                     |
+| D-AI3 | Agent edits **apply live**; each turn is one undoable step, plus a **Revert turn** button.                                                                                                                                                                                                                                |
+| D-AI4 | The agent works in a **working folder** (its per-conversation session folder, or an attached one). Writes inside it are auto-approved; shell and anything outside need approval or are blocked. The user can opt in per conversation to **Allow all**, which approves every later request without a card (see Approvals). |
+| D-AI5 | Per-engine toggle **"Use my agent's MCPs, skills & plugins"** (default **on**). Tools from those sources that aren't known read-only need in-app approval, with "allow for this conversation".                                                                                                                            |
+| D-AI6 | Claude Code is **bring-your-own-binary**. If `claude` is installed and logged in, we use it. We never read, store, or proxy credentials. Settings shows a one-line "your Claude/Copilot/OpenAI terms apply" note, and legal review is a release-gate item (T3 Code ships this same pattern).                              |
+| D-AI7 | **No API keys anywhere.** Remove `openAiKey` and migrate it out of `settings.json`. SEC-3 becomes "the app stores no AI credentials".                                                                                                                                                                                     |
+| D-AI9 | **Port from T3 Code (MIT), don't embed it.** Engine adapters stay in Rust; we port T3 Code's protocol schemas, engine quirks, PATH discovery, MCP bridge, and replay-fixture test approach. We don't ship its Node/Effect server or its Tailwind UI. See "Reuse from T3 Code".                                            |
 
 ## Research summary (what drives the design)
 
@@ -126,7 +126,7 @@ flowchart LR
   (`StartRequest::keep_session_cwd`: the engine restarts and resumes with the session folder still the
   cwd, since Claude and Copilot tie resume to it). Paths are checked with `adapter::resolve_path` /
   `is_within_roots` (canonical, `..` and symlink escapes rejected).
-- **Sandboxing per engine** (always on, never `--allow-all*` / `bypassPermissions`):
+- **Sandboxing per engine** (always on, never `--allow-all*` / `bypassPermissions`, even under Allow all):
   - Copilot: `--allow-tool=write(<root>/**)` per root, `--add-dir=<root>` for roots other than the
     cwd, `--disallow-temp-dir`, `--allow-tool=excalidraw`, `--no-ask-user`. Shell and out-of-root
     writes arrive as ACP `session/request_permission` and become cards; a conversation grant for a
@@ -140,7 +140,17 @@ flowchart LR
     excluded). File-change approvals are auto-accepted when every path is inside the roots, otherwise
     carded; conversation grants are keyed by the exact file set.
   - Our own canvas tools are pre-approved. Any other permission request becomes an inline approval
-    card (Allow once / Allow for this conversation / Deny).
+    card (Allow once / Allow for this conversation / Allow all for this conversation / Deny). The
+    card title is a one-line summary; the command (or tool input) shows once in a scrollable block.
+  - **Allow all for this conversation** is opt-in, by clicking it on a card. The session manager
+    (`agent/manager.rs` `ApprovalGate`) approves that request and any others waiting, then answers
+    every later permission request from the engine itself (shell, writes outside the roots, Codex
+    escalations, MCP tool prompts) without showing a card. Engines get a one-time approval on the
+    wire (never Codex `acceptForSession` or ACP `allow_always`), so the sandbox and flags above are
+    unchanged, and the tool calls still show in the transcript. An `approvalMode` event drives the
+    context-bar indicator "Approvals: Allow all", whose Turn off (`agent_set_allow_all`) restores
+    cards. It is held in memory only: a new conversation, an engine restart, or a resumed
+    conversation starts with it off.
 - **"Use my MCPs, skills & plugins" OFF:** Copilot gets `--disable-builtin-mcps`,
   `--no-custom-instructions`, and only our MCP server. Claude gets `--strict-mcp-config`. Codex merges `-c`
   overrides recursively, so `-c mcp_servers={}` would not remove anything: instead we `config/read`
@@ -254,7 +264,7 @@ then edit), and the style defaults.
   - Each adapter's translation, using recorded fixtures.
   - MCP server auth (a wrong token gets 401) and per-session token isolation.
   - Kill-tree.
-  - Argument builders, asserting the sandbox flags are always present and never allow-all.
+  - Argument builders, asserting the sandbox flags are always present and never use engine allow-all / bypass modes.
   - In-root writes auto-approved, out-of-root writes and shell carded (per adapter), path resolution
     escapes (`..`, symlinks, sibling prefixes, `~`).
   - Live (ignored, `cargo test --lib commands::agent::live_tests -- --ignored`): `live_*_writes`
