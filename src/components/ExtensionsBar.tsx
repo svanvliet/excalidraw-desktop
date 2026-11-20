@@ -117,6 +117,9 @@ export function ExtensionsBar({ api }: { api: ExtensionsBarApi }) {
       data-below={view.below || undefined}
       role="toolbar"
       aria-label="Extensions"
+      // Keep focus in Excalidraw: it only handles shortcuts (e.g. undo) while its container
+      // has focus.
+      onMouseDown={(e) => e.preventDefault()}
       // Only the dynamic anchor point is inline; everything else lives in index.css.
       style={{ left: view.left, top: view.top }}
     >
