@@ -254,11 +254,20 @@ mod live_tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
-    struct FakeCanvas(Mutex<Option<Arc<McpServer>>>, Mutex<Vec<String>>);
+    /// Answers every tool call and records (tool, args).
+    struct FakeCanvas(
+        Mutex<Option<Arc<McpServer>>>,
+        Mutex<Vec<String>>,
+        Mutex<Vec<(String, serde_json::Value)>>,
+    );
 
     impl ToolCallSink for FakeCanvas {
         fn emit(&self, req: &ToolCallRequest) -> Result<(), String> {
             self.1.lock().unwrap().push(req.tool.clone());
+            self.2
+                .lock()
+                .unwrap()
+                .push((req.tool.clone(), req.args.clone()));
             let text = match req.tool.as_str() {
                 "list_tabs" => {
                     r#"[{"tabId":"tab-1","title":"Untitled","active":true}]"#.to_string()
@@ -296,17 +305,31 @@ mod live_tests {
         ended: Option<StopReason>,
         events: Vec<AgentEvent>,
         tools: Vec<String>,
+        calls: Vec<(String, serde_json::Value)>,
         session_folder: PathBuf,
         _root: tempfile::TempDir,
     }
 
     async fn run_turn(engine: EngineKind, prompt: &str) -> Option<TurnRun> {
+        run_turn_with(engine, prompt, &[]).await
+    }
+
+    /// Like `run_turn`, but first writes `seed` files into the session folder.
+    async fn run_turn_with(
+        engine: EngineKind,
+        prompt: &str,
+        seed: &[(&str, &[u8])],
+    ) -> Option<TurnRun> {
         let probe = ProbeEnv::system().await;
         let Some(binary) = detect::resolve_binary(engine, None, &probe).await else {
             eprintln!("{engine:?} not installed; skipping");
             return None;
         };
-        let canvas = Arc::new(FakeCanvas(Mutex::new(None), Mutex::new(vec![])));
+        let canvas = Arc::new(FakeCanvas(
+            Mutex::new(None),
+            Mutex::new(vec![]),
+            Mutex::new(vec![]),
+        ));
         let server = McpServer::bind(canvas.clone(), McpServerOptions::default())
             .await
             .unwrap();
@@ -345,6 +368,10 @@ mod live_tests {
             })
             .await
             .unwrap();
+        let folder = mgr.session_folder("tab-1", None).unwrap();
+        for (name, bytes) in seed {
+            std::fs::write(folder.join(name), bytes).unwrap();
+        }
         mgr.prompt(&session, prompt).unwrap();
         let ended = tokio::time::timeout(Duration::from_secs(180), async {
             while let Some(e) = rx.recv().await {
@@ -362,11 +389,13 @@ mod live_tests {
         server.shutdown();
         let session_folder = mgr.session_folder("tab-1", None).unwrap();
         let tools = canvas.1.lock().unwrap().clone();
+        let calls = canvas.2.lock().unwrap().clone();
         let events = events.lock().unwrap().clone();
         Some(TurnRun {
             ended,
             events,
             tools,
+            calls,
             session_folder,
             _root: root,
         })
@@ -420,6 +449,54 @@ mod live_tests {
             .events
             .iter()
             .any(|e| matches!(e, AgentEvent::PermissionRequest { .. })));
+    }
+
+    /// The engine places an image from the session folder via `add_image { path }`; the MCP
+    /// server inlines the file, so the canvas receives base64 data and no path.
+    async fn places_session_folder_image(engine: EngineKind) {
+        const GIF: &[u8] = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\x00\x00\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;";
+        let Some(run) = run_turn_with(
+            engine,
+            "There is an image file named photo.gif in your current working directory. Place it \
+             on the canvas with the excalidraw add_image tool by passing path \"photo.gif\". \
+             Do not read the file yourself. Then reply with the single word done.",
+            &[("photo.gif", GIF)],
+        )
+        .await
+        else {
+            return;
+        };
+        assert_eq!(run.ended, Some(StopReason::EndTurn));
+        let (_, args) = run
+            .calls
+            .iter()
+            .find(|(t, _)| t == "add_image")
+            .unwrap_or_else(|| panic!("add_image not called: {:?}", run.tools));
+        assert!(args.get("path").is_none(), "{args}");
+        assert_eq!(args["mimeType"], "image/gif");
+        use base64::Engine as _;
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(args["data"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(data, GIF);
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_claude_image() {
+        places_session_folder_image(EngineKind::Claude).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_codex_image() {
+        places_session_folder_image(EngineKind::Codex).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "runs a real model turn"]
+    async fn live_copilot_image() {
+        places_session_folder_image(EngineKind::Copilot).await;
     }
 
     #[tokio::test]
