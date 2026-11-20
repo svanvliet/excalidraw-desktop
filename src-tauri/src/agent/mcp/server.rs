@@ -596,7 +596,9 @@ async fn approve(state: &Arc<ServerState>, caller: &Caller, args: Value) -> Valu
         _ => PermissionDecision::Deny,
     };
     let body = match decision {
-        PermissionDecision::AllowOnce | PermissionDecision::AllowForConversation => {
+        PermissionDecision::AllowOnce
+        | PermissionDecision::AllowForConversation
+        | PermissionDecision::AllowAll => {
             json!({ "behavior": "allow", "updatedInput": input })
         }
         PermissionDecision::Deny => {

@@ -964,27 +964,28 @@ fn approval_response(kind: &ApprovalKind, decision: PermissionDecision) -> Value
             "decision": if decision == Deny { "decline" } else { "accept" }
         }),
         ApprovalKind::PatchV1 => match decision {
-            AllowOnce | AllowForConversation => json!({ "decision": "approved" }),
+            AllowOnce | AllowForConversation | AllowAll => json!({ "decision": "approved" }),
             Deny => {
                 json!({ "decision": { "denied": { "rejection": "The user declined this request." } } })
             }
         },
         ApprovalKind::Command => json!({
             "decision": match decision {
-                AllowOnce => "accept",
+                // Allow-all is remembered by the manager, not granted to Codex for the session.
+                AllowOnce | AllowAll => "accept",
                 AllowForConversation => "acceptForSession",
                 Deny => "decline",
             }
         }),
         ApprovalKind::ExecV1 => match decision {
-            AllowOnce => json!({ "decision": "approved" }),
+            AllowOnce | AllowAll => json!({ "decision": "approved" }),
             AllowForConversation => json!({ "decision": "approved_for_session" }),
             Deny => {
                 json!({ "decision": { "denied": { "rejection": "The user declined this request." } } })
             }
         },
         ApprovalKind::Permissions { requested } => match decision {
-            AllowOnce => json!({ "permissions": requested, "scope": "turn" }),
+            AllowOnce | AllowAll => json!({ "permissions": requested, "scope": "turn" }),
             AllowForConversation => json!({ "permissions": requested, "scope": "session" }),
             Deny => json!({ "permissions": {}, "scope": "turn" }),
         },
@@ -992,7 +993,9 @@ fn approval_response(kind: &ApprovalKind, decision: PermissionDecision) -> Value
             AllowForConversation if *persist_session => {
                 json!({ "action": "accept", "content": {}, "_meta": { META_PERSIST: META_PERSIST_SESSION } })
             }
-            AllowOnce | AllowForConversation => json!({ "action": "accept", "content": {} }),
+            AllowOnce | AllowForConversation | AllowAll => {
+                json!({ "action": "accept", "content": {} })
+            }
             Deny => json!({ "action": "decline" }),
         },
     }

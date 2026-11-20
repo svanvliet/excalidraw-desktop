@@ -223,6 +223,19 @@ pub async fn agent_permission_respond(
         .map_err(AppError::Other)
 }
 
+/// Turn the conversation's "allow all" approval mode on or off (D-AI4). The change arrives as
+/// an `approvalMode` event.
+#[tauri::command]
+pub async fn agent_set_allow_all(
+    state: State<'_, AgentState>,
+    session_id: String,
+    allow_all: bool,
+) -> Result<(), AppError> {
+    state
+        .set_allow_all(&session_id, allow_all)
+        .map_err(AppError::Other)
+}
+
 /// Stop the session and kill the engine process tree.
 #[tauri::command]
 pub async fn agent_stop(state: State<'_, AgentState>, session_id: String) -> Result<(), AppError> {

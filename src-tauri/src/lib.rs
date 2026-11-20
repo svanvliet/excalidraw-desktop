@@ -8,7 +8,7 @@ mod updater;
 
 use commands::agent::{
     agent_cancel, agent_detect, agent_permission_respond, agent_prompt, agent_session_folder,
-    agent_set_model, agent_start, agent_stop, agent_tool_result,
+    agent_set_allow_all, agent_set_model, agent_start, agent_stop, agent_tool_result,
 };
 use commands::collab::{
     app_profile, collab_remove_peer, collab_set_role, collab_start, collab_status, collab_stop,
@@ -153,6 +153,7 @@ pub fn run() {
             agent_cancel,
             agent_set_model,
             agent_permission_respond,
+            agent_set_allow_all,
             agent_stop,
             agent_tool_result
         ])

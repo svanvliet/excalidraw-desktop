@@ -1646,6 +1646,9 @@ button {
   background: var(--bg-elevated);
   box-shadow: var(--shadow-sm);
   line-height: var(--line-default);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .agent-card p {
@@ -1668,13 +1671,24 @@ button {
   color: var(--danger);
 }
 
+.agent-card__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .agent-card__detail {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 160px;
-  overflow-y: auto;
+  overflow: auto;
 }
 
 .agent-card__meta {

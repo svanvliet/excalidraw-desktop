@@ -28,6 +28,7 @@ const ipc = vi.hoisted(() => ({
   agentPrompt: vi.fn(),
   agentCancel: vi.fn(),
   agentPermissionRespond: vi.fn(),
+  agentSetAllowAll: vi.fn(),
   agentStop: vi.fn(),
   agentSetModel: vi.fn(),
   agentSessionFolder: vi.fn(),
@@ -88,6 +89,7 @@ beforeEach(() => {
   ipc.agentPrompt.mockResolvedValue("T1");
   ipc.agentCancel.mockResolvedValue(undefined);
   ipc.agentPermissionRespond.mockResolvedValue(undefined);
+  ipc.agentSetAllowAll.mockResolvedValue(undefined);
   ipc.agentStop.mockResolvedValue(undefined);
   ipc.agentSetModel.mockResolvedValue(undefined);
   ipc.agentSessionFolder.mockResolvedValue("/app/agent/t1/c-1");
@@ -212,6 +214,40 @@ describe("AgentPanel", () => {
       "Allowed for this conversation",
     );
     expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
+  });
+
+  it("Allow all approves the card, shows the indicator, and Turn off clears it", async () => {
+    await openPanel();
+    render(<AgentPanel tabId="t1" />);
+    await waitFor(() => expect(screen.getByTestId("agent-engine-select")).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId("agent-input"), { target: { value: "go" } });
+    fireEvent.click(screen.getByTestId("agent-send"));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+
+    emit({ type: "turnStarted", turnId: "T1" });
+    emit({
+      type: "permissionRequest",
+      turnId: "T1",
+      requestId: "r1",
+      toolName: "shell",
+      title: "ls -la",
+      detail: "ls -la",
+    });
+    expect(screen.queryByTestId("agent-allow-all")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Allow all for this conversation" }));
+    await waitFor(() =>
+      expect(ipc.agentPermissionRespond).toHaveBeenCalledWith("s1", "r1", "allowAll"),
+    );
+    expect(screen.getByTestId("agent-permission")).toHaveTextContent(
+      "Allowed all for this conversation",
+    );
+
+    emit({ type: "approvalMode", allowAll: true });
+    expect(await screen.findByTestId("agent-allow-all")).toHaveTextContent("Allow all");
+    fireEvent.click(screen.getByTestId("agent-allow-all-off"));
+    await waitFor(() => expect(ipc.agentSetAllowAll).toHaveBeenCalledWith("s1", false));
+    emit({ type: "approvalMode", allowAll: false });
+    await waitFor(() => expect(screen.queryByTestId("agent-allow-all")).toBeNull());
   });
 
   it("first use shows the privacy disclosure; Continue persists it and sends", async () => {

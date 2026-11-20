@@ -71,6 +71,9 @@ pub struct Usage {
 pub enum PermissionDecision {
     AllowOnce,
     AllowForConversation,
+    /// Approve this request and every later one in the conversation (the manager remembers
+    /// it; engines still run in their sandbox). Adapters treat it like `AllowOnce`.
+    AllowAll,
     Deny,
 }
 
@@ -145,6 +148,10 @@ pub enum AgentEvent {
     Plan {
         turn_id: String,
         entries: Vec<PlanEntry>,
+    },
+    /// The conversation's "allow all" approval mode changed (manager-emitted).
+    ApprovalMode {
+        allow_all: bool,
     },
     TurnEnded {
         turn_id: String,

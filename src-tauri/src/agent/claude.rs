@@ -620,7 +620,8 @@ impl ClaudeAdapter {
             .or_else(|| str_field(&request, "title"))
             .unwrap_or(&tool_name)
             .to_string();
-        let detail = str_field(&request, "description")
+        let detail = str_field(&input, "command")
+            .or_else(|| str_field(&request, "description"))
             .map(str::to_string)
             .or_else(|| Some(truncate(&input.to_string(), DETAIL_PREVIEW_CHARS)));
         out.events.push(AgentEvent::PermissionRequest {
@@ -825,7 +826,9 @@ impl EngineAdapter for ClaudeAdapter {
         };
         out.writes.push(match decision {
             PermissionDecision::Deny => deny_line(request_id),
-            PermissionDecision::AllowOnce => allow_line(request_id, &p.input),
+            PermissionDecision::AllowOnce | PermissionDecision::AllowAll => {
+                allow_line(request_id, &p.input)
+            }
             PermissionDecision::AllowForConversation => {
                 self.allowed_for_conversation.insert(p.allowance_key);
                 allow_line(request_id, &p.input)
@@ -1269,6 +1272,19 @@ mod tests {
         a.on_line(&can_use_tool("r3", "WebSearch"));
         a.respond_permission("r3", PermissionDecision::AllowOnce);
         assert_eq!(a.on_line(&can_use_tool("r4", "WebSearch")).events.len(), 1);
+    }
+
+    #[test]
+    fn allow_all_approves_only_the_current_request() {
+        let (mut a, _) = started(HI);
+        a.on_line(&can_use_tool("r1", "WebFetch"));
+        let w = a.respond_permission("r1", PermissionDecision::AllowAll);
+        assert_eq!(
+            parse(&w.writes[0])["response"]["response"]["behavior"],
+            "allow"
+        );
+        // The manager remembers allow-all; the adapter still surfaces the next request.
+        assert_eq!(a.on_line(&can_use_tool("r2", "WebFetch")).events.len(), 1);
     }
 
     fn tool_request(id: &str, tool: &str, input: Value) -> String {

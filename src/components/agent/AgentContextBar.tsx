@@ -198,6 +198,26 @@ export function AgentContextBar({
           </button>
         ) : null}
       </span>
+
+      {conversation.allowAll ? (
+        <>
+          <span className="agent-context__label">Approvals</span>
+          <span className="agent-context__value" data-testid="agent-allow-all">
+            <span title="Every permission request in this conversation is approved without asking">
+              Allow all
+            </span>
+            <button
+              type="button"
+              className="agent-context__link"
+              onClick={() => tabId && void store().disableAllowAll(tabId)}
+              title="Ask before each action again"
+              data-testid="agent-allow-all-off"
+            >
+              Turn off
+            </button>
+          </span>
+        </>
+      ) : null}
     </div>
   );
 }

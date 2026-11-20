@@ -21,6 +21,7 @@ const ipc = vi.hoisted(() => ({
   agentPrompt: vi.fn(),
   agentCancel: vi.fn(),
   agentPermissionRespond: vi.fn(),
+  agentSetAllowAll: vi.fn(),
   agentStop: vi.fn(),
   agentSetModel: vi.fn(),
 }));
@@ -330,6 +331,40 @@ describe("agentStore session flow", () => {
     await useAgentStore.getState().respondPermission("t1", "r2", "deny");
     const card2 = useAgentStore.getState().conversations.t1.items.find((i) => i.id === "r2");
     expect(card2).toMatchObject({ decision: null });
+  });
+
+  it("Allow all answers every waiting card and lasts until turned off or the engine exits", async () => {
+    await enableAi();
+    await useAgentStore.getState().send("t1", "go");
+    for (const id of ["r1", "r2"]) {
+      emit("t1", "s1", {
+        type: "permissionRequest",
+        turnId: "T",
+        requestId: id,
+        toolName: "shell",
+        title: id,
+        detail: null,
+      });
+    }
+    await useAgentStore.getState().respondPermission("t1", "r1", "allowAll");
+    expect(ipc.agentPermissionRespond).toHaveBeenCalledWith("s1", "r1", "allowAll");
+    const items = useAgentStore.getState().conversations.t1.items;
+    expect(items.filter((i) => i.kind === "permission").map((i) => i.decision)).toEqual([
+      "allowAll",
+      "allowAll",
+    ]);
+
+    emit("t1", "s1", { type: "approvalMode", allowAll: true });
+    expect(useAgentStore.getState().conversations.t1.allowAll).toBe(true);
+    ipc.agentSetAllowAll.mockResolvedValue(undefined);
+    await useAgentStore.getState().disableAllowAll("t1");
+    expect(ipc.agentSetAllowAll).toHaveBeenCalledWith("s1", false);
+    emit("t1", "s1", { type: "approvalMode", allowAll: false });
+    expect(useAgentStore.getState().conversations.t1.allowAll).toBe(false);
+
+    emit("t1", "s1", { type: "approvalMode", allowAll: true });
+    emit("t1", "s1", { type: "exited", code: 0 });
+    expect(useAgentStore.getState().conversations.t1.allowAll).toBe(false);
   });
 
   it("calls the TurnController on turn start/end/exit and for Revert turn", async () => {

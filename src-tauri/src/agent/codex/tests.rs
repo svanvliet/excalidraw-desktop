@@ -587,6 +587,19 @@ fn command_approval_round_trips_and_remembers_session_grant() {
     );
 }
 
+#[test]
+fn allow_all_accepts_once_without_a_codex_session_grant() {
+    let (mut a, _) = ready(&cfg());
+    start_turn(&mut a, "turn-1");
+    let rid = request_id_of(&command_approval(&mut a, 0, "ls"));
+    let out = a.respond_permission(&rid, PermissionDecision::AllowAll);
+    assert_eq!(
+        parse(&out.writes[0]),
+        json!({ "id": 0, "result": { "decision": "accept" } })
+    );
+    assert_eq!(command_approval(&mut a, 1, "ls").events.len(), 1);
+}
+
 fn file_change(a: &mut CodexAdapter, rpc: u64, item: &str, paths: &[&str]) -> AdapterOutput {
     let changes: Vec<Value> = paths
         .iter()
