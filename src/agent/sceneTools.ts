@@ -36,6 +36,7 @@ import {
   unionBounds,
   BINDABLE_TYPES,
 } from "./scene/draft";
+import { prepareImage, type PreparedImage } from "./scene/images";
 import { isFoldedText, rowOf } from "./scene/summary";
 import { commitDraft } from "./scene/turns";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
@@ -59,6 +60,7 @@ const EDIT_TOOLS = new Set([
   "delete_elements",
   "connect",
   "add_mermaid",
+  "add_image",
   "arrange",
   "move_elements",
   "duplicate_elements",
@@ -534,6 +536,8 @@ interface EditCtx {
   files: BinaryFileData[];
   /** Pre-parsed mermaid results keyed by the args object (parsing is async). */
   mermaid: Map<Args, MermaidPrepared>;
+  /** Validated image payloads keyed by the args object (hashing is async). */
+  images: Map<Args, PreparedImage>;
 }
 
 const SKELETON_TYPES = [
@@ -926,6 +930,86 @@ function addMermaid(draft: Draft, args: Args, ctx: EditCtx): unknown {
   };
 }
 
+/** Default longest side for an image placed without an explicit size. */
+const DEFAULT_IMAGE_SIDE = 400;
+
+function addImage(draft: Draft, args: Args, ctx: EditCtx): unknown {
+  const img = ctx.images.get(args);
+  if (!img) throw new ToolError(`Image was not prepared`);
+  const insideId = optStr(args, "inside");
+  const inside = insideId !== undefined ? draft.mustGet(insideId) : undefined;
+  if (inside && (isLinear(inside) || isText(inside))) {
+    throw new ToolError(`"inside" must be a shape, card or frame, not a ${inside.type}`);
+  }
+  const padding = optNum(args, "padding") ?? 8;
+  if (padding < 0) throw new ToolError(`"padding" must be >= 0`);
+  const nat = img.natural ?? { width: DEFAULT_IMAGE_SIDE, height: DEFAULT_IMAGE_SIDE };
+  const ratio = nat.width / nat.height;
+  let width = optNum(args, "width");
+  let height = optNum(args, "height");
+  for (const [k, v] of [
+    ["width", width],
+    ["height", height],
+  ] as const) {
+    if (v !== undefined && v <= 0) throw new ToolError(`"${k}" must be > 0`);
+  }
+  const box = inside ? boundsOf(inside) : undefined;
+  if (width === undefined && height === undefined) {
+    const max = box
+      ? { w: box.maxX - box.minX - 2 * padding, h: box.maxY - box.minY - 2 * padding }
+      : { w: DEFAULT_IMAGE_SIDE, h: DEFAULT_IMAGE_SIDE };
+    if (max.w <= 0 || max.h <= 0) throw new ToolError(`"${insideId}" is too small for the padding`);
+    const scale = Math.min(max.w / nat.width, max.h / nat.height, box ? Infinity : 1);
+    width = nat.width * scale;
+    height = nat.height * scale;
+  } else {
+    width ??= height! * ratio;
+    height ??= width / ratio;
+  }
+  let x = optNum(args, "x");
+  let y = optNum(args, "y");
+  if (box) {
+    x ??= box.minX + (box.maxX - box.minX - width) / 2;
+    y ??= box.minY + (box.maxY - box.minY - height) / 2;
+  } else if (x === undefined || y === undefined) {
+    const existing = unionBounds(draft.live());
+    x ??= existing ? existing.maxX + 80 : 0;
+    y ??= existing ? existing.minY : 0;
+  }
+  const id = optStr(args, "id") ?? newId();
+  if (!id) throw new ToolError(`"id" must be a non-empty string`);
+  if (draft.has(id))
+    throw new ToolError(`id "${id}" already exists on the canvas; choose another or omit it`);
+  const frameId = inside
+    ? inside.type === "frame" || inside.type === "magicframe"
+      ? inside.id
+      : (inside.frameId ?? null)
+    : null;
+  const [el] = convertToExcalidrawElements(
+    [{ type: "image", id, fileId: img.fileId, x, y, width, height } as ExcalidrawElementSkeleton],
+    { regenerateIds: false },
+  );
+  draft.add({ ...el!, frameId, status: "saved" } as El);
+  if (!ctx.files.some((f) => f.id === img.fileId)) {
+    ctx.files.push({
+      id: img.fileId,
+      dataURL: img.dataURL,
+      mimeType: img.mimeType,
+      created: Date.now(),
+    } as BinaryFileData);
+  }
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return {
+    id,
+    fileId: img.fileId,
+    x: r(x),
+    y: r(y),
+    width: r(width),
+    height: r(height),
+    ...(frameId ? { frameId } : {}),
+  };
+}
+
 /** Targets plus, for frames, everything inside them. */
 function withFrameChildren(draft: Draft, targets: El[]): El[] {
   const out = new Map(targets.map((el) => [el.id, el]));
@@ -1158,6 +1242,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return connect(draft, args);
     case "add_mermaid":
       return addMermaid(draft, args, ctx);
+    case "add_image":
+      return addImage(draft, args, ctx);
     case "arrange":
       return arrange(draft, args);
     case "move_elements":
@@ -1191,17 +1277,18 @@ async function runEdit(
   tabId: string,
   args: Args,
 ): Promise<ToolContent[]> {
-  const ctx: EditCtx = { files: [], mermaid: new Map() };
+  const ctx: EditCtx = { files: [], mermaid: new Map(), images: new Map() };
   const ops = tool === "apply_ops" ? opsOf(args) : [{ tool, args }];
   // Async preparation first, so applying the draft below is one synchronous step.
   for (const [i, op] of ops.entries()) {
-    if (op.tool !== "add_mermaid") continue;
+    if (op.tool !== "add_mermaid" && op.tool !== "add_image") continue;
     try {
-      ctx.mermaid.set(op.args, await prepareMermaid(op.args));
+      if (op.tool === "add_mermaid") ctx.mermaid.set(op.args, await prepareMermaid(op.args));
+      else ctx.images.set(op.args, await prepareImage(op.args));
     } catch (err) {
       if (tool !== "apply_ops") throw err;
       throw new ToolError(
-        `op ${i} (add_mermaid) failed: ${(err as Error).message}; no changes were applied`,
+        `op ${i} (${op.tool}) failed: ${(err as Error).message}; no changes were applied`,
       );
     }
   }

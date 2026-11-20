@@ -145,6 +145,7 @@ export const CANVAS_TOOL_NAMES = [
   "delete_elements",
   "connect",
   "add_mermaid",
+  "add_image",
   "arrange",
   "set_viewport",
   "find_elements",

@@ -339,6 +339,145 @@ describe("edit tools", () => {
     );
   });
 
+  describe("add_image", () => {
+    // 1x1 PNG with a 200x100 IHDR so sizing is observable.
+    const png = (w = 200, h = 100) => {
+      const b = new Uint8Array(33);
+      b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+      new DataView(b.buffer).setUint32(16, w);
+      new DataView(b.buffer).setUint32(20, h);
+      return btoa(String.fromCharCode(...b));
+    };
+    const svg = (body: string) => btoa(`<svg xmlns="http://www.w3.org/2000/svg" ${body}`);
+
+    it("places inline data and registers the file", async () => {
+      setup(boxes());
+      const res = await call("add_image", { data: png(), mimeType: "image/png", x: 10, y: 20 });
+      expect(res).toMatchObject({ x: 10, y: 20, width: 200, height: 100 });
+      const el = api.byId(res.id);
+      expect(el).toMatchObject({ type: "image", fileId: res.fileId, status: "saved" });
+      expect(res.fileId).toMatch(/^[0-9a-f]{40}$/);
+      expect(api.addFiles).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: res.fileId,
+          mimeType: "image/png",
+          dataURL: `data:image/png;base64,${png()}`,
+        }),
+      ]);
+      expect(res.revision).toBeTypeOf("string");
+    });
+
+    it("keeps the aspect ratio when only one side is given and caps the default size", async () => {
+      setup();
+      const w = await call("add_image", { data: png(), mimeType: "image/png", width: 50 });
+      expect(w).toMatchObject({ width: 50, height: 25 });
+      const h = await call("add_image", { data: png(), mimeType: "image/png", height: 50 });
+      expect(h).toMatchObject({ width: 100, height: 50 });
+      const big = await call("add_image", { data: png(2000, 1000), mimeType: "image/png" });
+      expect(big).toMatchObject({ width: 400, height: 200 });
+      const sized = await call("add_image", {
+        data: svg('viewBox="0 0 30 60"/>'),
+        mimeType: "image/svg+xml",
+      });
+      expect(sized).toMatchObject({ width: 30, height: 60 });
+    });
+
+    it("fits inside a card or frame", async () => {
+      setup([
+        ...boxes(),
+        ...scene([
+          { type: "frame", id: "f", children: [], x: 1000, y: 0, width: 300, height: 300 },
+        ]),
+      ]);
+      const card = await call("add_image", { data: png(), mimeType: "image/png", inside: "a" });
+      // a is 100x60, padding 8 → 84x44 box; 2:1 image → 84x42, centred.
+      expect(card).toMatchObject({ x: 8, y: 9, width: 84, height: 42 });
+      expect(api.byId(card.id).frameId).toBeNull();
+      const inFrame = await call("add_image", {
+        data: png(),
+        mimeType: "image/png",
+        inside: "f",
+        width: 100,
+      });
+      const f = api.byId("f");
+      expect(inFrame).toMatchObject({ frameId: "f", width: 100, height: 50 });
+      expect(inFrame.x).toBeCloseTo(f.x + (f.width - 100) / 2);
+      expect(inFrame.y).toBeCloseTo(f.y + (f.height - 50) / 2);
+      await expect(
+        runSceneTool("add_image", { data: png(), mimeType: "image/png", inside: "nope" }, TAB),
+      ).rejects.toThrow(/nope/);
+    });
+
+    it("rejects paths, bad types, mismatched bytes, oversized data and scripted SVG", async () => {
+      setup();
+      const reject = (args: Record<string, unknown>, re: RegExp) =>
+        expect(runSceneTool("add_image", args, TAB)).rejects.toThrow(re);
+      await reject({ path: "photo.png" }, /resolved by the app/);
+      await reject({}, /Pass "path"/);
+      await reject({ data: png(), mimeType: "image/bmp" }, /Unsupported image type/);
+      await reject({ data: png() }, /mimeType/);
+      await reject(
+        { data: png(), mimeType: "image/gif" },
+        /says image\/gif but the data is image\/png/,
+      );
+      await reject({ data: btoa("hello world"), mimeType: "image/png" }, /not a supported image/);
+      await reject({ data: "!!!", mimeType: "image/png" }, /base64/);
+      await reject({ data: "A".repeat(14_000_000), mimeType: "image/png" }, /10 MB/);
+      await reject(
+        { data: svg("><script>alert(1)</script></svg>"), mimeType: "image/svg+xml" },
+        /<script>/,
+      );
+      await reject({ data: svg('onload="x()"/>'), mimeType: "image/svg+xml" }, /event handler/);
+      await reject(
+        {
+          data: svg('><image href="https://evil.example/x.png"/></svg>'),
+          mimeType: "image/svg+xml",
+        },
+        /link/,
+      );
+      await reject(
+        { data: svg("><foreignObject/></svg>"), mimeType: "image/svg+xml" },
+        /foreignObject/,
+      );
+      expect(api.calls).toHaveLength(0);
+      expect(api.addFiles).not.toHaveBeenCalled();
+    });
+
+    it("works inside apply_ops atomically and reverts with the turn", async () => {
+      setup(boxes());
+      await expect(
+        runSceneTool(
+          "apply_ops",
+          {
+            ops: [
+              { tool: "add_image", args: { data: png(), mimeType: "image/png", id: "ok" } },
+              { tool: "add_image", args: { data: png(), mimeType: "image/gif" } },
+            ],
+          },
+          TAB,
+        ),
+      ).rejects.toThrow(/op 1 \(add_image\) failed.*no changes were applied/);
+      expect(api.calls).toHaveLength(0);
+
+      beginTurn(TAB, "t1");
+      const res = await call("apply_ops", {
+        ops: [
+          {
+            tool: "add_image",
+            args: { data: png(), mimeType: "image/png", id: "photo", inside: "a" },
+          },
+          { tool: "update_elements", args: { updates: [{ id: "a", patch: { x: 5 } }] } },
+        ],
+      });
+      expect(res.results[0].id).toBe("photo");
+      expect(api.byId("photo").isDeleted).toBe(false);
+      endTurn(TAB, "t1");
+      expect(revertTurn(TAB, "t1")).toMatchObject({ ok: true });
+      expect(api.byId("photo").isDeleted).toBe(true);
+      expect(api.byId("a").x).toBe(0);
+    });
+  });
+
   it("arranges: align, grid, group/ungroup, z-order", async () => {
     setup(boxes());
     await call("arrange", { ids: ["a", "b", "c"], action: "align", value: "left" });

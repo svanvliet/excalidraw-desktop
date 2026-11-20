@@ -104,6 +104,7 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   delete_elements: "Deleted elements",
   connect: "Connected elements",
   add_mermaid: "Imported a Mermaid diagram",
+  add_image: "Placed an image",
   arrange: "Arranged elements",
   set_viewport: "Moved the viewport",
   find_elements: "Searched the canvas",

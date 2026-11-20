@@ -143,3 +143,43 @@ it("select_elements drives the real selection and duplicates become real element
   const label = ex.getSceneElements().find((e) => e.type === "text" && e.containerId === copy.id);
   expect(label && "text" in label && label.text).toBe("A");
 });
+
+it("add_image registers the file with the real editor and undoes as one step", async () => {
+  let api: ExcalidrawImperativeAPI | null = null;
+  render(<Excalidraw excalidrawAPI={(a) => (api = a)} />);
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  const ex = api as unknown as ExcalidrawImperativeAPI;
+  registerSceneTab(TAB, {
+    api: ex,
+    title: () => "Real",
+    isViewer: () => false,
+    markDirty: () => {},
+  });
+  const seed = convertToExcalidrawElements(
+    [
+      { type: "rectangle", id: "card", x: 0, y: 0, width: 120, height: 120 },
+    ] as ExcalidrawElementSkeleton[],
+    { regenerateIds: false },
+  );
+  act(() => ex.updateScene({ elements: seed, captureUpdate: CaptureUpdateAction.IMMEDIATELY }));
+
+  const svg = btoa('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>');
+  let res: { id: string; fileId: string } = { id: "", fileId: "" };
+  await act(async () => {
+    const [out] = await runSceneTool("add_image", {
+      tabId: TAB,
+      data: svg,
+      mimeType: "image/svg+xml",
+      inside: "card",
+    });
+    res = JSON.parse((out as { text: string }).text);
+  });
+  const img = ex.getSceneElements().find((e) => e.id === res.id);
+  expect(img).toMatchObject({ type: "image", fileId: res.fileId, width: 104, height: 104 });
+  expect(ex.getFiles()[res.fileId]?.mimeType).toBe("image/svg+xml");
+
+  undo();
+  expect(ex.getSceneElements().map((e) => e.id)).toEqual(["card"]);
+});

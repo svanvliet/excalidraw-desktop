@@ -260,6 +260,59 @@
       }
     },
     {
+      "name": "add_image",
+      "readOnly": false,
+      "description": "Place a raster or SVG image (png, jpeg, gif, webp, svg; up to 10 MB) on the canvas, e.g. a person's photo on an org-chart card, a logo, or a screenshot. Pass either path (a file inside your working directory / session folder or the attached folder; relative paths resolve against your working directory; other locations are rejected) or data (base64, no data: prefix) plus mimeType. URLs are not supported: there is no network access, so save or create the file in your working directory first. Size: width and/or height in canvas px (aspect ratio is kept when you give only one); default is the image's own size, capped at 400px. Position: x/y (top-left), or inside = an element id (card, shape or frame) to fit the image within that element's bounds with padding (x/y/width/height then override). Scripted SVG (script, event handlers, foreignObject, external links) is rejected. Returns the new image element id. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Image file inside the session folder or the attached folder."
+          },
+          "data": {
+            "type": "string",
+            "description": "Base64-encoded image bytes (use with mimeType instead of path)."
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "inside": {
+            "type": "string",
+            "description": "Element id to fit the image inside (frames also adopt it)."
+          },
+          "padding": {
+            "type": "number",
+            "description": "Inset from the inside element's edges (default 8)."
+          },
+          "id": {
+            "type": "string",
+            "description": "Optional id for the new image element."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "arrange",
       "readOnly": false,
       "description": "Arrange elements. action align: value left|center|right|top|middle|bottom. distribute: value horizontal|vertical. grid: columns, gap. group / ungroup. zorder: value front|back. frame: value = a frame id to put the elements in, or \"none\" to take them out. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
@@ -510,7 +563,7 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, arrange, move_elements, or duplicate_elements (omit tabId/expectedRevision inside ops). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, or duplicate_elements (omit tabId/expectedRevision inside ops). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
