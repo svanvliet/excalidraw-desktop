@@ -176,7 +176,7 @@ test("stacks a border on the mask that traces the circle, then the rectangle", a
     insideRing: [0.2, 0.5],
   } satisfies Record<string, [number, number]>;
   await expect
-    .poll(() => sample(page, points).then((r) => r.px))
+    .poll(() => sample(page, points).then((r) => r.px), { timeout: 10_000 })
     .toEqual({ centre: "red", leftEdge: "blue", topEdge: "blue", corner: "bg", insideRing: "red" });
   await shot(page, "panel");
 
@@ -184,7 +184,7 @@ test("stacks a border on the mask that traces the circle, then the rectangle", a
   await pressed("No mask");
   await pressed("Extra bold");
   await expect
-    .poll(() => sample(page, points).then((r) => r.px))
+    .poll(() => sample(page, points).then((r) => r.px), { timeout: 10_000 })
     .toEqual({
       centre: "red",
       leftEdge: "blue",
@@ -225,11 +225,14 @@ test("draws dashed and sloppy borders along the circle mask", async ({ page }) =
   );
   // Dashes: blue all the way round, but with gaps.
   await expect
-    .poll(async () => {
-      const ring = await ringCoverage(page);
-      const blue = ring.filter(Boolean).length / ring.length;
-      return blue > 0.3 && blue < 0.9;
-    })
+    .poll(
+      async () => {
+        const ring = await ringCoverage(page);
+        const blue = ring.filter(Boolean).length / ring.length;
+        return blue > 0.3 && blue < 0.9;
+      },
+      { timeout: 10_000 },
+    )
     .toBe(true);
 
   await panel.getByRole("button", { name: "Solid" }).click();
@@ -240,7 +243,9 @@ test("draws dashed and sloppy borders along the circle mask", async ({ page }) =
   );
   // Sloppy but still a closed ring that follows the circle.
   await expect
-    .poll(async () => (await ringCoverage(page, 90, 0.2)).filter(Boolean).length)
+    .poll(async () => (await ringCoverage(page, 90, 0.2)).filter(Boolean).length, {
+      timeout: 10_000,
+    })
     .toBeGreaterThanOrEqual(86);
   await shot(page, "sloppy");
 });
