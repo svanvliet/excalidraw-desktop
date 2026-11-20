@@ -81,6 +81,68 @@ button {
   width: 100%;
 }
 
+.excalidraw-canvas {
+  position: relative;
+}
+
+/* ---------------------------- Extensions bar ---------------------------- */
+
+/* Anchored above (or below) the selection; left/top come from ExtensionsBar. */
+.extensions-bar {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  transform: translate(-50%, -100%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+}
+
+.extensions-bar[data-below] {
+  transform: translate(-50%, 0);
+}
+
+.extensions-bar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.extensions-bar__group + .extensions-bar__group {
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.extensions-bar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  color: var(--fg-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.extensions-bar .icon-btn {
+  height: var(--control-height-sm);
+}
+
+.extensions-bar .icon-btn[data-pressed] {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.extensions-bar__error {
+  padding: 0 var(--space-2);
+  color: var(--danger);
+  font-size: var(--font-size-xs);
+}
+
 .excalidraw-canvas .excalidraw .App-menu__left.App-menu__left--draggable {
   min-height: 0;
   max-height: calc(100% - 16px);
