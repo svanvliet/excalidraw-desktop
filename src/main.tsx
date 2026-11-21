@@ -1,10 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { guestLinkFor, inTauri } from "./guest/route";
+import { installCanvasFilterPolyfill } from "./lib/canvasFilterPolyfill";
 import { installGlobalLogHandlers, log } from "./lib/logger";
 import "./index.css";
 
 installGlobalLogHandlers();
+if (installCanvasFilterPolyfill()) {
+  log.info("main.tsx: installed canvas filter polyfill (no native ctx.filter)");
+}
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 const guestLink = guestLinkFor(window.location.href, inTauri());

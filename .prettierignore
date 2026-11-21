@@ -8,3 +8,4 @@ package-lock.json
 public/tauri.svg
 public/vite.svg
 src/assets
+.impeccable/
