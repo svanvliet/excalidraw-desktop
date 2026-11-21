@@ -150,6 +150,8 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
   - A properties-panel section offers create, go to master, reset overrides (all or per slot), detach, and **Add to my components** for instances from another machine.
   - Edit → Create Component sits in the native menu.
   - The agent gets `list_my_components` and `insert_my_component`.
+- **FR-56** **Component properties**: a master declares typed properties (text, colour, boolean visibility, choice) bound to its slots. Each instance sets its own values, which act as overrides; unset values follow the master's defaults. A **Properties** panel section declares properties on a master and edits values on an instance (with reset). The agent gets `define_property`, `remove_property` and `set_properties`.
+- **FR-57** **Nested components**: a master can contain instances of other components; the outer component's instances hold copies that still follow the inner master. Cycles are rejected. Overrides and property values work at both levels, and duplicate/paste, orphan promotion, one-step undo and collab (no echo) behave as for single-level components. `insert_instance` takes `into` to nest.
 
 ### 4.15 Named styles (DX wave 2)
 
