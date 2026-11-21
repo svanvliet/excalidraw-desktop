@@ -17,7 +17,7 @@
  * - Idempotent: patches that change nothing are dropped, so a duplicate derivation (e.g. an
  *   untagged peer) writes nothing.
  */
-import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, mutateElement, newElementWith } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
@@ -79,6 +79,14 @@ export interface ReactorOptions {
   maxPasses?: number;
   /** Move the bound ends of arrows attached to patched targets. Default true. */
   followArrows?: boolean;
+  /**
+   * How patches reach the scene. `replace` (default) hands `updateScene` new element objects.
+   * `mutate` patches the scene's own objects in place with the exported `mutateElement`
+   * (as Excalidraw's drag does), so position-only patches keep the rough.js `ShapeCache`
+   * entry (a WeakMap keyed by element object) instead of regenerating every target's shape.
+   * See docs/reactor-spike.md § "Point 2".
+   */
+  apply?: "replace" | "mutate";
 }
 
 export interface Reactor {
@@ -91,6 +99,8 @@ export interface Reactor {
   readonly stats: ReactorStats;
   dispose(): void;
 }
+
+const SKIP_DIFF = new Set<string>(["version", "versionNonce", "updated"]);
 
 type Stamp = string;
 const stamp = (el: El): Stamp => `${el.version}:${el.versionNonce}`;
@@ -128,6 +138,7 @@ export function createReactor(opts: ReactorOptions): Reactor {
   const schedule = opts.schedule ?? defaultSchedule;
   const maxPasses = opts.maxPasses ?? 4;
   const followArrows = opts.followArrows ?? true;
+  const apply = opts.apply ?? "replace";
 
   /** Last stamp observed per element. */
   const seen = new Map<string, Stamp>();
@@ -292,9 +303,23 @@ export function createReactor(opts: ReactorOptions): Reactor {
     }
 
     if (pending.size > 0) {
-      for (const el of pending.values()) expected.set(el.id, stamp(el));
+      let next: readonly El[];
+      if (apply === "mutate") {
+        for (const [id, el] of pending) {
+          const orig = byId.get(id)!;
+          const diff: Patch = {};
+          for (const k of Object.keys(el) as Array<keyof El>)
+            if (!SKIP_DIFF.has(k) && el[k] !== orig[k]) diff[k] = el[k];
+          mutateElement(orig as never, diff as never, false);
+          expected.set(id, stamp(orig));
+        }
+        next = scene.slice();
+      } else {
+        for (const el of pending.values()) expected.set(el.id, stamp(el));
+        next = scene.map((el) => pending.get(el.id) ?? el);
+      }
       api.updateScene({
-        elements: scene.map((el) => pending.get(el.id) ?? el),
+        elements: next,
         captureUpdate: CaptureUpdateAction.NEVER,
       });
       stats.patched += pending.size;

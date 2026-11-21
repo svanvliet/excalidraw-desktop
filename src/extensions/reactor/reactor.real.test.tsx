@@ -19,6 +19,9 @@ import { createReactor, type El, type Reactor, type ReactorRule } from "./reacto
 import { mirrorLinkOf, mirrorRule, withMirrorLink, type MirrorLink } from "./mirrorRule";
 import { mirrorOnDuplicate } from "./duplicate";
 
+/** `REACTOR_APPLY=mutate npx vitest run src/extensions/reactor` re-runs every finding in mutate mode. */
+const APPLY = process.env.REACTOR_APPLY === "mutate" ? "mutate" : "replace";
+
 const g = globalThis as Record<string, unknown>;
 g.Path2D ??= class {
   addPath() {}
@@ -174,7 +177,7 @@ describe("point 1 — undo/redo with derived targets", () => {
   it("one undo/redo restores source and targets; reactor writes add no history and keep redo", async () => {
     const api = await mount(fixture());
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     expect(button("Undo").disabled).toBe(true);
 
     // Two quick captured edits before the frame: one flush (throttled).
@@ -215,10 +218,27 @@ describe("point 1 — undo/redo with derived targets", () => {
     expect(reactor.stats.loopGuardHits).toBe(0);
   });
 
+  it("derived writes never ride along in the user's next history entry", async () => {
+    const api = await mount(fixture());
+    const clock = manualSchedule();
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
+    userEdit(api, "S", { x: 5 });
+    clock.frame();
+    expect(get(api, "T1")).toMatchObject({ x: 5, y: 200 });
+    userEdit(api, "S", { y: 5 });
+    clock.frame();
+    click("Undo");
+    // Had the first derivation (T1.x 0→5) been captured into entry 2, undo would revert it here.
+    expect(get(api, "S")).toMatchObject({ x: 5, y: 0 });
+    expect(get(api, "T1")).toMatchObject({ x: 5, y: 205 });
+    clock.frame();
+    expect(get(api, "T1")).toMatchObject({ x: 5, y: 200 });
+  });
+
   it("arrow-key nudges (EVENTUALLY in 0.18.1) fold into the next entry; targets still follow", async () => {
     const api = await mount(fixture());
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     select(api, "S");
     key("ArrowRight", { shiftKey: true }); // ELEMENT_SHIFT_TRANSLATE_AMOUNT = 5
     key("ArrowDown", { shiftKey: true });
@@ -250,7 +270,7 @@ describe("point 1 — undo/redo with derived targets", () => {
   it("a style edit is one entry; undo restores the derived style", async () => {
     const api = await mount(fixture());
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     userEdit(api, "S", { backgroundColor: "#ffc9c9", strokeWidth: 4 });
     clock.frame();
     expect(get(api, "T2")).toMatchObject({ backgroundColor: "#ffc9c9", strokeWidth: 4 });
@@ -266,7 +286,7 @@ describe("point 1 — undo/redo with derived targets", () => {
   it("re-derives a target that undo/redo touched directly (no drift)", async () => {
     const api = await mount(fixture());
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     // A direct edit of a target is reverted on the next frame (overrides are explicit data).
     userEdit(api, "T1", { x: 999 });
     clock.frame();
@@ -279,7 +299,7 @@ describe("point 4 — overridden text re-measures without unexported helpers", (
     const override = "a considerably longer override label";
     const api = await mount(fixture({ overrideText: override }));
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     userEdit(api, "S", { width: 120 });
     clock.frame();
     const t1 = get(api, "T1");
@@ -312,7 +332,7 @@ describe("point 5 — duplicate → instance, arrow bindings", () => {
   it("Ctrl+D of a source makes the copy an instance in one undo step", async () => {
     const api = await mount(fixture(), { onDuplicate: mirrorOnDuplicate });
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     select(api, "S");
     key("d", { ctrlKey: true });
     const known = new Set(["S", "T1", "T2"]);
@@ -344,7 +364,7 @@ describe("point 5 — duplicate → instance, arrow bindings", () => {
   it("arrows bound to a derived target keep their binding and follow it", async () => {
     const api = await mount(fixture({ arrowToT1: true }));
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     const before = get(api, "A") as ExcalidrawArrowElement;
     expect(before.endBinding?.elementId).toBe("T1");
     const endBefore = before.points[before.points.length - 1];
@@ -398,7 +418,7 @@ describe("loop guard and idempotency", () => {
       derive: (target, source) =>
         target.id === "T2" ? { x: target.x + 1 } : { y: source.y + 200 },
     };
-    reactor = createReactor({ api, rules: [runaway], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [runaway], schedule: clock.schedule, apply: APPLY });
     userEdit(api, "S", { y: 1 });
     clock.frame();
     expect(get(api, "T2").x).toBe(301); // written once per flush, never twice
@@ -414,7 +434,7 @@ describe("loop guard and idempotency", () => {
   it("an edit that derives no change writes nothing", async () => {
     const api = await mount(fixture());
     const clock = manualSchedule();
-    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule });
+    reactor = createReactor({ api, rules: [mirrorRule], schedule: clock.schedule, apply: APPLY });
     userEdit(api, "S", { locked: true }); // not a mirrored prop
     clock.frame();
     expect(reactor.stats.patched).toBe(0);

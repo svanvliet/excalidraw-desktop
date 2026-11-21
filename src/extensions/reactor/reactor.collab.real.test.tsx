@@ -88,6 +88,7 @@ async function peer(
     api: ex,
     rules: [mirrorRule],
     schedule: frameAfter(opts.frameMs ?? 16),
+    apply: process.env.REACTOR_APPLY === "mutate" ? "mutate" : "replace",
   });
   const p = { api: ex, reactor, sent: [] as Payload[] } as Peer;
   p.session = new CollabSession({
