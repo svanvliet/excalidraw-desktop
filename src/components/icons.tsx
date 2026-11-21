@@ -378,6 +378,21 @@ export const AnchorSouthIcon = () => <AnchorIcon cx={10} cy={15.5} />;
 export const AnchorWestIcon = () => <AnchorIcon cx={4.5} cy={10} />;
 export const AnchorCenterIcon = () => <AnchorIcon cx={10} cy={10} />;
 
+/** Line anchors: an end free to slide around the outline (no pin). */
+export const AnchorFreeIcon = () => (
+  <NativeIcon>
+    <rect
+      x="4.5"
+      y="4.5"
+      width="11"
+      height="11"
+      rx="1.5"
+      strokeWidth="1.25"
+      strokeDasharray="2 2"
+    />
+  </NativeIcon>
+);
+
 /** Smart containers: stack direction, cross-axis alignment and main-axis distribution. */
 export const StackVerticalIcon = () => (
   <NativeIcon>

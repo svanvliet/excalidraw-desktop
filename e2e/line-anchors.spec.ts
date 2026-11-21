@@ -216,3 +216,27 @@ test("drawing an arrow between two face midpoints pins both ends", async ({ page
   expectNear(a.points[0], [625, 190]);
   expectNear(lastPoint(a), [795, 390]);
 });
+
+test("the Anchors panel pins a straight arrow's end and frees it again", async ({ page }) => {
+  await open(page);
+  await seed(page);
+  await page.evaluate(() =>
+    window.__canvas!.updateScene({ appState: { selectedElementIds: { a: true } } as never }),
+  );
+  const section = page.locator(".App-menu__left .panelColumn > [data-testid=arrow-anchors-native]");
+  await expect(section).toBeVisible();
+  await section.getByRole("button", { name: "End: Left" }).click();
+  await expect.poll(async () => (await arrowState(page, "a"))?.pin?.end?.anchor).toBe("w");
+  expectNear(lastPoint((await arrowState(page, "a"))!), [795, 390]);
+  await expect(section.getByRole("button", { name: "End: Left" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await section.getByRole("button", { name: "End: Free" }).click();
+  await expect.poll(async () => (await arrowState(page, "a"))?.pin?.end).toBeUndefined();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(async () => (await arrowState(page, "a"))?.pin?.end?.anchor).toBe("w");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(async () => (await arrowState(page, "a"))?.pin?.end).toBeUndefined();
+});

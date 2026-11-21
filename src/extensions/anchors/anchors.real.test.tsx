@@ -13,6 +13,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { anchorPoint, sideOf } from "../../lib/elbowAnchors";
 import { absolutePoints, endAnchors, pinOf, snapPatches } from "../../lib/lineAnchors";
 import { settleEnds } from "./pointer";
+import { setLineAnchors } from "../../components/arrowAnchors/commit";
 import { installComponents, uninstallComponents } from "../components/host";
 import type { El } from "../reactor/reactor";
 
@@ -155,6 +156,21 @@ describe("line anchors (real Excalidraw)", () => {
     clock.frame();
     expectAt(endOf(api), free);
     expect(endAnchors(get(api, "a") as never).end).toBeNull();
+  });
+
+  it("a panel pin from a customData-less arrow undoes back to a free end", async () => {
+    const { api, clock } = await setup();
+    expect(get(api, "a").customData).toBeUndefined();
+    act(() => setLineAnchors(api, "a", { end: "s" }));
+    clock.frame();
+    expectAt(endOf(api), anchorPoint("s", get(api, "B")));
+    click("Undo");
+    clock.frame();
+    expect(pinOf(get(api, "a")).end).toBeUndefined();
+    userEdit(api, new Map([["B", { x: 600 }]]));
+    clock.frame();
+    expect(endAnchors(get(api, "a") as never).end).toBeNull();
+    expect(endOf(api)[0]).not.toBeCloseTo(anchorPoint("s", get(api, "B"))[0], 0);
   });
 
   describe("settleEnds (pointer-up)", () => {
