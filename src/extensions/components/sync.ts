@@ -393,11 +393,14 @@ function deriveChild(
   if (mc.source) {
     tag.source = mc.source;
     if (mc.libraryId) tag.libraryId = mc.libraryId;
-    // The master's values for every key this child overrides (to rebuild it from here).
-    if (ov)
-      tag.mv = Object.fromEntries(
-        Object.keys(ov).map((k) => [k, masterValue(m, k as OverrideKey)]),
-      );
+    // The master's overridable values, so the instance can adopt edits and rebuild the
+    // master while the master is off-canvas.
+    tag.mv = Object.fromEntries(
+      OVERRIDE_KEYS.filter((k) => k !== "visible" && overridable(m, k)).map((k) => [
+        k,
+        masterValue(m, k) ?? null,
+      ]),
+    );
   }
   // Inner tags (nested instances) are copies of the master child's, as instances.
   const d = directInner(m, mt);
@@ -552,8 +555,13 @@ export function syncComponent(
   // --- 2. one live master ---------------------------------------------------------------------
   let liveMasters = [...masters].filter(([, els]) => isLive(els)).map(([g]) => g);
   if (!liveMasters.length) {
-    // A library component's master lives off-canvas: instances stay self-contained copies.
-    if (library) return finish();
+    // A library component's master lives off-canvas: instances stay self-contained copies
+    // (direct edits still become overrides against the master values they recorded).
+    if (library) {
+      for (const els of instances.values())
+        adoptOrphanEdits(els.map(latest), componentId, changed, access);
+      return finish();
+    }
     const cands = [...instances].filter(([, els]) => isLive(els)).map(([g]) => g);
     if (!cands.length) return finish();
     const depth = (g: string) => {
@@ -831,6 +839,45 @@ function adoptEdit(
     const without = effectiveOf(slot);
     if (!same(cur, k in without ? without[k] : masterValue(m, k))) explicit[k] = cur;
   }
+}
+
+/** Direct edits to a library instance whose master is off-canvas, against its recorded `mv`. */
+function adoptOrphanEdits(
+  children: readonly El[],
+  componentId: string,
+  changed: ReadonlySet<string>,
+  access: SyncAccess,
+): void {
+  const edited = children.filter((c) => !c.isDeleted && changed.has(c.id));
+  if (!edited.length) return;
+  const pv = instanceValues(children, componentId);
+  let pvChanged = false;
+  for (const c of edited) {
+    const tag = tagFor(c, componentId)!;
+    const mv = tag.mv ?? {};
+    const explicit: Overrides = { ...(tag.overrides ?? {}) };
+    for (const k of OVERRIDE_KEYS) {
+      if (k === "visible" || !(k in mv) || !overridable(c, k)) continue;
+      const cur = currentValue(c, k);
+      const eff = { ...propOverrides(tag.props, pv, tag.slot), ...explicit };
+      if (same(cur, k in eff ? eff[k] : mv[k])) continue;
+      const prop = valueProp(tag.props ?? [], tag.slot, k);
+      delete explicit[k];
+      if (prop && typeof cur === "string") {
+        pv[prop.id] = cur;
+        pvChanged = true;
+      } else if (!same(cur, mv[k])) explicit[k] = cur;
+    }
+    const overrides = Object.keys(explicit).length ? explicit : undefined;
+    if (!same(overrides ?? null, tag.overrides ?? null))
+      access.patch(c.id, { customData: withTag(c, { ...tag, overrides }) });
+  }
+  if (pvChanged)
+    for (const c of children) {
+      const el = access.get(c.id) ?? c;
+      const tag = tagFor(el, componentId);
+      if (tag) access.patch(c.id, { customData: withTag(el, { ...tag, pv: { ...pv } }) });
+    }
 }
 
 /**

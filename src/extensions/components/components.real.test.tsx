@@ -20,8 +20,15 @@ import {
   detachInstance,
 } from "./actions";
 import { componentsOnDuplicate } from "./duplicate";
-import { installComponents, runComponentCommand, uninstallComponents } from "./host";
-import { groupOf, listComponents, tagOf } from "./model";
+import {
+  adoptInstanceAsMaster,
+  dematerializeMaster,
+  installComponents,
+  materializeMaster,
+  runComponentCommand,
+  uninstallComponents,
+} from "./host";
+import { groupOf, listComponents, tagFor, tagOf, withTag } from "./model";
 
 type Api = ExcalidrawImperativeAPI;
 
@@ -444,5 +451,182 @@ describe("persistence", () => {
     userEdit(api2, { E: { y: 40 } });
     clock.frame();
     expect(child(api2, inst.groupId, "E")).toMatchObject({ x: 220, y: 340 });
+  });
+});
+
+describe("library-backed masters", () => {
+  const masterIds = (api: Api, cid: string) =>
+    all(api)
+      .filter((e) => !e.isDeleted && tagFor(e, cid)?.role === "master")
+      .map((e) => e.id);
+  const call = <T,>(fn: () => T): T => {
+    let out: T | undefined;
+    act(() => {
+      out = fn();
+    });
+    return out as T;
+  };
+
+  it("dematerialize tags every instance and never promotes the orphans", async () => {
+    const { api, clock, created, inst, reactor } = await setup();
+    const cid = created.componentId;
+    const r = child(api, inst.groupId, "R");
+    userEdit(api, { [r.id]: { backgroundColor: "#b2f2bb" } });
+    clock.frame();
+    const def = call(() => dematerializeMaster(api, created.masterGroupId))!;
+    expect(def).toMatchObject({ componentId: cid, libraryId: cid, name: "Card", files: [] });
+    expect(def.elements.map((e) => e.id).sort()).toEqual([...created.ids].sort());
+    expect(masterIds(api, cid)).toEqual([]);
+    for (const e of all(api).filter((e) => !e.isDeleted))
+      expect(tagFor(e, cid)).toMatchObject({ role: "instance", source: "library", libraryId: cid });
+    // The instance records the master values it overrides, to rebuild the master later.
+    expect(tagOf(get(api, r.id))!.mv).toMatchObject({
+      backgroundColor: get(api, "R").backgroundColor,
+    });
+    clock.frame();
+    reactor.flush();
+    expect(tagOf(get(api, r.id))?.role).toBe("instance");
+    expect(listComponents(all(api))[0].masterGroupId).toBeNull();
+    // Deleting the instance's sibling or editing it never promotes either.
+    userEdit(api, { [r.id]: { backgroundColor: "#ffc9c9" } });
+    clock.frame();
+    expect(tagOf(get(api, r.id))).toMatchObject({
+      role: "instance",
+      overrides: { backgroundColor: "#ffc9c9" },
+    });
+    // One undo restores the master and the instance's untagged state.
+    click("Undo");
+    click("Undo");
+    clock.frame();
+    expect(masterIds(api, cid).sort()).toEqual([...created.ids].sort());
+    expect(tagOf(get(api, r.id))!.source).toBeUndefined();
+  });
+
+  it("the UI's insert-from-library sequence (place, insert, delete, tag) stays an instance", async () => {
+    const api = await mount(base());
+    const clock = manualSchedule();
+    installComponents(api, { schedule: clock.schedule });
+    const out = run(api, (d) => {
+      const c = createComponent(d, ["R", "E"], "Card");
+      const ins = insertInstance(d, c.componentId, { x: 0, y: 300 });
+      for (const id of c.ids) d.update(id, { isDeleted: true });
+      for (const id of ins.ids) {
+        const el = d.get(id)!;
+        d.update(id, {
+          customData: withTag(el, {
+            ...tagFor(el, c.componentId)!,
+            source: "library",
+            libraryId: c.componentId,
+          }),
+        });
+      }
+      return { cid: c.componentId, ...ins };
+    });
+    clock.frame();
+    for (const id of out.ids) expect(tagFor(get(api, id), out.cid)?.role).toBe("instance");
+    expect(listComponents(all(api))[0]).toMatchObject({ masterGroupId: null });
+  });
+
+  it("materialize → edit → dematerialize round trip, each one undo step", async () => {
+    const { api, clock, created, inst, text } = await setup();
+    const cid = created.componentId;
+    const r = child(api, inst.groupId, "R");
+    userEdit(api, { [r.id]: { backgroundColor: "#b2f2bb" } });
+    clock.frame();
+    const masterBg = get(api, "R").backgroundColor;
+    call(() => dematerializeMaster(api, created.masterGroupId));
+    clock.frame();
+
+    const group = call(() => materializeMaster(api, inst.groupId))!;
+    clock.frame();
+    const ids = masterIds(api, cid);
+    expect(ids).toHaveLength(3);
+    const rect = all(api).find((e) => ids.includes(e.id) && e.type === "rectangle")!;
+    expect(rect).toMatchObject({ width: 200, height: 80, backgroundColor: masterBg, y: 300 });
+    expect(rect.x).toBeGreaterThan(200);
+    expect(groupOf(rect, tagFor(rect, cid))).toBe(group);
+    expect(tagFor(rect, cid)).toMatchObject({ role: "master", source: "library" });
+    const label = labelOf(api, rect.id);
+    expect(label.originalText).toBe("Hello");
+    expect(child(api, inst.groupId, "R").backgroundColor).toBe("#b2f2bb");
+
+    userEdit(api, { [rect.id]: { width: 260 }, [label.id]: { text: "Hi", originalText: "Hi" } });
+    clock.frame();
+    expect(child(api, inst.groupId, "R")).toMatchObject({ width: 260, backgroundColor: "#b2f2bb" });
+    expect((child(api, inst.groupId, text) as ExcalidrawTextElement).originalText).toBe("Hi");
+
+    const def = call(() => dematerializeMaster(api, group))!;
+    clock.frame();
+    expect(def.elements.find((e) => e.type === "rectangle")).toMatchObject({ width: 260 });
+    expect(masterIds(api, cid)).toEqual([]);
+    expect(child(api, inst.groupId, "R")).toMatchObject({ width: 260, backgroundColor: "#b2f2bb" });
+
+    click("Undo"); // dematerialize
+    clock.frame();
+    expect(masterIds(api, cid).sort()).toEqual([...ids].sort());
+    click("Undo"); // edit
+    clock.frame();
+    expect(child(api, inst.groupId, "R").width).toBe(200);
+    click("Undo"); // materialize
+    clock.frame();
+    expect(masterIds(api, cid)).toEqual([]);
+    expect(child(api, inst.groupId, "R")).toMatchObject({ width: 200, backgroundColor: "#b2f2bb" });
+    click("Undo"); // first dematerialize
+    clock.frame();
+    expect(masterIds(api, cid).sort()).toEqual([...created.ids].sort());
+  });
+
+  it("materialize from a scaled instance rebuilds the master's own geometry", async () => {
+    const { api, clock, created, text } = await setup();
+    const cid = created.componentId;
+    const big = run(api, (d) => insertInstance(d, cid, { x: 0, y: 600, scale: 2 }));
+    clock.frame();
+    const fontSize = (get(api, text) as ExcalidrawTextElement).fontSize;
+    call(() => dematerializeMaster(api, created.masterGroupId));
+    clock.frame();
+    call(() => materializeMaster(api, big.groupId));
+    clock.frame();
+    const ids = masterIds(api, cid);
+    const rect = all(api).find((e) => ids.includes(e.id) && e.type === "rectangle")!;
+    const ell = all(api).find((e) => ids.includes(e.id) && e.type === "ellipse")!;
+    expect(rect).toMatchObject({ width: 200, height: 80 });
+    expect(ell).toMatchObject({ width: 40, height: 40, x: rect.x + 220, y: rect.y + 20 });
+    expect(labelOf(api, rect.id).fontSize).toBe(fontSize);
+    // Instances keep their transforms.
+    expect(child(api, big.groupId, "R")).toMatchObject({ x: 0, y: 600, width: 400 });
+  });
+
+  it("refuses while a master is on the canvas, and in view mode", async () => {
+    const { api, created, inst } = await setup();
+    expect(call(() => materializeMaster(api, inst.groupId))).toBeNull();
+    expect(call(() => adoptInstanceAsMaster(api, inst.groupId))).toBeNull();
+    act(() => api.updateScene({ appState: { viewModeEnabled: true } as never }));
+    expect(call(() => dematerializeMaster(api, created.masterGroupId))).toBeNull();
+    expect(masterIds(api, created.componentId)).toHaveLength(3);
+  });
+
+  it("adoptInstanceAsMaster turns an instance into the master with the master's values", async () => {
+    const { api, clock, created, inst } = await setup();
+    const cid = created.componentId;
+    const other = run(api, (d) => insertInstance(d, cid, { x: 0, y: 600 }));
+    const r = child(api, inst.groupId, "R");
+    userEdit(api, { [r.id]: { backgroundColor: "#b2f2bb" } });
+    clock.frame();
+    const masterBg = get(api, "R").backgroundColor;
+    call(() => dematerializeMaster(api, created.masterGroupId));
+    clock.frame();
+    expect(call(() => adoptInstanceAsMaster(api, inst.groupId))).toBe(inst.groupId);
+    clock.frame();
+    expect(tagOf(get(api, r.id))).toMatchObject({ role: "master", source: "library" });
+    expect(tagOf(get(api, r.id))!.overrides).toBeUndefined();
+    expect(get(api, r.id).backgroundColor).toBe(masterBg);
+    userEdit(api, { [r.id]: { width: 300 } });
+    clock.frame();
+    expect(child(api, other.groupId, "R").width).toBe(300);
+    click("Undo");
+    click("Undo");
+    clock.frame();
+    expect(tagOf(get(api, r.id))).toMatchObject({ role: "instance" });
+    expect(get(api, r.id).backgroundColor).toBe("#b2f2bb");
   });
 });

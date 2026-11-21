@@ -30,6 +30,9 @@ untouched.
 | `base`        | Instances only: the master child's centre, size and angle relative to the master origin at the last sync. Comparing it with the child's own geometry gives the instance transform.          |
 | `overrides`   | Instances only: per-slot values that win over the master. The keys are `text`, `backgroundColor`, `strokeColor`, `opacity`, `link` and `fileId` (image).                                    |
 | `promoted`    | Masters only: set when this master was an instance promoted after the master was deleted. It keeps the old overrides and base so the master can be demoted again (see §4).                  |
+| `source`      | Optional, `"library"`: the master lives in the app's library and is usually off-canvas. Library orphans are never promoted (§4a). Older readers ignore it.                                  |
+| `libraryId`   | Optional: the library key of the master (the `componentId`, since "My components" is keyed by it)                                                                                           |
+| `mv`          | Instances of library components only: the master's overridable values at the last sync. They let edits become overrides, and let the master be rebuilt, while it's off-canvas.              |
 
 Element ids never change during sync, so arrows bound to instance children stay bound.
 
@@ -117,6 +120,30 @@ masters exist, the non-promoted one with the smallest group id wins.
 
 We chose promote over detach-all because a deleted master shouldn't silently break every
 instance, and undo restores the exact previous state.
+
+## 4a. Library-backed masters
+
+A master can live in the library instead of on the canvas. Its tag then carries
+`source: "library"` and `libraryId`. When such a component has no live master, its instances
+**stay instances**: no promotion. They are self-contained copies, keeping their base geometry,
+overrides and recorded master values (`mv`). Direct edits to them still become overrides
+against `mv`. The check looks at every member tag, deleted ones included, so the UI's
+insert-from-library draft (place master → insert instance → delete master → tag
+`source`/`libraryId`) never promotes, as long as no sync runs between the delete and the tag.
+
+Helpers in `host.ts` each run as one undo step through `runComponentCommand`. They return
+`null` in view mode or on error, and the reason is shown as a toast.
+
+| Function                                      | Does                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dematerializeMaster(api, masterGroupId)`     | Tags every element of the component (`source:"library"`, `libraryId` = existing or `componentId`), syncs so instances record `mv`, then removes the master (and unbinds arrows from it). Returns a `ComponentDefinition` `{ componentId, libraryId, name?, elements, files }` to save. |
+| `materializeMaster(api, instanceGroupId)`     | Rebuilds the master next to that instance (40 px to its right) from the instance's own elements, with the instance transform undone and its overrides replaced by `mv`. Fails if a master is already on the canvas. Returns the new master group id.                                   |
+| `adoptInstanceAsMaster(api, instanceGroupId)` | Turns the instance into the master in place, restoring master values from `mv` (for a machine whose library lacks the component). Returns its group id.                                                                                                                                |
+
+The definition's `elements` are clones of the master after tagging, so instances inserted
+from it already carry `source: "library"`. `files` lists the image `fileId`s they use. While a
+master is materialized, the usual rule syncs it, and collab peers receive the result without
+echoing it.
 
 ## 5. Duplicate, paste and Alt-drag (`onDuplicate`)
 
