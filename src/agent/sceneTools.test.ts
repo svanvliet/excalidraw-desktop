@@ -6,6 +6,8 @@ import type { El } from "./scene/draft";
 import { registerSceneTab, resetSceneBridge, setActiveSceneTab } from "./sceneBridge";
 import { beginTurn, canRevertTurn, endTurn, revertTurn, runSceneTool } from "./sceneTools";
 import { resetTurns } from "./scene/turns";
+import ElkBundled from "elkjs/lib/elk.bundled.js";
+import { setElkFactory } from "../layout/elk";
 import type { ToolContent } from "./types";
 
 vi.mock("@excalidraw/excalidraw", async (orig) => ({
@@ -671,6 +673,92 @@ describe("edit tools", () => {
     expect(res.results).toHaveLength(3);
     expect(api.calls).toHaveLength(1);
     expect(api.undoStack).toHaveLength(1);
+  });
+});
+
+describe("auto_layout", () => {
+  const chart = () =>
+    scene([
+      { type: "rectangle", id: "ceo", x: 400, y: 400, width: 120, height: 60 },
+      { type: "rectangle", id: "cto", x: 0, y: 0, width: 120, height: 60 },
+      { type: "rectangle", id: "cfo", x: 800, y: 50, width: 120, height: 60 },
+      { type: "arrow", id: "a1", x: 0, y: 0, start: { id: "ceo" }, end: { id: "cto" } },
+      { type: "arrow", id: "a2", x: 0, y: 0, start: { id: "ceo" }, end: { id: "cfo" } },
+    ]);
+  beforeEach(() => setElkFactory(async () => new ElkBundled()));
+  afterEach(() => setElkFactory(null));
+
+  it("lays out the canvas as one undo step", async () => {
+    setup(chart());
+    const res = await call("auto_layout", { algorithm: "tree", direction: "down" });
+    expect(res).toMatchObject({ laidOut: 3, edges: 2 });
+    expect(api.byId("ceo").y).toBeLessThan(api.byId("cto").y);
+    expect(api.byId("cto").y).toBe(api.byId("cfo").y);
+    expect(api.calls.map((c) => c.captureUpdate)).toEqual(["IMMEDIATELY"]);
+    api.undo();
+    expect(api.byId("ceo")).toMatchObject({ x: 400, y: 400 });
+  });
+
+  it("validates its options", async () => {
+    setup(chart());
+    await expect(runSceneTool("auto_layout", { direction: "sideways" }, TAB)).rejects.toThrow(
+      /direction must be one of/,
+    );
+    await expect(runSceneTool("auto_layout", { spacing: -1 }, TAB)).rejects.toThrow(/spacing/);
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it("lays out shapes created earlier in the same apply_ops batch, within the agent turn", async () => {
+    setup([]);
+    beginTurn(TAB, "t1");
+    const res = await call("apply_ops", {
+      ops: [
+        {
+          tool: "add_elements",
+          args: {
+            elements: [
+              { type: "rectangle", id: "p", x: 500, y: 500, width: 100, height: 50 },
+              { type: "rectangle", id: "c1", x: 0, y: 0, width: 100, height: 50 },
+              { type: "rectangle", id: "c2", x: 900, y: 0, width: 100, height: 50 },
+            ],
+          },
+        },
+        { tool: "connect", args: { from: "p", to: "c1" } },
+        { tool: "connect", args: { from: "p", to: "c2" } },
+        { tool: "auto_layout", args: { direction: "right", spacing: 40 } },
+      ],
+    });
+    expect(res.results[3]).toMatchObject({ laidOut: 3, edges: 2 });
+    expect(api.byId("p").x + 100).toBeLessThan(api.byId("c1").x);
+    expect(api.byId("c1").x).toBe(api.byId("c2").x);
+    expect(api.calls.map((c) => c.captureUpdate)).toEqual(["NEVER"]);
+    endTurn(TAB, "t1");
+    expect(api.undoStack).toHaveLength(1);
+    api.undo();
+    expect(api.elements.every((e) => e.isDeleted)).toBe(true);
+  });
+
+  it("re-runs the batch when the canvas changes while ELK is computing", async () => {
+    setup(chart());
+    let edited = false;
+    setElkFactory(async () => {
+      const elk = new ElkBundled();
+      return {
+        ...elk,
+        layout: async (g: never) => {
+          if (!edited) {
+            edited = true;
+            api.externalEdit("cfo", { backgroundColor: "#ffc9c9" });
+          }
+          return elk.layout(g);
+        },
+      } as never;
+    });
+    await call("auto_layout", {});
+    expect(api.byId("cfo").backgroundColor).toBe("#ffc9c9");
+    // Only the layout commit after the user's edit; the stale first attempt was dropped.
+    expect(api.calls.map((c) => c.captureUpdate)).toEqual(["IMMEDIATELY"]);
+    expect(api.byId("ceo").y).toBeLessThan(api.byId("cto").y);
   });
 });
 

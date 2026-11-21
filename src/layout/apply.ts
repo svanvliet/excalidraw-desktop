@@ -81,7 +81,10 @@ export function applyLayout(
   for (const node of graph.nodes) {
     const p = result.nodes.get(node.id);
     if (!p) continue;
-    const d: [number, number] = [originX + p.x - node.box.minX, originY + p.y - node.box.minY];
+    const d: [number, number] = [
+      Math.round(originX + p.x - node.box.minX),
+      Math.round(originY + p.y - node.box.minY),
+    ];
     delta.set(node.id, d);
     if (!d[0] && !d[1]) continue;
     for (const id of node.members) {
@@ -102,7 +105,7 @@ export function applyLayout(
     if (!arrow || !isLinear(arrow)) continue;
     const route = result.edges.get(edge.id);
     const abs = route
-      ? route.map(([x, y]): [number, number] => [originX + x, originY + y])
+      ? route.map(([x, y]): [number, number] => [Math.round(originX + x), Math.round(originY + y)])
       : undefined;
     setArrowRoute(draft, arrow, abs);
     routed.add(arrow.id);

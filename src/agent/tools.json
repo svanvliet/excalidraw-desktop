@@ -561,9 +561,45 @@
       }
     },
     {
+      "name": "auto_layout",
+      "readOnly": false,
+      "description": "Automatically lay out a diagram with ELK (runs locally). ids: the elements to lay out (groups, frame contents and labels come along); omit for the whole canvas. algorithm layered (default; flowcharts, pipelines, any graph) or tree (hierarchies such as org charts). direction down (default), right, up or left. spacing: gap between shapes in px (default 60). Arrows bound at both ends become the graph's edges and are re-routed; groups and frames move as single nodes. Works inside apply_ops (e.g. add shapes + connect, then auto_layout). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "algorithm": {
+            "type": "string",
+            "enum": ["layered", "tree"]
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["down", "right", "up", "left"]
+          },
+          "spacing": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
