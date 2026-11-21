@@ -642,7 +642,7 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, tidy_arrows, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, tidy_arrows, define_property, remove_property, set_properties, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1030,7 +1030,7 @@
     {
       "name": "create_component",
       "readOnly": false,
-      "description": "Turn elements into a reusable component (Figma/Sketch style): the elements become the component's master, grouped under one component group. ids: the elements (labels/bound text come along; an existing group that is exactly the selection becomes the component group). name: optional display name. Elements already in a component can't be used (no nesting). Returns componentId and masterGroupId. Then insert_instance places live copies: editing the master (update_elements on its elements, adding to or removing from its group) updates every instance. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Turn elements into a reusable component (Figma/Sketch style): the elements become the component's master, grouped under one component group. ids: the elements (labels/bound text come along; an existing group that is exactly the selection becomes the component group). name: optional display name. Whole instances of other components may be included (nested components: they keep following their own master); elements of a master, or parts of an instance, can't. Returns componentId and masterGroupId. Then insert_instance places live copies: editing the master (update_elements on its elements, adding to or removing from its group) updates every instance. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1060,7 +1060,7 @@
     {
       "name": "insert_instance",
       "readOnly": false,
-      "description": "Place a new instance of a component. component: the componentId (or any element/group id of its master or an instance). x, y: top-left of the instance (default: right of the master). scale: uniform scale (default 1). angle: rotation in degrees. Instances follow the master's geometry, styles and text live; move, resize or rotate the whole instance group freely. Returns groupId (select/move it as a unit) and the child ids. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Place a new instance of a component. component: the componentId (or any element/group id of its master or an instance). x, y: top-left of the instance (default: right of the master). scale: uniform scale (default 1). angle: rotation in degrees. into: a master group id (or master element id) of another component to nest the instance inside that master, so every instance of the outer component carries a copy that still follows this component (cycles are rejected). Instances follow the master's geometry, styles and text live; move, resize or rotate the whole instance group freely. Returns groupId (select/move it as a unit) and the child ids. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1085,6 +1085,9 @@
           },
           "angle": {
             "type": "number"
+          },
+          "into": {
+            "type": "string"
           }
         },
         "required": ["component"],
@@ -1094,7 +1097,7 @@
     {
       "name": "list_components",
       "readOnly": true,
-      "description": "List the components on the canvas: componentId, name, masterGroupId and masterIds (null/empty when the master was deleted and no instance could be promoted), and each instance's groupId, child ids and number of overridden slots. get_scene_summary rows also carry cmp {id, role, slot, group, overrides} for component elements; get_elements returns a components map.",
+      "description": "List the components on the canvas: componentId, name, masterGroupId and masterIds (null/empty when the master was deleted and no instance could be promoted), and each instance's groupId, child ids number of overridden slots, property values and parent (the component master/instance it is nested in); each component's props (declared properties) and uses (components nested in its master). get_scene_summary rows also carry cmp {id, role, slot, group, overrides, values, in} for component elements; get_elements returns a components map.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1263,6 +1266,141 @@
           }
         },
         "required": ["instance"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "define_property",
+      "readOnly": false,
+      "description": "Declare (or replace, by id) a typed property on a component, bound to master elements; instances then set values with set_properties and the values become overrides. component: componentId or any element/group id of it. property: {id?, name (unique), type: text | color | boolean | choice, default?, options? (choice, at least 2), bindings: [{elementId or slot (master element id), key?, map?}]}. Default keys: text → text (a container binding drives its label), color → backgroundColor, boolean → visible (hides/shows the slot). Choice bindings take map {option: value} for their key. Returns propertyId. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "property": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "type": {
+                "type": "string",
+                "enum": ["text", "color", "boolean", "choice"]
+              },
+              "default": {
+                "type": ["string", "boolean"]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50
+              },
+              "bindings": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "elementId": {
+                      "type": "string"
+                    },
+                    "slot": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "backgroundColor",
+                        "strokeColor",
+                        "opacity",
+                        "link",
+                        "fileId",
+                        "visible"
+                      ]
+                    },
+                    "map": {
+                      "type": "object"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["name", "type", "bindings"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["component", "property"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remove_property",
+      "readOnly": false,
+      "description": "Remove a declared property from a component (by id or name); instances drop its values and follow the master again. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "property": {
+            "type": "string"
+          }
+        },
+        "required": ["component", "property"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_properties",
+      "readOnly": false,
+      "description": "Set property values on one instance: values {property id or name: value, or null for the default}. text: string; color: CSS colour; boolean: true/false (slot visible); choice: one of the options. Explicit overrides on the keys a property drives are cleared. instance: groupId or any of its element ids. nested: to set a nested component's properties from the outer instance, the groupId of that nested instance inside the outer master (see list_components: instances whose parent.role is master). Returns the resulting values. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "nested": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": ["string", "boolean", "null"]
+            }
+          }
+        },
+        "required": ["instance", "values"],
         "additionalProperties": false
       }
     },

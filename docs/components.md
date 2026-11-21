@@ -5,8 +5,8 @@ Reusable components in the style of Sketch and Figma. A **master** lives on the 
 same undo step. Each instance keeps its own position, scale and rotation, plus any per-slot
 **overrides**.
 
-Status: engine, wiring, agent tools and tests are done (FR-54, D-DX1…D-DX3, D-DX9). The
-Components sidebar tab and the properties-panel UI are a follow-up lane. Until then,
+Status: engine, wiring, agent tools and tests are done (FR-54, D-DX1…D-DX3, D-DX9), with the
+Components UI (FR-55, §7a), properties (FR-56, §4b) and nested components (FR-57, §4c).
 **Alt/Option + Cmd/Ctrl + K** creates a component from the selection, and **Cmd/Ctrl + D**
 (or copy/paste, or Alt-drag) on a master places an instance.
 
@@ -28,11 +28,20 @@ untouched.
 | `gi`          | Index in `groupIds` of the component group. **Identity = `groupIds[gi]`** (D-DX3): inner groups come before it and user groups around it come after it. Ungrouping a component detaches it. |
 | `name`        | Optional display name                                                                                                                                                                       |
 | `base`        | Instances only: the master child's centre, size and angle relative to the master origin at the last sync. Comparing it with the child's own geometry gives the instance transform.          |
-| `overrides`   | Instances only: per-slot values that win over the master. The keys are `text`, `backgroundColor`, `strokeColor`, `opacity`, `link` and `fileId` (image).                                    |
+| `overrides`   | Instances only: per-slot values that win over the master. Keys: `text`, `backgroundColor`, `strokeColor`, `opacity`, `link`, `fileId` (image) and `visible` (hides the slot).               |
 | `promoted`    | Masters only: set when this master was an instance promoted after the master was deleted. It keeps the old overrides and base so the master can be demoted again (see §4).                  |
 | `source`      | Optional, `"library"`: the master lives in the app's library and is usually off-canvas. Library orphans are never promoted (§4a). Older readers ignore it.                                  |
 | `libraryId`   | Optional: the library key of the master (the `componentId`, since "My components" is keyed by it)                                                                                           |
 | `mv`          | Instances of library components only: the master's overridable values at the last sync. They let edits become overrides, and let the master be rebuilt, while it's off-canvas.              |
+| `props`       | Typed component properties (§4b), replicated on the master's and instances' children                                                                                                        |
+| `pv`          | Instances only, replicated on the instance's children: property values by property id. Absent = the property's default.                                                                     |
+| `npv`         | Instances only: property values of the component instances nested directly in the master, keyed by the nested instance's group id there (§4c)                                               |
+
+An element that belongs to several components at once (a child of an A instance inside B's
+master or B's instances, §4c) holds `{ v: 2, tags: [...] }`: one tag per component, inner to
+outer by `gi`. A single tag is still written as `v: 1` unless it uses a v2 field (`props`, `pv`,
+`npv`, `visible`), so drawings without the new features stay readable by older builds, which leave
+v2 data alone.
 
 Element ids never change during sync, so arrows bound to instance children stay bound.
 
@@ -145,15 +154,70 @@ from it already carry `source: "library"`. `files` lists the image `fileId`s the
 master is materialized, the usual rule syncs it, and collab peers receive the result without
 echoing it.
 
+## 4b. Component properties (FR-56)
+
+A master can declare typed **properties** that drive keys of its slots (D-DX11). Each instance
+sets its own values; a value is an override the property computes, so unset properties follow the
+master and its default.
+
+| Type      | Value            | Drives (default binding)                                               |
+| --------- | ---------------- | ---------------------------------------------------------------------- |
+| `text`    | string           | `text` (a container slot drives its bound label)                       |
+| `color`   | `#rrggbb` string | `backgroundColor` or `strokeColor`                                     |
+| `boolean` | true / false     | `visible`: false soft-deletes the slot in that instance (default true) |
+| `choice`  | one of `options` | Any overridable key per option via `map` (absent = the master's value) |
+
+- A property binds one or more slots (`bindings: [{ slot | elementId, key?, map? }]`). Choice
+  needs at least two options.
+- Precedence per instance child: nested values (`npv`) ← property values (`pv`) ← explicit
+  overrides. Setting a property value clears explicit overrides on its bound keys.
+- A direct edit to a key bound to a text or colour property updates that property's value, not an
+  override, so the panel and agent see it.
+- Removing a property drops its values from every instance; they go back to the master's look.
+- Actions: `defineProperty`, `removeProperty`, `setProperties` (`null` resets a value) and
+  `instanceProperties`. Host wrappers `defineComponentProperty`, `removeComponentProperty`,
+  `setInstanceProperties` are one undo step each and return null (with a toast) on error or in
+  view mode.
+- UI: the **Properties** panel section (`src/components/componentProps/`, id `componentProps`).
+  On a master it lists, removes and declares properties (name, type, bound element; choice
+  options as `Name=value, …` driving fill, stroke, text or opacity). On an instance it edits each
+  value (text field, colour, checkbox, select) with a reset button, then the values of nested
+  components that declare properties.
+
+## 4c. Nested components (FR-57)
+
+A master can hold instances of other components: select whole instances (with or without other
+shapes) and create a component, or `insertInstance(..., { into: masterGroup })`. B's instances
+then hold **owned** copies of the A instances in B's master. Those copies still follow A (through
+B's master) and keep B-level overrides.
+
+- **Cycles** are rejected: A can't nest B if B (transitively) nests A, nor itself.
+- **Update order**: `syncCascade` syncs a component, then every outer component whose master
+  content it changed, until stable. A master edit of A reaches B's master and B's instances in
+  the same undo step.
+- **Overrides at both levels**: an override on the A instance inside B's master reaches every B
+  instance; an override on a B instance's copy is kept per B instance. An outer instance sets the
+  nested instances' property values with `setProperties(..., { nested: groupInMaster })` (`npv`).
+- **Duplicate and paste** copy nested tags per component; a copied B master is a B instance with
+  new owned A copies.
+- **Orphans**: deleting B's master promotes a B instance; its A copies become free A instances.
+  Detaching a B instance frees its A copies the same way.
+- **Collab and undo** behave like single-level components: one undo step, no echo
+  (`components.collab.real.test.tsx`).
+- `list_components` counts owned copies as instances, with `parent` naming the outer instance.
+
 ## 5. Duplicate, paste and Alt-drag (`onDuplicate`)
 
 `componentsOnDuplicate` runs inside Excalidraw's duplicate, paste and Alt-drag action, so its
 result is part of that single undo step:
 
 - A copy of a whole master (new group) becomes a new **instance**.
-- **Alt-drag**: Excalidraw leaves the new ids behind and keeps dragging the originals. When
-  every master copy sits exactly on its original, the roles swap. The stationary copies become
-  the master and the dragged originals become the instance.
+- **Alt-drag**: Excalidraw leaves the new ids behind and keeps dragging the originals. By the
+  time it calls `onDuplicate`, the originals have moved one step, but each copy sits in its
+  original's z-order slot and the originals are appended. When every master copy is in that
+  position (or exactly on its original), the roles swap: the stationary copies stay the master
+  and the dragged originals become the instance. A real-mouse drag covers this in
+  `e2e/component-properties.spec.ts`.
 - A copy of an instance is another instance with the same overrides.
 - A copy made inside a master group becomes a new master child. A copy made inside an instance
   group is detached.
@@ -227,13 +291,15 @@ Code lives in `src/components/componentsUi/`, and the personal store in `src/lib
 
 ## 8. Agent tools
 
-`create_component`, `insert_instance`, `list_components`, `set_overrides`,
-`reset_overrides` and `detach_instance` are described in `docs/ai-integration.md`, along with
+`create_component`, `insert_instance` (`into` nests it in another master), `list_components`,
+`set_overrides`, `reset_overrides`, `detach_instance`, `define_property`, `remove_property` and
+`set_properties` (`nested` targets a nested instance) are described in `docs/ai-integration.md`, along with
 `list_my_components` and `insert_my_component` for My components (§7a). All of the edit tools
 work inside `apply_ops`.
 
 `get_scene_summary` rows carry
-`cmp: { id, role, slot, group, overrides? }`, and `get_elements` returns a `components` map.
+`cmp: { id, role, slot, group, overrides?, values?, in? }` (`values`: property values; `in`:
+components nested in it), and `get_elements` returns a `components` map.
 
 Generic edits made through `update_elements`, `delete_elements` and similar tools re-sync the
 components they touch within the same draft. They follow the same rules as UI edits: master
@@ -242,16 +308,17 @@ reverted.
 
 ## 9. Out of scope and caveats
 
-- Nested components and component properties (Wave 3). Nesting is rejected.
+- Properties: a master's own nested property values (`npv` set on B's master) aren't restored
+  by `materializeMaster`. A choice option with no `map` entry for a nested binding keeps the
+  nested master's look. A property value can't show a slot the master itself hides.
 - Named styles are a separate rule that runs before this one (`docs/styles.md`, D-DX12). A
   styled master child carries its style to instances as a master change, not an override.
 - My components entries are snapshots. Updating one doesn't re-sync other drawings that already
   hold instances of it: their library-backed instances update the next time their master is edited
   there with Edit master… → Done.
 - `.excalidrawlib` export drops images (the format has no files); the UI warns.
-- Bound text in rotated instances, and arrow labels, have only light test coverage.
-- Alt-drag role swap is covered by a unit test of `componentsOnDuplicate`, not by a real
-  browser drag.
+- Arrow labels have only light test coverage. Bound text in rotated instances is covered by a
+  real-Excalidraw test (it stays centred and rotated with its container).
 - A component's elements must all share one frame, or none. Each instance keeps its own frame.
 - Smart containers (`docs/containers.md`) work with components: a container inside a master is
   synced to instances like any other children (their copy of the box is inert), and an instance

@@ -1,5 +1,6 @@
 /** Every properties-panel section, in display order within each slot (see PropertiesPanelHost). */
 import { componentPanelSection } from "../componentsUi/componentPanelSection";
+import { propsPanelSection } from "../componentProps/propsPanelSection";
 import { anchorsPanelSection } from "../arrowAnchors/anchorsPanelSection";
 import { containerPanelSection } from "../containers/containerPanelSection";
 import { imagePanelSection } from "../imageProps/imagePanelSection";
@@ -14,4 +15,5 @@ export const PANEL_SECTIONS: readonly AnyPanelSection[] = [
   stylePanelSection,
   dataPanelSection,
   componentPanelSection,
+  propsPanelSection,
 ];

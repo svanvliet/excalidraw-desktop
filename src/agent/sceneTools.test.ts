@@ -1199,6 +1199,71 @@ describe("component tools", () => {
     );
     expect((await call("list_components")).components).toHaveLength(1);
   });
+
+  it("declares properties, sets values (one undo step each) and nests components", async () => {
+    setup(boxes());
+    const card = await call("create_component", { ids: ["a"], name: "Card" });
+    const def = await call("define_property", {
+      component: card.componentId,
+      property: { name: "Title", type: "text", bindings: [{ elementId: "a" }] },
+    });
+    expect(def.propertyId).toBeTruthy();
+    const inst = await call("insert_instance", { component: "a", x: 500, y: 0 });
+    const undo = api.undoStack.length;
+    const set = await call("set_properties", {
+      instance: inst.groupId,
+      values: { Title: "Hi" },
+    });
+    expect(set.values).toEqual({ [def.propertyId]: "Hi" });
+    expect(api.undoStack).toHaveLength(undo + 1);
+    const label = inst.ids
+      .map((id: string) => api.byId(id))
+      .find((e: { type: string }) => e.type === "text");
+    expect((api.byId(label.id) as unknown as { text: string }).text).toBe("Hi");
+    const summary = (await call("list_components")).components[0];
+    expect(summary.props).toHaveLength(1);
+    expect(summary.instances[0].values).toEqual({ [def.propertyId]: "Hi" });
+    await expect(
+      call("set_properties", { instance: inst.groupId, values: { Nope: "x" } }),
+    ).rejects.toThrow(/property/i);
+
+    // Nest a Card instance inside a Panel master; set the nested Title from a Panel instance.
+    const panel = await call("create_component", { ids: ["b"], name: "Panel" });
+    const nested = await call("insert_instance", {
+      component: card.componentId,
+      into: panel.masterGroupId,
+      x: 300,
+      y: 100,
+    });
+    await expect(
+      call("insert_instance", { component: panel.componentId, into: card.masterGroupId }),
+    ).rejects.toThrow(/cycle/);
+    const pi = await call("insert_instance", { component: panel.componentId, x: 0, y: 500 });
+    expect(pi.componentId).toBe(panel.componentId);
+    expect(pi.ids).toHaveLength(3); // ellipse + nested card rect + label
+    await call("set_properties", {
+      instance: pi.groupId,
+      nested: nested.groupId,
+      values: { Title: "Deep" },
+    });
+    const texts = pi.ids
+      .map((id: string) => api.byId(id))
+      .filter((e: { type: string }) => e.type === "text");
+    expect(texts.map((t: { text: string }) => t.text)).toEqual(["Deep"]);
+    const comps = (await call("list_components")).components;
+    expect(
+      comps.find((c: { componentId: string }) => c.componentId === panel.componentId).uses,
+    ).toEqual([card.componentId]);
+    const rows = (await call("get_scene_summary")).elements;
+    const nestedRect = pi.ids.find((id: string) => api.byId(id).type === "rectangle");
+    expect(rows.find((r: { id: string }) => r.id === nestedRect).cmp).toMatchObject({
+      id: panel.componentId,
+      in: [card.componentId],
+    });
+
+    await call("remove_property", { component: card.componentId, property: "Title" });
+    expect((api.byId(label.id) as unknown as { text: string }).text).toBe("Alpha");
+  });
 });
 
 describe("container tools", () => {

@@ -172,7 +172,6 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 
 | Tool                    | What it does                                                                                                    |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| ---------------------   | --------------------------------------------------------------------------------------------------------        |
 | `list_tabs`             | Lists open tabs                                                                                                 |
 | `get_scene_summary`     | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                                       |
 | `get_selection`         | Returns the current selection                                                                                   |
@@ -209,6 +208,9 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `set_overrides`         | Per-slot instance overrides: text, colours, opacity, link, image (`null` clears)                                |
 | `reset_overrides`       | Clears an instance's overrides (all, or some slots/keys)                                                        |
 | `detach_instance`       | Turns an instance into plain elements that keep their look                                                      |
+| `define_property`       | Declares a typed property (text, color, boolean, choice) bound to master slots (D-DX11)                         |
+| `remove_property`       | Removes a component property; instances drop its values                                                         |
+| `set_properties`        | Sets an instance's property values (`nested` targets a nested instance; `null` = default)                       |
 | `create_container`      | Makes a stack container from elements (direction, gap, padding, align, sizing)                                  |
 | `update_container`      | Changes a container's settings and/or child `order`                                                             |
 | `remove_container`      | Dissolves a container; `keepBox` keeps a plain group with its box                                               |

@@ -8,21 +8,29 @@ import { effectivePatch } from "../reactor/reactor";
 import { baseOf, isBoundText, originOf, placeGeometry, type Transform } from "./geometry";
 import {
   groupOf,
-  hasAnyTag,
+  innerTags,
+  isReadable,
   listComponents,
   OVERRIDE_KEYS,
   isOwned,
+  PROP_TYPES,
+  tagFor,
   tagOf,
   tagsOf,
   withTag,
+  withoutTag,
   type ComponentInfo,
   type ComponentTag,
   type OverrideKey,
   type Overrides,
+  type PropBinding,
+  type PropDef,
+  type PropValues,
 } from "./model";
 import {
   cleanOverrides,
   componentMembers,
+  nests,
   overridable,
   syncCascade,
   type SyncAccess,
@@ -100,6 +108,14 @@ function expandSelection(draft: Draft, ids: readonly string[]): El[] {
       if (text) out.set(text.id, text);
     }
   }
+  // A component instance joins whole (it becomes a nested instance of the new component).
+  for (const el of [...out.values()]) {
+    const tag = tagOf(el);
+    const g = tag && groupOf(el, tag);
+    if (!g) continue;
+    for (const e of draft.live())
+      if (e.groupIds.includes(g) && tagFor(e, tag.componentId)) out.set(e.id, e);
+  }
   return [...out.values()];
 }
 
@@ -123,10 +139,14 @@ export function createComponent(
   if (!ids.length) throw new ToolError("Select at least one element to make a component");
   const els = expandSelection(draft, ids);
   for (const el of els) {
-    if (hasAnyTag(el))
-      throw new ToolError(
-        `Element "${el.id}" is already part of a component (nesting is not supported)`,
-      );
+    if (!isReadable(el))
+      throw new ToolError(`Element "${el.id}" has component data this version can't read`);
+    for (const t of tagsOf(el)) {
+      if (t.role === "master")
+        throw new ToolError(
+          `Element "${el.id}" is part of a master; only instances can be nested in a component`,
+        );
+    }
     if (el.frameId !== els[0].frameId)
       throw new ToolError("A component's elements must all be in the same frame (or none)");
   }
@@ -143,7 +163,12 @@ export function createComponent(
   const covers = (g: string) => inside(g) && membersOf.get(g)!.length === selected.size;
 
   // Reuse an existing group that is exactly the selection, if every element has it.
-  const shared = els[0].groupIds.find((g) => covers(g) && els.every((e) => e.groupIds.includes(g)));
+  // A group that already is a (nested) component's can't be reused: wrapping exactly one
+  // instance nests it in a fresh outer group.
+  const componentGroups = new Set(els.flatMap((e) => tagsOf(e).map((t) => e.groupIds[t.gi])));
+  const shared = els[0].groupIds.find(
+    (g) => covers(g) && !componentGroups.has(g) && els.every((e) => e.groupIds.includes(g)),
+  );
   const group = shared ?? newId();
   const componentId = newId();
   const label = typeof name === "string" && name.trim() ? name.trim().slice(0, 80) : undefined;
@@ -155,10 +180,13 @@ export function createComponent(
       if (gi < 0) gi = groupIds.length;
       groupIds = [...groupIds.slice(0, gi), group, ...groupIds.slice(gi)];
     }
+    if (tagsOf(el).some((t) => t.gi >= gi))
+      throw new ToolError("Select whole component instances to nest them in a new component");
     const tag: ComponentTag = { v: 1, role: "master", componentId, slot: el.id, gi };
     if (label) tag.name = label;
     draft.update(el.id, { groupIds, customData: withTag(el, tag) });
   }
+  syncDraft(draft, [componentId]);
   return { componentId, masterGroupId: group, ids: els.map((e) => e.id) };
 }
 
@@ -169,6 +197,23 @@ export interface InsertOptions {
   scale?: number;
   /** Radians. */
   angle?: number;
+  /** Master group id (or a master element id) of another component to nest the instance in. */
+  into?: string;
+}
+
+/** The master `{ componentId, groupId, el }` a ref (group id or element id) points at. */
+function resolveMaster(
+  draft: Draft,
+  ref: unknown,
+): { componentId: string; groupId: string; el: El } {
+  if (typeof ref !== "string") throw new ToolError("into must be a master group id or element id");
+  const byEl = draft.get(ref);
+  for (const e of byEl ? [byEl] : draft.live()) {
+    const tag = tagsOf(e).find((t) => t.role === "master" && (byEl || groupOf(e, t) === ref));
+    const g = tag && groupOf(e, tag);
+    if (tag && g && !e.isDeleted) return { componentId: tag.componentId, groupId: g, el: e };
+  }
+  throw new ToolError(`"${ref}" is not a component master (or one of its elements)`);
 }
 
 /** Add an instance of `componentId`. Returns its group id and child ids. */
@@ -178,6 +223,13 @@ export function insertInstance(
   opts: InsertOptions = {},
 ): { groupId: string; ids: string[] } {
   const info = mustComponent(draft, componentId);
+  const into = opts.into === undefined ? null : resolveMaster(draft, opts.into);
+  if (into && nests(draftAccess(draft), componentId, into.componentId))
+    throw new ToolError(
+      into.componentId === componentId
+        ? "A component can't contain an instance of itself"
+        : "That would make a cycle: the component already contains the target component",
+    );
   const master = info.masterIds.map((id) => draft.get(id)!);
   const origin = originOf(master);
   const right = Math.max(...master.map((m) => m.x + m.width));
@@ -194,18 +246,19 @@ export function insertInstance(
   const group = newId();
   const inner = new Map<string, string>();
   const ids: string[] = [];
+  const intoTag = into && tagFor(into.el, into.componentId)!;
+  const intoOuter = into ? into.el.groupIds.slice(intoTag!.gi) : null;
   for (const m of master) {
-    const tag = tagOf(m)!;
+    const tag = tagFor(m, componentId)!;
     const base = baseOf(m, origin);
     const id = newId();
     ids.push(id);
-    const groupIds = m.groupIds.map((g, i) => {
-      if (i === tag.gi) return group;
-      if (i > tag.gi) return g;
+    const own = m.groupIds.slice(0, tag.gi).map((g) => {
       let mapped = inner.get(g);
       if (!mapped) inner.set(g, (mapped = newId()));
       return mapped;
     });
+    const groupIds = [...own, group, ...(intoOuter ?? m.groupIds.slice(tag.gi + 1))];
     const itag: ComponentTag = {
       v: 1,
       role: "instance",
@@ -225,12 +278,13 @@ export function insertInstance(
       boundElements: null,
       ...(m.type === "arrow" ? { startBinding: null, endBinding: null } : {}),
       customData: withTag(m, itag),
+      ...(into ? { frameId: into.el.frameId } : {}),
       version: 1,
       versionNonce: Math.floor(Math.random() * 2 ** 31),
       updated: Date.now(),
     } as unknown as El);
   }
-  syncDraft(draft, [componentId]);
+  syncDraft(draft, into ? [componentId, into.componentId] : [componentId]);
   return { groupId: group, ids };
 }
 
@@ -295,7 +349,7 @@ export interface OverrideEntry {
 
 function childFor(inst: InstanceRef, entry: { elementId?: string; slot?: string }): El {
   const c = inst.children.find((e) =>
-    entry.elementId ? e.id === entry.elementId : tagOf(e)!.slot === entry.slot,
+    entry.elementId ? e.id === entry.elementId : tagFor(e, inst.componentId)!.slot === entry.slot,
   );
   if (!c)
     throw new ToolError(
@@ -304,11 +358,11 @@ function childFor(inst: InstanceRef, entry: { elementId?: string; slot?: string 
   return c;
 }
 
-function masterFor(draft: Draft, c: El): El | undefined {
-  const tag = tagOf(c)!;
+function masterFor(draft: Draft, c: El, componentId: string): El | undefined {
+  const tag = tagFor(c, componentId)!;
   return draft.live().find((m) => {
-    const t = tagOf(m);
-    return t?.role === "master" && t.componentId === tag.componentId && t.slot === tag.slot;
+    const t = tagFor(m, componentId);
+    return t?.role === "master" && t.slot === tag.slot;
   });
 }
 
@@ -330,8 +384,8 @@ export function setOverrides(
   const inst = resolveInstance(draft, instance);
   for (const entry of entries) {
     const c = childFor(inst, entry);
-    const m = masterFor(draft, c) ?? c;
-    const tag = tagOf(c)!;
+    const m = masterFor(draft, c, inst.componentId) ?? c;
+    const tag = tagFor(c, inst.componentId)!;
     const ov: Overrides = { ...(tag.overrides ?? {}) };
     for (const [k, v] of Object.entries(entry.values ?? {})) {
       if (!(OVERRIDE_KEYS as readonly string[]).includes(k))
@@ -347,7 +401,10 @@ export function setOverrides(
   syncDraft(draft, [inst.componentId]);
 }
 
-/** Clear overrides on an instance: all, or only some slots / keys. */
+/**
+ * Clear overrides on an instance: all, or only some slots / keys. A full reset (no filters) also
+ * clears property values (`props` defaults to true then).
+ */
 export function resetOverrides(
   draft: Draft,
   instance: unknown,
@@ -355,17 +412,28 @@ export function resetOverrides(
     slots?: readonly string[];
     elementIds?: readonly string[];
     keys?: readonly string[];
+    props?: boolean;
   } = {},
 ): void {
   const inst = resolveInstance(draft, instance);
+  const filtered = !!(opts.slots?.length || opts.elementIds?.length || opts.keys?.length);
+  const clearProps = opts.props ?? !filtered;
   for (const c of inst.children) {
-    const tag = tagOf(c)!;
-    if (opts.slots?.length && !opts.slots.includes(tag.slot)) continue;
-    if (opts.elementIds?.length && !opts.elementIds.includes(c.id)) continue;
-    if (!tag.overrides) continue;
-    const ov: Overrides = { ...tag.overrides };
-    for (const k of OVERRIDE_KEYS) if (!opts.keys?.length || opts.keys.includes(k)) delete ov[k];
-    draft.update(c.id, { customData: withTag(c, { ...tag, overrides: ov }) });
+    const tag = tagFor(c, inst.componentId)!;
+    const next: ComponentTag = { ...tag };
+    if (clearProps) {
+      next.pv = undefined;
+      next.npv = undefined;
+    }
+    const match =
+      (!opts.slots?.length || opts.slots.includes(tag.slot)) &&
+      (!opts.elementIds?.length || opts.elementIds.includes(c.id));
+    if (match && tag.overrides && (filtered || opts.props !== true)) {
+      const ov: Overrides = { ...tag.overrides };
+      for (const k of OVERRIDE_KEYS) if (!opts.keys?.length || opts.keys.includes(k)) delete ov[k];
+      next.overrides = ov;
+    }
+    draft.update(c.id, { customData: withTag(c, next) });
   }
   syncDraft(draft, [inst.componentId]);
 }
@@ -376,8 +444,268 @@ export function detachInstance(
   instance: unknown,
 ): { groupId: string; ids: string[] } {
   const inst = resolveInstance(draft, instance);
-  for (const c of inst.children) draft.update(c.id, { customData: withTag(c, null) });
+  // Only this membership goes: nested instances inside it become free instances again, and an
+  // instance inside a master stays a child of that master.
+  const affected = new Set<string>();
+  for (const c of inst.children) {
+    for (const t of tagsOf(c)) if (t.componentId !== inst.componentId) affected.add(t.componentId);
+    draft.update(c.id, { customData: withoutTag(c, inst.componentId) });
+  }
+  if (affected.size) syncDraft(draft, affected);
   return { groupId: inst.groupId, ids: inst.children.map((c) => c.id) };
+}
+
+// --- Properties --------------------------------------------------------------------------------
+
+export interface PropertyInput {
+  /** Stable id; generated when absent. Redefining an existing id replaces that property. */
+  id?: string;
+  name: string;
+  type: string;
+  default?: string | boolean;
+  options?: string[];
+  bindings: Array<{
+    /** Master element id or slot key. */
+    elementId?: string;
+    slot?: string;
+    key?: string;
+    map?: Record<string, unknown>;
+  }>;
+}
+
+function masterOf(draft: Draft, componentId: unknown): { info: ComponentInfo; els: El[] } {
+  const info = mustComponent(draft, componentId);
+  return { info, els: info.masterIds.map((id) => draft.get(id)!).filter((e) => !e.isDeleted) };
+}
+
+function propsOf(els: readonly El[], componentId: string): PropDef[] {
+  return els.map((e) => tagFor(e, componentId)?.props).find((p) => p?.length) ?? [];
+}
+
+function writeProps(draft: Draft, els: readonly El[], componentId: string, props: PropDef[]) {
+  for (const el of els) {
+    const tag = tagFor(el, componentId)!;
+    draft.update(el.id, {
+      customData: withTag(el, { ...tag, props: props.length ? props : undefined }),
+    });
+  }
+}
+
+const DEFAULT_KEY: Record<string, OverrideKey> = {
+  text: "text",
+  color: "backgroundColor",
+  boolean: "visible",
+};
+
+/** Declare (or redefine) a typed property on a component's master. Returns its id. */
+export function defineProperty(draft: Draft, componentId: unknown, input: PropertyInput): string {
+  const { info, els } = masterOf(draft, componentId);
+  const cid = info.componentId;
+  if (!input || typeof input !== "object") throw new ToolError("property must be an object");
+  const name = typeof input.name === "string" ? input.name.trim().slice(0, 60) : "";
+  if (!name) throw new ToolError("property name is required");
+  if (!(PROP_TYPES as readonly string[]).includes(input.type))
+    throw new ToolError(`property type must be one of ${PROP_TYPES.join(", ")}`);
+  const type = input.type as PropDef["type"];
+  const props = propsOf(els, cid);
+  const id = typeof input.id === "string" && input.id ? input.id : newId();
+  if (props.some((p) => p.id !== id && p.name.toLowerCase() === name.toLowerCase()))
+    throw new ToolError(`Component already has a property named "${name}"`);
+  const def: PropDef = { id, name, type, bindings: [] };
+  if (type === "choice") {
+    const options = [...new Set((input.options ?? []).map(String).filter(Boolean))];
+    if (options.length < 2) throw new ToolError("a choice property needs at least 2 options");
+    def.options = options;
+    if (input.default !== undefined) {
+      if (!options.includes(String(input.default)))
+        throw new ToolError(`default must be one of: ${options.join(", ")}`);
+      def.default = String(input.default);
+    }
+  } else if (type === "boolean") {
+    if (input.default !== undefined && typeof input.default !== "boolean")
+      throw new ToolError("a boolean property's default must be true or false");
+    if (input.default === false) def.default = false;
+  }
+  if (!Array.isArray(input.bindings) || !input.bindings.length)
+    throw new ToolError("property needs at least one binding (elementId/slot + key)");
+  for (const b of input.bindings) {
+    let el = els.find((e) =>
+      b.elementId ? e.id === b.elementId : tagFor(e, cid)!.slot === b.slot,
+    );
+    if (!el) throw new ToolError(`No master element ${b.elementId ?? b.slot} in this component`);
+    const key = (b.key ?? DEFAULT_KEY[type]) as OverrideKey;
+    if (!key) throw new ToolError("a choice binding needs a key");
+    if (!(OVERRIDE_KEYS as readonly string[]).includes(key))
+      throw new ToolError(`"${key}" can't be bound (allowed: ${OVERRIDE_KEYS.join(", ")})`);
+    // A text binding on a labelled container drives its label.
+    if (key === "text" && el.type !== "text") {
+      const label = draft.boundTextOf(el);
+      if (label) el = label;
+    }
+    if (!overridable(el, key)) throw new ToolError(`"${key}" doesn't apply to a ${el.type}`);
+    if (type === "text" && key !== "text") throw new ToolError("a text property binds key text");
+    if (type === "color" && key !== "backgroundColor" && key !== "strokeColor")
+      throw new ToolError("a color property binds backgroundColor or strokeColor");
+    if (type === "boolean" && key !== "visible")
+      throw new ToolError("a boolean property binds key visible");
+    const binding: PropBinding = { slot: tagFor(el, cid)!.slot, key };
+    if (type === "choice") {
+      const map: Record<string, unknown> = {};
+      for (const [opt, v] of Object.entries(b.map ?? {})) {
+        if (!def.options!.includes(opt)) throw new ToolError(`"${opt}" is not an option`);
+        if (v !== null && v !== undefined && !VALIDATORS[key](v))
+          throw new ToolError(`Invalid value for "${key}" in option "${opt}"`);
+        if (v !== null && v !== undefined) map[opt] = v;
+      }
+      binding.map = map;
+    }
+    if (def.bindings.some((x) => x.slot === binding.slot && x.key === binding.key))
+      throw new ToolError(`Duplicate binding ${binding.slot}.${binding.key}`);
+    def.bindings.push(binding);
+  }
+  const next = props.some((p) => p.id === id)
+    ? props.map((p) => (p.id === id ? def : p))
+    : [...props, def];
+  writeProps(draft, els, cid, next);
+  syncDraft(draft, [cid]);
+  return id;
+}
+
+/** Remove a property (by id or name) from a component. Instances drop their values for it. */
+export function removeProperty(draft: Draft, componentId: unknown, prop: unknown): void {
+  const { info, els } = masterOf(draft, componentId);
+  const props = propsOf(els, info.componentId);
+  const def = findProp(props, prop);
+  writeProps(
+    draft,
+    els,
+    info.componentId,
+    props.filter((p) => p !== def),
+  );
+  for (const e of componentMembers(draft.toArray(), info.componentId)) {
+    const tag = tagFor(e, info.componentId);
+    if (tag?.role !== "instance" || !tag.pv || !(def.id in tag.pv)) continue;
+    const pv = { ...tag.pv };
+    delete pv[def.id];
+    draft.update(e.id, { customData: withTag(e, { ...tag, pv }) });
+  }
+  syncDraft(draft, [info.componentId]);
+}
+
+function findProp(props: readonly PropDef[], ref: unknown): PropDef {
+  const def =
+    props.find((p) => p.id === ref) ??
+    props.find((p) => typeof ref === "string" && p.name.toLowerCase() === ref.toLowerCase());
+  if (!def)
+    throw new ToolError(
+      `No property "${String(ref)}"${props.length ? ` (has: ${props.map((p) => p.name).join(", ")})` : ""}`,
+    );
+  return def;
+}
+
+function checkValue(def: PropDef, v: unknown): void {
+  const ok =
+    def.type === "boolean"
+      ? typeof v === "boolean"
+      : def.type === "choice"
+        ? typeof v === "string" && def.options!.includes(v)
+        : typeof v === "string";
+  if (!ok)
+    throw new ToolError(
+      `Invalid value for property "${def.name}" (${def.type}${def.type === "choice" ? `: ${def.options!.join(" | ")}` : ""})`,
+    );
+}
+
+export interface PropertyTarget {
+  /** The properties apply to this instance's component (default) … */
+  componentId: string;
+  props: PropDef[];
+  values: PropValues;
+  /** … or to a nested instance, keyed by its group id inside the outer master. */
+  nestedKey?: string;
+}
+
+/**
+ * The properties an instance exposes: its own, then one entry per nested instance of its
+ * master that declares properties (values set from the outer instance land in `npv`).
+ */
+export function instanceProperties(draft: Draft, instance: unknown): PropertyTarget[] {
+  const inst = resolveInstance(draft, instance);
+  const cid = inst.componentId;
+  const first = inst.children[0];
+  const own = tagFor(first, cid)!;
+  const out: PropertyTarget[] = [
+    { componentId: cid, props: own.props ?? [], values: { ...(own.pv ?? {}) } },
+  ];
+  const master = componentsOf(draft).find((c) => c.componentId === cid);
+  const seen = new Set<string>();
+  for (const id of master?.masterIds ?? []) {
+    const m = draft.get(id)!;
+    const mt = tagFor(m, cid)!;
+    const d = innerTags(m, mt).pop();
+    const g = d && groupOf(m, d);
+    if (!d || !g || seen.has(g) || !d.props?.length) continue;
+    seen.add(g);
+    out.push({
+      componentId: d.componentId,
+      props: d.props,
+      values: { ...(own.npv?.[g] ?? {}) },
+      nestedKey: g,
+    });
+  }
+  return out;
+}
+
+/**
+ * Set property values on an instance (`null` clears one back to the default). With `nested`
+ * (a key from `instanceProperties`), the values apply to that nested instance. Explicit
+ * overrides on the keys a property drives are cleared so the new value shows.
+ */
+export function setProperties(
+  draft: Draft,
+  instance: unknown,
+  values: Record<string, unknown>,
+  opts: { nested?: string } = {},
+): void {
+  if (!values || typeof values !== "object") throw new ToolError("values must be an object");
+  const inst = resolveInstance(draft, instance);
+  const targets = instanceProperties(draft, inst.groupId);
+  const target = opts.nested ? targets.find((t) => t.nestedKey === opts.nested) : targets[0];
+  if (!target)
+    throw new ToolError(`No nested instance "${opts.nested}" with properties in this instance`);
+  const next = { ...target.values };
+  const touched: PropDef[] = [];
+  for (const [ref, v] of Object.entries(values)) {
+    const def = findProp(target.props, ref);
+    touched.push(def);
+    if (v === null || v === undefined) delete next[def.id];
+    else {
+      checkValue(def, v);
+      next[def.id] = v as string | boolean;
+    }
+  }
+  // Slot keys whose explicit override would hide the new value (own properties only).
+  const clear = new Map<string, Set<string>>();
+  if (!opts.nested)
+    for (const def of touched)
+      for (const b of def.bindings) {
+        if (!clear.has(b.slot)) clear.set(b.slot, new Set());
+        clear.get(b.slot)!.add(b.key);
+      }
+  for (const c of inst.children) {
+    const tag = tagFor(c, inst.componentId)!;
+    const t: ComponentTag = { ...tag };
+    if (opts.nested) t.npv = { ...(tag.npv ?? {}), [opts.nested]: next };
+    else t.pv = next;
+    const keys = clear.get(tag.slot);
+    if (keys && tag.overrides) {
+      const ov = { ...tag.overrides };
+      for (const k of keys) delete ov[k as OverrideKey];
+      t.overrides = ov;
+    }
+    draft.update(c.id, { customData: withTag(c, t) });
+  }
+  syncDraft(draft, [inst.componentId]);
 }
 
 /** Component ids touched by a set of elements (selection → component actions). */

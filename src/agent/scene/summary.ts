@@ -41,6 +41,10 @@ export interface SummaryRow {
     slot: string;
     group: string | null;
     overrides?: string[];
+    /** Property values set on this instance (by property id). */
+    values?: Record<string, string | boolean>;
+    /** Nested memberships: inner component ids, inner → outer. */
+    in?: string[];
   };
   /** Named style link (docs/styles.md); ov: locally overridden style keys. */
   sty?: { id: string; ov?: string[]; fromMaster?: true };
@@ -99,6 +103,8 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
   if (cmp) {
     row.cmp = { id: cmp.componentId, role: cmp.role, slot: cmp.slot, group: cmp.groupId };
     if (cmp.overrides) row.cmp.overrides = Object.keys(cmp.overrides);
+    if (cmp.values) row.cmp.values = cmp.values;
+    if (cmp.nested) row.cmp.in = cmp.nested.map((n) => n.componentId);
   }
   const sty = elementStyleInfo(el, (id) => draft.peek(id));
   if (sty) {

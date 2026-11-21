@@ -65,18 +65,24 @@ import { tidyAfterLayout, tidyArrowsDraft } from "../layout/tidy";
 import {
   componentsOf,
   createComponent,
+  defineProperty,
   detachInstance,
   insertInstance,
+  instanceProperties,
+  removeProperty,
+  setProperties,
   resetOverrides,
   setOverrides,
   syncEdited,
   type OverrideEntry,
+  type PropertyInput,
 } from "../extensions/components/actions";
 import {
   elementComponentInfo,
   groupOf,
   listComponents,
   tagOf,
+  tagsOf,
 } from "../extensions/components/model";
 import {
   addToContainer,
@@ -143,6 +149,9 @@ const EDIT_TOOLS = new Set([
   "set_overrides",
   "reset_overrides",
   "detach_instance",
+  "define_property",
+  "remove_property",
+  "set_properties",
   "create_container",
   "update_container",
   "remove_container",
@@ -1476,7 +1485,11 @@ function listComponentsTool(tab: SceneTab, tabId: string): ToolContent[] {
   return json({ tabId, revision: revisionOf(elements), components: listComponents(elements) });
 }
 
-/** A component id, or any element / group id belonging to one of its masters or instances. */
+/**
+ * A component id, or any element / group id belonging to one of its masters or instances. A
+ * group id resolves to the component that owns that group (nested components); an element id to
+ * its outermost component.
+ */
 function componentIdOf(draft: Draft, ref: unknown): string {
   if (typeof ref !== "string" || !ref) throw new ToolError(`"component" must be a string id`);
   const comps = componentsOf(draft);
@@ -1484,8 +1497,8 @@ function componentIdOf(draft: Draft, ref: unknown): string {
   const tag = tagOf(draft.get(ref));
   if (tag) return tag.componentId;
   for (const el of draft.live()) {
-    const t = tagOf(el);
-    if (t && groupOf(el, t) === ref) return t.componentId;
+    const t = tagsOf(el).find((t) => groupOf(el, t) === ref);
+    if (t) return t.componentId;
   }
   throw new ToolError(
     `"${ref}" is not a component (or an element / group of one); see list_components`,
@@ -1500,13 +1513,15 @@ function createComponentTool(draft: Draft, args: Args) {
 
 function insertInstanceTool(draft: Draft, args: Args) {
   const angle = optNum(args, "angle");
-  const out = insertInstance(draft, componentIdOf(draft, args.component), {
+  const componentId = componentIdOf(draft, args.component);
+  const out = insertInstance(draft, componentId, {
+    into: optStr(args, "into"),
     x: optNum(args, "x"),
     y: optNum(args, "y"),
     scale: optNum(args, "scale"),
     angle: angle === undefined ? undefined : (angle * Math.PI) / 180,
   });
-  return { componentId: componentIdOf(draft, out.groupId), ...out };
+  return { componentId, ...out };
 }
 
 function setOverridesTool(draft: Draft, args: Args) {
@@ -1581,6 +1596,29 @@ function insertMyComponentTool(draft: Draft, args: Args, ctx: EditCtx) {
 
 function detachInstanceTool(draft: Draft, args: Args) {
   return { detached: detachInstance(draft, args.instance) };
+}
+
+function definePropertyTool(draft: Draft, args: Args) {
+  const componentId = componentIdOf(draft, args.component);
+  if (!isObj(args.property)) throw new ToolError(`"property" must be an object`);
+  const id = defineProperty(draft, componentId, args.property as unknown as PropertyInput);
+  return { componentId, propertyId: id };
+}
+
+function removePropertyTool(draft: Draft, args: Args) {
+  const componentId = componentIdOf(draft, args.component);
+  removeProperty(draft, componentId, args.property);
+  return { componentId, removed: args.property };
+}
+
+function setPropertiesTool(draft: Draft, args: Args) {
+  if (!isObj(args.values)) throw new ToolError(`"values" must be an object`);
+  const nested = optStr(args, "nested");
+  setProperties(draft, args.instance, args.values, { nested });
+  const target = instanceProperties(draft, args.instance).find((t) =>
+    nested ? t.nestedKey === nested : !t.nestedKey,
+  );
+  return { instance: args.instance, ...(nested ? { nested } : {}), values: target?.values ?? {} };
 }
 
 // --- smart containers (docs/plan.md D-DX13) -------------------------------------
@@ -1820,6 +1858,12 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return resetOverridesTool(draft, args);
     case "detach_instance":
       return detachInstanceTool(draft, args);
+    case "define_property":
+      return definePropertyTool(draft, args);
+    case "remove_property":
+      return removePropertyTool(draft, args);
+    case "set_properties":
+      return setPropertiesTool(draft, args);
     case "create_container":
       return createContainerTool(draft, args);
     case "update_container":
