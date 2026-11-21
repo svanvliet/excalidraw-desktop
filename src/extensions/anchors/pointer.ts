@@ -128,29 +128,48 @@ export interface LineAnchorOptions {
 export function installLineAnchors(api: Api, opts: LineAnchorOptions = {}): () => void {
   let drag: { arrowId: string | null; end: End | null; creating: boolean } | null = null;
 
-  const offDown = api.onPointerDown((activeTool, _state, event) => {
-    drag = null;
-    if (opts.enabled && !opts.enabled()) return;
+  // Excalidraw records which point was grabbed in a setState that lands after its pointer-down
+  // handler, so resolve the grabbed end on the first pointer move of the gesture.
+  const resolve = () => {
+    window.removeEventListener("pointermove", resolve, true);
+    if (!drag || drag.creating || drag.end) return;
     const elements = api.getSceneElementsIncludingDeleted();
     const grabbed = grabbedEnd(api, elements);
-    if (grabbed) {
-      const { arrow } = grabbed;
-      // History can't undo customData going from undefined to set, so give it a baseline.
-      if (!arrow.customData && !isElbowArrow(arrow)) {
-        api.updateScene({
-          elements: elements.map((e) => (e.id === arrow.id ? { ...e, customData: {} } : e)),
-          captureUpdate: CaptureUpdateAction.NEVER,
-        });
-      }
-      drag = { arrowId: arrow.id, end: grabbed.end, creating: false };
-      lineAnchorRule(api)?.suspend([arrow.id]);
-    } else if (activeTool.type === "arrow" && event.button === 0) {
-      drag = { arrowId: null, end: null, creating: true };
+    if (!grabbed || grabbed.arrow.id !== drag.arrowId) {
+      drag = null;
+      publish(null);
+      return;
     }
-    if (drag) publish({ arrowId: drag.arrowId });
+    const { arrow } = grabbed;
+    // History can't undo customData going from undefined to set, so give it a baseline.
+    if (!arrow.customData && !isElbowArrow(arrow)) {
+      api.updateScene({
+        elements: elements.map((e) => (e.id === arrow.id ? { ...e, customData: {} } : e)),
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    }
+    drag.end = grabbed.end;
+    lineAnchorRule(api)?.suspend([arrow.id]);
+    publish({ arrowId: arrow.id });
+  };
+
+  const offDown = api.onPointerDown((activeTool, _state, event) => {
+    drag = null;
+    window.removeEventListener("pointermove", resolve, true);
+    if (opts.enabled && !opts.enabled()) return;
+    const state = api.getAppState();
+    const editing = state.selectedLinearElement ?? state.editingLinearElement;
+    if (activeTool.type === "arrow" && event.button === 0) {
+      drag = { arrowId: null, end: null, creating: true };
+      publish({ arrowId: null });
+    } else if (editing && event.button === 0) {
+      drag = { arrowId: editing.elementId, end: null, creating: false };
+      window.addEventListener("pointermove", resolve, true);
+    }
   });
 
   const offUp = api.onPointerUp((_tool, pointerDownState, event) => {
+    window.removeEventListener("pointermove", resolve, true);
     const d = drag;
     drag = null;
     publish(null);
@@ -175,6 +194,7 @@ export function installLineAnchors(api: Api, opts: LineAnchorOptions = {}): () =
   });
 
   return () => {
+    window.removeEventListener("pointermove", resolve, true);
     offDown();
     offUp();
     lineAnchorRule(api)?.resume();
