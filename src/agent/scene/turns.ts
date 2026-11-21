@@ -28,11 +28,12 @@
  *   2. `IMMEDIATELY` with the final elements — captures the whole turn as one increment.
  * Edits outside a turn commit with `IMMEDIATELY` (one undo step per tool call).
  *
- * ## `customData` that was `undefined`
+ * ## Fields that were `undefined`
  * Undo/redo applies deltas through `newElementWith`, which skips `undefined` values — so undoing
- * the first `customData` write on an element (undefined → {...}) silently keeps the new value.
- * `commitUndoable` and `endTurn` therefore seed `{}` into the snapshot first (NEVER), so the
- * recorded delta is `{}` → `{...}` and undo restores `{}`.
+ * the first write of a field the element lacked (e.g. `customData`, or `fixedSegments` on an
+ * arrow converted to elbow) silently keeps the new value. `commitUndoable`, `commitRerouted` and
+ * `endTurn` therefore seed an empty value (`{}` for customData, else null) into the snapshot
+ * first (NEVER), so the recorded delta is empty → new and undo restores the empty value.
  *
  * `revertTurn` is separate from undo: it writes the baseline back as *new versions* (so collab
  * peers accept it) and is itself one undoable step.
@@ -75,32 +76,43 @@ function recordWritten(turn: TurnState, api: SceneTab["api"], ids: Iterable<stri
   }
 }
 
-function gainsCustomData(before: El | undefined, after: El | undefined): boolean {
-  return !!before && !!after && before.customData === undefined && after.customData !== undefined;
+/**
+ * Fields `after` sets that `before` lacks (undefined), with the empty value undo should restore:
+ * `{}` for customData, null otherwise (e.g. an arrow converted to elbow gains fixedSegments).
+ */
+function seedOf(before: El | undefined, after: El | undefined): Record<string, unknown> | null {
+  if (!before || !after) return null;
+  const b = before as unknown as Record<string, unknown>;
+  let seed: Record<string, unknown> | null = null;
+  for (const [k, v] of Object.entries(after)) {
+    if (v === undefined || b[k] !== undefined) continue;
+    (seed ??= {})[k] = k === "customData" ? {} : null;
+  }
+  return seed;
 }
 
 /**
- * Commit a draft as exactly one undo step that undo can fully revert (see "customData that was
+ * Commit a draft as exactly one undo step that undo can fully revert (see "Fields that were
  * undefined" above). Used by agent tools outside a turn and by UI panels (e.g. Layers).
  */
 export function commitUndoable(api: SceneTab["api"], draft: Draft): void {
-  const seed = [...draft.changed].filter((id) =>
-    gainsCustomData(draft.original.get(id), draft.peek(id)),
-  );
+  const seeds = new Map<string, Record<string, unknown>>();
+  for (const id of draft.changed) {
+    const seed = seedOf(draft.original.get(id), draft.peek(id));
+    if (seed) seeds.set(id, seed);
+  }
   let elements = draft.toArray();
-  if (seed.length) {
-    const seedIds = new Set(seed);
+  if (seeds.size) {
     const scene = api.getSceneElementsIncludingDeleted() as readonly El[];
     api.updateScene({
-      elements: scene.map((el) =>
-        seedIds.has(el.id) && el.customData === undefined
-          ? newElementWith(el, { customData: {} } as never)
-          : el,
-      ),
+      elements: scene.map((el) => {
+        const seed = seeds.get(el.id) && seedOf(el, { ...el, ...seeds.get(el.id) } as El);
+        return seed ? newElementWith(el, seed as never) : el;
+      }),
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     // The seed bumped those versions; bump ours past it so the final write wins everywhere.
-    elements = elements.map((el) => (seedIds.has(el.id) ? newElementWith(el, {}, true) : el));
+    elements = elements.map((el) => (seeds.has(el.id) ? newElementWith(el, {}, true) : el));
   }
   api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
 }
@@ -169,7 +181,8 @@ function commitRerouted(
       if (!draft.changed.has(el.id)) rewound.push(el);
       else {
         const orig = draft.original.get(el.id);
-        if (orig) rewound.push(orig);
+        const seed = seedOf(orig, el);
+        if (orig) rewound.push(seed ? ({ ...orig, ...seed } as El) : orig);
       }
     }
     api.updateScene({ elements: rewound, captureUpdate: CaptureUpdateAction.NEVER });
@@ -214,9 +227,7 @@ export function endTurn(tabId: string, turnId: string): number {
     }
     const base = turn.baseline.get(el.id);
     if (base) {
-      const prev = clone(base);
-      if (gainsCustomData(base, el)) (prev as { customData?: unknown }).customData = {};
-      rewound.push(prev);
+      rewound.push({ ...clone(base), ...seedOf(base, el) });
     }
     // base === null → added by this turn → omitted (snapshot tombstone).
   }
