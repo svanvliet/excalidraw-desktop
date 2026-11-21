@@ -164,6 +164,72 @@ button {
   font-size: 0.75rem;
 }
 
+/* Component section (componentsUi/ComponentSection). */
+.excalidraw .component-props {
+  min-width: 0;
+}
+
+.excalidraw .component-props__summary {
+  margin-bottom: 0.375rem;
+  overflow: hidden;
+  color: var(--text-primary-color);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excalidraw .component-props__note {
+  color: var(--color-muted-darker);
+  font-size: 0.75rem;
+}
+
+.excalidraw .component-props__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.excalidraw .component-props__btn {
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--border-radius-md, 0.375rem);
+  background: var(--button-gray-1);
+  color: var(--text-primary-color);
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.excalidraw .component-props__btn:hover:not(:disabled) {
+  background: var(--button-gray-2);
+}
+
+.excalidraw .component-props__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.excalidraw .component-props__overrides {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.125rem;
+  margin-top: 0.5rem;
+}
+
+.excalidraw .component-props__override {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.5rem;
+  align-items: center;
+  color: var(--text-primary-color);
+  font-size: 0.75rem;
+}
+
+.excalidraw .component-props__override-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Shape data (components/shapeData): key / value rows. */
 .excalidraw .shape-data__fieldset {
   min-width: 0;
