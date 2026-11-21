@@ -252,7 +252,7 @@ function baseOf(el: ExcalidrawImageElement, read: StackRead): Base {
     let applied = { width: src.appliedWidth, height: src.appliedHeight };
     if (src.inset) {
       // The bitmap has a margin (shadow): restore around the content, not the padded box.
-      ({ box: current, applied } = contentBox(el, applied, src.inset, el.scale));
+      ({ box: current, applied } = contentBox(el, applied, src.inset, el.scale ?? [1, 1]));
     }
     const b = restoreBounds(current, applied, { width: src.width, height: src.height });
     return { fileId: src.fileId, ...b, crop: src.crop };
