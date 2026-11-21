@@ -1,5 +1,6 @@
 /**
- * Components v1 host: one reactor per editor, plus the functions and hook the UI calls.
+ * Components v1 host: one reactor per editor (also running the smart-container rule), plus the
+ * functions and hook the UI calls.
  *
  *  - `installComponents(api)` (idempotent) starts the live sync for an editor; patches are
  *    applied in place (`apply: "mutate"`) and are never undo steps of their own.
@@ -33,10 +34,12 @@ import {
   type ElementComponentInfo,
 } from "./model";
 import { createComponentRule } from "./rule";
+import { createContainerRule, createHoldTracker } from "../../layout/containers/rule";
 
 type Api = ExcalidrawImperativeAPI;
 
 const engines = new WeakMap<Api, Reactor>();
+const holds = new WeakMap<Api, ReturnType<typeof createHoldTracker>>();
 const remotes = new WeakMap<Api, Api>();
 
 export function installComponents(
@@ -45,13 +48,18 @@ export function installComponents(
 ): Reactor {
   let reactor = engines.get(api);
   if (!reactor) {
+    // Smart containers (docs/containers.md) share this reactor; their rule runs first so a
+    // container re-flow inside a master is synced to instances in the same pass.
+    const hold = createHoldTracker();
     reactor = createReactor({
       api,
-      rules: [createComponentRule()],
+      rules: [createContainerRule({ held: hold.held }), createComponentRule()],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
+    hold.attach(api, reactor);
     engines.set(api, reactor);
+    holds.set(api, hold);
   }
   return reactor;
 }
@@ -63,6 +71,8 @@ export function componentsReactor(api: Api): Reactor | undefined {
 export function uninstallComponents(api: Api): void {
   engines.get(api)?.dispose();
   engines.delete(api);
+  holds.get(api)?.dispose();
+  holds.delete(api);
 }
 
 /** Forget sync state and re-index from the current scene (file opened into this editor). */
