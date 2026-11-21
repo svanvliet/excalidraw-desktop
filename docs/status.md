@@ -126,6 +126,13 @@
 - [ ] `docs/ai-testing.md` matrix passed on macOS + Windows for all three engines.
 - [ ] Terms/legal review recorded before public release.
 
+### Wave 1 — Auto-layout (FR-LAYOUT)
+
+- [x] Layered (down/right) + tree layouts on selection or whole scene; groups/frames as nodes; bound text follows; arrows re-routed (Vitest `src/layout/layout.test.ts`).
+- [x] One undo step for the user action; `auto_layout` folds into the agent turn's single undo, also inside `apply_ops` (Vitest `sceneTools.test.ts`).
+- [x] ELK worker loads offline under the shipped CSP with no eval violations (Playwright `e2e/auto-layout.spec.ts`, org chart + undo).
+- [ ] Manual run in the packaged macOS/Windows app (production webview) — not yet done.
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |

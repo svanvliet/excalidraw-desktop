@@ -392,6 +392,7 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 | D-X1  | Desktop extensions store intent in `customData` and always write standard output; built-in only                                                                                                 | Adds features without forking Excalidraw or changing the file format; files still render everywhere; no third-party code loading.   |
 | D-X2  | Image extensions stack: ordered chain per element (stage, then id), one original + one output, re-rendered from the original on every change                                                    | Decorations (Border) must follow the current shape; re-rendering from the original avoids compounding loss and keeps one undo step. |
 | D-X3  | Image controls are portaled into Excalidraw's properties panel (`.panelColumn`), falling back to a docked island; image border mirrors native stroke (picker, width, style, roughjs sloppiness) | 0.18.1 has no panel API; a floating strip was unwieldy. The DOM contract is guarded by e2e, and no fork or patch is needed.         |
+| D-L1  | Auto-layout: bundled elkjs (EPL-2.0) in a lazy, same-origin worker; one `Draft` commit; UI = Edit ▸ Auto-layout menu + Alt/Option+Shift+L                                                       | ELK: layered + tree, orthogonal routing; its worker needs no `eval`, so the CSP is unchanged. Avoids the properties-panel host.     |
 
 ## 8. Risks & mitigations
 
