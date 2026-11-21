@@ -31,6 +31,9 @@ export type Outline =
   | { kind: "ellipse" }
   | { kind: "roundedRect"; radiusPx: number };
 
+/** Per-side extents (output pixels or scene units, as documented where used). */
+export type Insets = { left: number; top: number; right: number; bottom: number };
+
 export type ImagePlan = {
   /** Region of the source image to draw, in source pixels. */
   sourceRect: Rect;
@@ -43,6 +46,15 @@ export type ImagePlan = {
   outHeight: number;
   /** Shape the output is clipped to; later stages (e.g. border) trace it. */
   outline: Outline;
+  /**
+   * Transparent margin around the content, in output pixels and bitmap orientation, for effects
+   * drawn outside the image (shadow). Everything above (`element`, `outWidth`, `outline`, …)
+   * still describes the content, so content stages are unaffected; the pipeline grows the
+   * bitmap and the element box by this margin so the content stays put on the canvas.
+   */
+  pad?: Insets;
+  /** The element is mirrored (`element.scale`); set only when true on some axis. */
+  flip?: { x: boolean; y: boolean };
 };
 
 /** Image elements extensions can work on: loaded, not deleted. */
@@ -94,6 +106,8 @@ export function basePlan(opts: {
   naturalWidth: number;
   naturalHeight: number;
   isVector?: boolean;
+  /** `element.scale`; only effects that aren't symmetric (shadow offsets) look at it. */
+  scale?: readonly [number, number];
 }): ImagePlan {
   const { element: el } = opts;
   if (!(el.width > 0) || !(el.height > 0)) throw new Error("image has no size");
@@ -106,12 +120,87 @@ export function basePlan(opts: {
     src.height / el.height,
     opts.isVector ? VECTOR_DENSITY : 0,
   );
+  const flip = { x: (opts.scale?.[0] ?? 1) < 0, y: (opts.scale?.[1] ?? 1) < 0 };
   return {
     sourceRect: src,
     element: { x: el.x, y: el.y, width: el.width, height: el.height },
     density,
     ...fitOutput(el.width, el.height, density),
     outline: { kind: "rect" },
+    ...(flip.x || flip.y ? { flip } : {}),
+  };
+}
+
+const NO_PAD: Insets = { left: 0, top: 0, right: 0, bottom: 0 };
+
+/** The plan's margin (zero when none). */
+export function padOf(plan: ImagePlan): Insets {
+  return plan.pad ?? NO_PAD;
+}
+
+/** Bitmap-orientation insets → scene-orientation (Excalidraw mirrors the bitmap when flipped). */
+export function toScene(i: Insets, flip: ImagePlan["flip"]): Insets {
+  return {
+    left: flip?.x ? i.right : i.left,
+    right: flip?.x ? i.left : i.right,
+    top: flip?.y ? i.bottom : i.top,
+    bottom: flip?.y ? i.top : i.bottom,
+  };
+}
+
+/** The final bitmap size: content plus margin. */
+export function paddedSize(plan: ImagePlan): { width: number; height: number } {
+  const p = padOf(plan);
+  return { width: plan.outWidth + p.left + p.right, height: plan.outHeight + p.top + p.bottom };
+}
+
+/** Margin in scene units, bitmap orientation (what the stack stores as `source.inset`). */
+export function padInScene(plan: ImagePlan): Insets | null {
+  if (!plan.pad) return null;
+  const s = outputScale(plan);
+  const p = plan.pad;
+  return { left: p.left / s, top: p.top / s, right: p.right / s, bottom: p.bottom / s };
+}
+
+/** The element box for the final bitmap: the content box grown by the margin. */
+export function paddedElement(plan: ImagePlan): Rect {
+  const inset = padInScene(plan);
+  if (!inset) return plan.element;
+  const i = toScene(inset, plan.flip);
+  const el = plan.element;
+  return {
+    x: el.x - i.left,
+    y: el.y - i.top,
+    width: el.width + i.left + i.right,
+    height: el.height + i.top + i.bottom,
+  };
+}
+
+/**
+ * The content box inside an element whose bitmap carries a margin (`inset`, scene units in
+ * bitmap orientation at the `applied` element size), following any resize since and the current
+ * flip. Returns the box and the content's size when it was applied.
+ */
+export function contentBox(
+  current: Rect,
+  applied: { width: number; height: number },
+  inset: Insets,
+  scale: readonly [number, number],
+): { box: Rect; applied: { width: number; height: number } } {
+  const i = toScene(inset, { x: scale[0] < 0, y: scale[1] < 0 });
+  const sx = applied.width > 0 ? current.width / applied.width : 1;
+  const sy = applied.height > 0 ? current.height / applied.height : 1;
+  return {
+    box: {
+      x: current.x + i.left * sx,
+      y: current.y + i.top * sy,
+      width: current.width - (i.left + i.right) * sx,
+      height: current.height - (i.top + i.bottom) * sy,
+    },
+    applied: {
+      width: applied.width - inset.left - inset.right,
+      height: applied.height - inset.top - inset.bottom,
+    },
   };
 }
 
@@ -235,6 +324,13 @@ export function outputFileId(
       ? ["roundedRect", round4(plan.outline.radiusPx)]
       : plan.outline.kind,
     chain.map((l) => [l.ext, l.v, l.params]),
+    // Only plans with a margin depend on orientation; omitted otherwise so older ids stay stable.
+    ...(plan.pad
+      ? [
+          [plan.pad.left, plan.pad.top, plan.pad.right, plan.pad.bottom].map(round4),
+          [!!plan.flip?.x, !!plan.flip?.y],
+        ]
+      : []),
   ]);
   return (hash53(key, 1) + hash53(key, 2) + hash53(key, 3)).slice(0, 40);
 }

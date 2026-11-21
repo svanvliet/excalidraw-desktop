@@ -10,7 +10,16 @@ import type {
   ImageCrop,
 } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
-import { basePlan, outputFileId, restoreBounds, type Rect } from "./pipeline";
+import {
+  basePlan,
+  contentBox,
+  outputFileId,
+  padInScene,
+  paddedElement,
+  restoreBounds,
+  type Insets,
+  type Rect,
+} from "./pipeline";
 import { loadSource, type RenderStep } from "./raster";
 import { getExtension } from "./registry";
 import {
@@ -44,6 +53,16 @@ function readSource(s: unknown): StackSource | null {
   if (typeof src.fileId !== "string" || !src.fileId) return null;
   const nums = [src.x, src.y, src.width, src.height, src.appliedWidth, src.appliedHeight];
   if (!nums.every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+  let inset: Insets | undefined;
+  if (src.inset !== undefined) {
+    const i = src.inset as Partial<Insets> | null;
+    const sides = i && typeof i === "object" ? [i.left, i.top, i.right, i.bottom] : [];
+    if (sides.length !== 4 || !sides.every((n) => typeof n === "number" && n >= 0 && n < Infinity))
+      return null;
+    if (i!.left! + i!.right! >= src.appliedWidth! || i!.top! + i!.bottom! >= src.appliedHeight!)
+      return null;
+    inset = { left: i!.left!, top: i!.top!, right: i!.right!, bottom: i!.bottom! };
+  }
   return {
     fileId: src.fileId,
     x: src.x!,
@@ -53,6 +72,7 @@ function readSource(s: unknown): StackSource | null {
     crop: (src.crop as ImageCrop | null | undefined) ?? null,
     appliedWidth: src.appliedWidth!,
     appliedHeight: src.appliedHeight!,
+    ...(inset ? { inset } : {}),
   };
 }
 
@@ -228,11 +248,13 @@ type Base = Rect & { fileId: FileId; crop: ImageCrop | null };
 function baseOf(el: ExcalidrawImageElement, read: StackRead): Base {
   if (read.kind === "ok" && read.current) {
     const src = read.stack.source;
-    const b = restoreBounds(
-      el,
-      { width: src.appliedWidth, height: src.appliedHeight },
-      { width: src.width, height: src.height },
-    );
+    let current: Rect = el;
+    let applied = { width: src.appliedWidth, height: src.appliedHeight };
+    if (src.inset) {
+      // The bitmap has a margin (shadow): restore around the content, not the padded box.
+      ({ box: current, applied } = contentBox(el, applied, src.inset, el.scale));
+    }
+    const b = restoreBounds(current, applied, { width: src.width, height: src.height });
     return { fileId: src.fileId, ...b, crop: src.crop };
   }
   if (!el.fileId) throw new Error("image has no file");
@@ -318,17 +340,22 @@ export async function runChain(
     naturalWidth: source.naturalWidth,
     naturalHeight: source.naturalHeight,
     isVector: original.mimeType === "image/svg+xml",
+    scale: el.scale,
   });
   for (const { link, ext: e } of exts) if (e.plan) plan = e.plan(plan, link.params);
 
   const outId = outputFileId(base.fileId, plan, chain) as FileId;
-  const steps: RenderStep[] = exts
-    .filter(({ ext: e }) => e.render)
-    .map(
-      ({ link, ext: e }) =>
-        (c, p) =>
-          e.render!(c, p, link.params),
-    );
+  const steps: RenderStep[] = exts.flatMap(({ link, ext: e }) => {
+    const out: RenderStep[] = [];
+    if (e.pixels) out.push({ kind: "pixels", run: (img, p) => e.pixels!(img, p, link.params) });
+    if (e.render) out.push({ kind: "draw", run: (c, p) => e.render!(c, p, link.params) });
+    if (e.renderBehind) {
+      out.push({ kind: "behind", run: (o, c, p) => e.renderBehind!(o, c, p, link.params) });
+    }
+    return out;
+  });
+  const finalBox = paddedElement(plan);
+  const inset = padInScene(plan);
   const outFile: BinaryFileData = ctx.getFile(outId) ?? {
     id: outId,
     mimeType: "image/png",
@@ -345,13 +372,14 @@ export async function runChain(
       width: base.width,
       height: base.height,
       crop: base.crop,
-      appliedWidth: plan.element.width,
-      appliedHeight: plan.element.height,
+      appliedWidth: finalBox.width,
+      appliedHeight: finalBox.height,
+      ...(inset ? { inset } : {}),
     },
     outputFileId: outId,
   };
   const element = bump(el, {
-    ...plan.element,
+    ...finalBox,
     fileId: outId,
     crop: null,
     customData: withStack(el, stack),
