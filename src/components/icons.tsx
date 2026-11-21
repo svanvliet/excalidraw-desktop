@@ -336,6 +336,14 @@ export const StylesIcon = () => (
   </NativeIcon>
 );
 
+/** Components tab: a master diamond over an instance. */
+export const ComponentsIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="m12 3 4 4-4 4-4-4 4-4" />
+    <path d="m12 13 4 4-4 4-4-4 4-4" strokeDasharray="2 2" />
+  </NativeIcon>
+);
+
 export const LockIcon = () => (
   <NativeIcon grid={24}>
     <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -369,3 +377,65 @@ export const AnchorEastIcon = () => <AnchorIcon cx={15.5} cy={10} />;
 export const AnchorSouthIcon = () => <AnchorIcon cx={10} cy={15.5} />;
 export const AnchorWestIcon = () => <AnchorIcon cx={4.5} cy={10} />;
 export const AnchorCenterIcon = () => <AnchorIcon cx={10} cy={10} />;
+
+/** Smart containers: stack direction, cross-axis alignment and main-axis distribution. */
+export const StackVerticalIcon = () => (
+  <NativeIcon>
+    <rect x="5" y="3.5" width="10" height="3.5" rx="1" strokeWidth="1.25" />
+    <rect x="5" y="8.25" width="10" height="3.5" rx="1" strokeWidth="1.25" />
+    <rect x="5" y="13" width="10" height="3.5" rx="1" strokeWidth="1.25" />
+  </NativeIcon>
+);
+
+export const StackHorizontalIcon = () => (
+  <NativeIcon>
+    <rect x="3.5" y="5" width="3.5" height="10" rx="1" strokeWidth="1.25" />
+    <rect x="8.25" y="5" width="3.5" height="10" rx="1" strokeWidth="1.25" />
+    <rect x="13" y="5" width="3.5" height="10" rx="1" strokeWidth="1.25" />
+  </NativeIcon>
+);
+
+type Pos = "start" | "center" | "end";
+
+/** Two bars of different lengths pushed to `pos` across a vertical stack (rotated for a row). */
+export const StackAlignIcon = ({ pos, vertical }: { pos: Pos; vertical: boolean }) => {
+  const x = (w: number) => (pos === "start" ? 4 : pos === "end" ? 16 - w : 10 - w / 2);
+  const line = pos === "start" ? 3 : pos === "end" ? 17 : 10;
+  return (
+    <NativeIcon>
+      <g transform={vertical ? undefined : "rotate(90 10 10)"} strokeWidth="1.25">
+        <path d={`M${line} 3v14`} strokeDasharray={pos === "center" ? "2 2" : undefined} />
+        <rect x={x(10)} y="5" width="10" height="4" rx="1" />
+        <rect x={x(6)} y="11" width="6" height="4" rx="1" />
+      </g>
+    </NativeIcon>
+  );
+};
+
+/** Three small items placed at `pos` (or spread) along a vertical stack (rotated for a row). */
+export const StackJustifyIcon = ({
+  pos,
+  vertical,
+}: {
+  pos: Pos | "space-between";
+  vertical: boolean;
+}) => {
+  const ys =
+    pos === "start"
+      ? [3.5, 7, 10.5]
+      : pos === "end"
+        ? [6.5, 10, 13.5]
+        : pos === "center"
+          ? [5, 8.5, 12]
+          : [3.5, 8.5, 13.5];
+  return (
+    <NativeIcon>
+      <g transform={vertical ? undefined : "rotate(-90 10 10)"} strokeWidth="1.25">
+        <rect x="3" y="2" width="14" height="16" rx="1.5" strokeDasharray="2 2" />
+        {ys.map((y) => (
+          <rect key={y} x="6" y={y} width="8" height="2.5" rx="0.75" />
+        ))}
+      </g>
+    </NativeIcon>
+  );
+};

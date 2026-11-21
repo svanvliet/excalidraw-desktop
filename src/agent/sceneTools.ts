@@ -79,6 +79,18 @@ import {
   tagOf,
 } from "../extensions/components/model";
 import {
+  addToContainer,
+  describeContainers,
+  makeContainer,
+  removeContainer,
+  removeFromContainer,
+  resolveContainer,
+  updateContainer,
+  type ContainerChanges,
+} from "../layout/containers/actions";
+import { reflowDraft } from "../layout/containers/draftAccess";
+import { isActiveBox } from "../layout/containers/model";
+import {
   applyStyle,
   createStyle,
   deleteStyle,
@@ -87,6 +99,13 @@ import {
   updateStyle,
 } from "../extensions/styles/actions";
 import { elementStyleInfo, listStyles } from "../extensions/styles/model";
+import {
+  canSaveMyComponents,
+  loadMyComponents,
+  type MyComponent,
+} from "../lib/componentLibraryStore";
+import { insertMyComponent } from "../components/componentsUi/libraryCodec";
+import { libraryMasterEngine } from "../components/componentsUi/libraryMasters";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
 
@@ -124,11 +143,17 @@ const EDIT_TOOLS = new Set([
   "set_overrides",
   "reset_overrides",
   "detach_instance",
+  "create_container",
+  "update_container",
+  "remove_container",
+  "add_to_container",
+  "remove_from_container",
   "create_style",
   "apply_style",
   "update_style",
   "delete_style",
   "reset_style_overrides",
+  "insert_my_component",
 ]);
 
 /** Retries of an edit whose async op (auto_layout) raced a concurrent canvas change. */
@@ -635,6 +660,8 @@ interface EditCtx {
   images: Map<Args, PreparedImage>;
   /** Pre-computed extension results keyed by the args object (extensions are async). */
   extensions: Map<Args, Prepared>;
+  /** The personal component library, loaded when an op needs it (loading is async). */
+  myComponents?: readonly MyComponent[];
 }
 
 const SKELETON_TYPES = [
@@ -1505,8 +1532,133 @@ function resetOverridesTool(draft: Draft, args: Args) {
   return { instance: args.instance, reset: true };
 }
 
+// --- My components (personal cross-document library, FR-55) ------------------
+
+async function listMyComponentsTool(): Promise<ToolContent[]> {
+  const items = await loadMyComponents();
+  return json({
+    saving: canSaveMyComponents(),
+    components: items.map((c) => ({
+      id: c.id,
+      name: c.name,
+      elements: c.elements.filter((e) => !e.isDeleted).length,
+      images: Object.keys(c.files ?? {}).length,
+      updated: new Date(c.updated).toISOString(),
+    })),
+  });
+}
+
+function insertMyComponentTool(draft: Draft, args: Args, ctx: EditCtx) {
+  const ref = optStr(args, "component");
+  if (!ref) throw new ToolError(`"component" is required`);
+  const items = ctx.myComponents ?? [];
+  const entry =
+    items.find((c) => c.id === ref) ??
+    items.find((c) => c.name.toLowerCase() === ref.toLowerCase());
+  if (!entry) throw new ToolError(`"${ref}" is not in My components; see list_my_components`);
+  let x = optNum(args, "x");
+  let y = optNum(args, "y");
+  if (x === undefined || y === undefined) {
+    // Default: to the right of everything on the canvas.
+    const live = draft.live();
+    const right = live.length ? Math.max(...live.map((e) => e.x + Math.abs(e.width))) + 80 : 0;
+    const top = live.length ? Math.min(...live.map((e) => e.y)) : 0;
+    x ??= right;
+    y ??= top;
+  }
+  const out = insertMyComponent(draft, entry, { x, y }, { libraryBacked: !!libraryMasterEngine() });
+  ctx.files.push(...out.files);
+  return {
+    componentId: out.componentId,
+    name: entry.name,
+    groupId: out.instance.groupId,
+    ids: out.instance.ids,
+    masterGroupId: out.masterGroupId,
+    placedMaster: out.placedMaster,
+    images: out.files.length,
+  };
+}
+
 function detachInstanceTool(draft: Draft, args: Args) {
   return { detached: detachInstance(draft, args.instance) };
+}
+
+// --- smart containers (docs/plan.md D-DX13) -------------------------------------
+
+const CONTAINER_KEYS = [
+  "direction",
+  "gap",
+  "padding",
+  "align",
+  "justify",
+  "sizing",
+  "width",
+  "height",
+] as const;
+
+function containerChanges(args: Args): ContainerChanges {
+  const out: Record<string, unknown> = {};
+  for (const k of CONTAINER_KEYS) if (args[k] !== undefined) out[k] = args[k];
+  return out as ContainerChanges;
+}
+
+function describeContainer(draft: Draft, containerId: string) {
+  return describeContainers(draft).find((c) => c.containerId === containerId);
+}
+
+function createContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const made = makeContainer(draft, ids, containerChanges(args));
+  return { ...made, container: describeContainer(draft, made.containerId) };
+}
+
+function updateContainerTool(draft: Draft, args: Args) {
+  const order = strArray(args, "order");
+  const c = updateContainer(draft, args.containerId, {
+    ...containerChanges(args),
+    ...(order ? { order } : {}),
+  });
+  return { container: describeContainer(draft, c.box.id) };
+}
+
+function removeContainerTool(draft: Draft, args: Args) {
+  if (args.keepBox !== undefined && typeof args.keepBox !== "boolean") {
+    throw new ToolError(`"keepBox" must be a boolean`);
+  }
+  removeContainer(draft, args.containerId, { keepBox: args.keepBox === true });
+  return { removed: args.containerId };
+}
+
+function addToContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const added = addToContainer(draft, args.containerId, ids, optNum(args, "index"));
+  return {
+    added,
+    container: describeContainer(draft, resolveContainer(draft, args.containerId).box.id),
+  };
+}
+
+function removeFromContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  return { removed: removeFromContainer(draft, ids) };
+}
+
+function listContainersTool(tab: SceneTab, tabId: string): ToolContent[] {
+  const elements = tab.api.getSceneElementsIncludingDeleted();
+  return json({
+    tabId,
+    revision: revisionOf(elements),
+    containers: describeContainers(new Draft(elements)),
+  });
+}
+
+/** Containers holding anything a generic edit touched re-flow in the same step. */
+function reflowEdited(draft: Draft): void {
+  if (!draft.changed.size || !draft.live().some(isActiveBox)) return;
+  reflowDraft(draft, [...draft.changed]);
 }
 
 // --- named styles (docs/styles.md) ------------------------------------------
@@ -1668,6 +1820,16 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return resetOverridesTool(draft, args);
     case "detach_instance":
       return detachInstanceTool(draft, args);
+    case "create_container":
+      return createContainerTool(draft, args);
+    case "update_container":
+      return updateContainerTool(draft, args);
+    case "remove_container":
+      return removeContainerTool(draft, args);
+    case "add_to_container":
+      return addToContainerTool(draft, args);
+    case "remove_from_container":
+      return removeFromContainerTool(draft, args);
     case "create_style":
       return createStyleTool(draft, args);
     case "apply_style":
@@ -1678,6 +1840,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return deleteStyle(draft, args.style);
     case "reset_style_overrides":
       return resetStyleOverridesTool(draft, args);
+    case "insert_my_component":
+      return insertMyComponentTool(draft, args, ctx);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);
@@ -1715,6 +1879,9 @@ async function runEdit(
   const ops = tool === "apply_ops" ? opsOf(args) : [{ tool, args }];
   // Async preparation first, so applying the draft below is one synchronous step.
   // Extensions run against the scene as it is now; applying checks nothing changed since.
+  if (ops.some((op) => op.tool === "insert_my_component")) {
+    ctx.myComponents = await loadMyComponents();
+  }
   for (const [i, op] of ops.entries()) {
     if (op.tool !== "add_mermaid" && op.tool !== "add_image" && !EXTENSION_TOOLS.has(op.tool))
       continue;
@@ -1769,9 +1936,11 @@ async function runEdit(
         "The canvas kept changing while the layout was being computed; no changes were applied. Retry.",
       );
     }
-    // Styles first, then components (the live reactor's rule order, D-DX12): direct edits to
-    // styled elements become style overrides, and styled master children reach their instances.
+    // The live reactor's rule order (D-DX12, D-DX13): styles (direct edits to styled elements
+    // become overrides; font changes re-measure text), then containers touched by the edit or by
+    // the style sync re-flow, then components keep instances in sync.
     syncStylesEdited(draft);
+    reflowEdited(draft);
     syncEdited(draft);
     commitDraft(tabId, tab, draft, ctx.files);
     return json({
@@ -1795,6 +1964,7 @@ export async function runSceneTool(
   if (!READ_ONLY.has(tool)) throw new ToolError(`Unknown canvas tool "${tool}"`);
   const args: Args = isObj(rawArgs) ? rawArgs : {};
   if (tool === "list_tabs") return listTabs();
+  if (tool === "list_my_components") return listMyComponentsTool();
   const { tabId, tab } = resolveTab(args, defaultTabId);
   if (READ_ONLY.get(tool) === false && tab.isViewer()) {
     throw new ToolError(
@@ -1827,6 +1997,8 @@ export async function runSceneTool(
       return getShapeData(tab, tabId, args);
     case "list_components":
       return listComponentsTool(tab, tabId);
+    case "list_containers":
+      return listContainersTool(tab, tabId);
     case "list_styles":
       return listStylesTool(tab, tabId);
     default:

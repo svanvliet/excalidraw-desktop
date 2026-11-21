@@ -4,5 +4,8 @@
   { "id": "excalidraw:layout:tree", "label": "Tree" },
   { "separator": true },
   { "id": "excalidraw:layout:tidyArrows", "label": "Tidy Arrows" },
-  { "id": "excalidraw:layout:tidyArrowsConvert", "label": "Tidy Arrows (Convert Straight Arrows)" }
+  { "id": "excalidraw:layout:tidyArrowsConvert", "label": "Tidy Arrows (Convert Straight Arrows)" },
+  { "separator": true },
+  { "id": "excalidraw:layout:makeContainer", "label": "Make Container", "shortcut": "Alt+Shift+A" },
+  { "id": "excalidraw:layout:removeContainer", "label": "Remove Container" }
 ]

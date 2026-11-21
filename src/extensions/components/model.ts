@@ -1,5 +1,5 @@
 /**
- * Components v1 data model (plan D-DX2/D-DX3, docs/components.md).
+ * Components data model (plan D-DX2/D-DX3/D-DX11, docs/components.md).
  *
  * Every child of a component carries `customData["excalidrawDesktop.component"]`:
  *  - `role`: "master" (the source on the canvas) or "instance" (a live copy).
@@ -10,14 +10,29 @@
  *    is `groupIds[gi]` (D-DX3): inner groups come before it, user groups around it after it.
  *  - `base` (instances): the master child's geometry relative to the master origin at the last
  *    sync. Comparing it with the instance child's own geometry yields the instance transform.
- *  - `overrides` (instances): per-slot values that win over the master (text, colours, …).
+ *  - `overrides` (instances): explicit per-slot values that win over the master (text, colours,
+ *    visibility, …).
  *  - `promoted` (masters): this master was an instance promoted when the master was deleted;
  *    keeps the overrides it had so it can be demoted again if the old master comes back.
+ *  - `props` (master and instances, replicated): typed component properties (D-DX11).
+ *  - `pv` (instances, replicated across the instance's children): property values.
+ *  - `npv` (instances): values for the properties of directly nested instances, keyed by the
+ *    nested instance's group id inside the master.
+ *  - `source: "library"` + `libraryId`: the master lives in the library, so instances whose
+ *    master is absent stay instances (no promotion). `mv` keeps the master's values for the keys
+ *    an instance child overrides, so the master can be rebuilt from an instance.
+ *
+ * Nested components (D-DX11): an element can belong to several components at once (an element
+ * of an A instance inside B's master). Then the namespace holds `{ v: 2, tags: [...] }`, one tag
+ * per component, ordered inner → outer by `gi`. A single tag is stored as before; it is written
+ * as `v: 1` unless it uses a v2-only field, so files without the new features stay readable by
+ * older builds (which leave v2 data alone instead of rewriting it).
  */
 import type { El } from "../reactor/reactor";
 
 export const COMPONENT_NS = "excalidrawDesktop.component";
-export const COMPONENT_MODEL_VERSION = 1;
+/** Newest tag version this build reads and writes. */
+export const COMPONENT_MODEL_VERSION = 2;
 
 export interface Base {
   /** Centre relative to the master origin. */
@@ -28,7 +43,7 @@ export interface Base {
   angle: number;
 }
 
-/** Keys an instance may override per slot. `fileId` is the image. */
+/** Keys an instance may override per slot. `fileId` is the image; `visible` hides the slot. */
 export const OVERRIDE_KEYS = [
   "text",
   "backgroundColor",
@@ -36,12 +51,37 @@ export const OVERRIDE_KEYS = [
   "opacity",
   "link",
   "fileId",
+  "visible",
 ] as const;
 export type OverrideKey = (typeof OVERRIDE_KEYS)[number];
 export type Overrides = Partial<Record<OverrideKey, unknown>>;
 
+export const PROP_TYPES = ["text", "color", "boolean", "choice"] as const;
+export type PropType = (typeof PROP_TYPES)[number];
+
+/** One slot key a property drives. `map` (choice only): option → value (absent = master's). */
+export interface PropBinding {
+  slot: string;
+  key: OverrideKey;
+  map?: Record<string, unknown>;
+}
+
+export interface PropDef {
+  id: string;
+  name: string;
+  type: PropType;
+  /** boolean: default visibility (true when absent); choice: default option (first option). */
+  default?: string | boolean;
+  /** choice only. */
+  options?: string[];
+  bindings: PropBinding[];
+}
+
+export type PropValue = string | boolean;
+export type PropValues = Record<string, PropValue>;
+
 export interface ComponentTag {
-  v: 1;
+  v: 1 | 2;
   role: "master" | "instance";
   componentId: string;
   slot: string;
@@ -49,25 +89,74 @@ export interface ComponentTag {
   name?: string;
   base?: Base;
   overrides?: Overrides;
-  promoted?: { overrides?: Overrides; base?: Base };
+  promoted?: { overrides?: Overrides; base?: Base; pv?: PropValues };
+  props?: PropDef[];
+  pv?: PropValues;
+  npv?: Record<string, PropValues>;
+  source?: "library";
+  libraryId?: string;
+  mv?: Overrides;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** The element's component tag, or null if it has none (or one this version can't read). */
-export function tagOf(el: El | undefined | null): ComponentTag | null {
-  const raw = el?.customData?.[COMPONENT_NS];
-  if (!isRecord(raw) || raw.v !== COMPONENT_MODEL_VERSION) return null;
+function readTag(raw: unknown): ComponentTag | null {
+  if (!isRecord(raw) || (raw.v !== 1 && raw.v !== 2)) return null;
   if (raw.role !== "master" && raw.role !== "instance") return null;
   if (typeof raw.componentId !== "string" || typeof raw.slot !== "string") return null;
   if (typeof raw.gi !== "number" || !Number.isInteger(raw.gi) || raw.gi < 0) return null;
   return raw as unknown as ComponentTag;
 }
 
+/**
+ * Every component tag of the element (inner → outer), [] when it has none, or null when the
+ * namespace holds something this build can't read (then the element must be left alone).
+ */
+export function readTags(el: El | undefined | null): ComponentTag[] | null {
+  const raw = el?.customData?.[COMPONENT_NS];
+  if (raw === undefined) return [];
+  if (isRecord(raw) && Array.isArray(raw.tags)) {
+    if (raw.v !== 2) return null;
+    const out: ComponentTag[] = [];
+    for (const t of raw.tags) {
+      const tag = readTag(t);
+      if (!tag) return null;
+      if (!out.some((o) => o.componentId === tag.componentId)) out.push(tag);
+    }
+    return out.sort((a, b) => a.gi - b.gi);
+  }
+  const tag = readTag(raw);
+  return tag ? [tag] : null;
+}
+
+/** Every readable component tag of the element, inner → outer. */
+export function tagsOf(el: El | undefined | null): ComponentTag[] {
+  return readTags(el) ?? [];
+}
+
+/**
+ * The element's outermost component tag (its identity in the UI), or null if it has none (or
+ * one this version can't read).
+ */
+export function tagOf(el: El | undefined | null): ComponentTag | null {
+  const tags = tagsOf(el);
+  return tags.length ? tags[tags.length - 1] : null;
+}
+
+/** The element's tag for one component. */
+export function tagFor(el: El | undefined | null, componentId: string): ComponentTag | null {
+  return tagsOf(el).find((t) => t.componentId === componentId) ?? null;
+}
+
 /** True when the element has a component tag of any version (so we must leave it alone). */
 export function hasAnyTag(el: El): boolean {
   return el.customData?.[COMPONENT_NS] !== undefined;
+}
+
+/** True when the namespace is absent or readable by this build. */
+export function isReadable(el: El): boolean {
+  return readTags(el) !== null;
 }
 
 /** The component group id (master or instance identity), or null if the group is gone. */
@@ -76,12 +165,63 @@ export function groupOf(el: El, tag: ComponentTag | null = tagOf(el)): string | 
   return el.groupIds[tag.gi] ?? null;
 }
 
-/** `customData` with the tag replaced (or removed when `tag` is null). */
+/** Tags of `el` outside `tag` (larger `gi`). */
+export function outerTags(el: El, tag: ComponentTag): ComponentTag[] {
+  return tagsOf(el).filter((t) => t.gi > tag.gi);
+}
+
+/** Tags of `el` inside `tag` (smaller `gi`). */
+export function innerTags(el: El, tag: ComponentTag): ComponentTag[] {
+  return tagsOf(el).filter((t) => t.gi < tag.gi);
+}
+
+/**
+ * True when `el`'s membership of `componentId` is owned by an outer instance: it is a copy of a
+ * nested instance inside an instance of another component, which derives it.
+ */
+export function isOwned(el: El, componentId: string): boolean {
+  const tag = tagFor(el, componentId);
+  return !!tag && outerTags(el, tag).some((t) => t.role === "instance");
+}
+
+/**
+ * `customData` with the tag for `tag.componentId` replaced (others kept), or with every tag
+ * removed when `tag` is null.
+ */
 export function withTag(el: El, tag: ComponentTag | null): Record<string, unknown> {
+  if (!tag) return writeTags(el, []);
+  const rest = tagsOf(el).filter((t) => t.componentId !== tag.componentId);
+  return writeTags(el, [...rest, tag]);
+}
+
+/** `customData` without the tag for one component. */
+export function withoutTag(el: El, componentId: string): Record<string, unknown> {
+  return writeTags(
+    el,
+    tagsOf(el).filter((t) => t.componentId !== componentId),
+  );
+}
+
+/** `customData` with exactly `tags` (any order). */
+export function writeTags(el: El, tags: readonly ComponentTag[]): Record<string, unknown> {
   const next: Record<string, unknown> = { ...(el.customData ?? {}) };
-  if (tag) next[COMPONENT_NS] = cleanTag(tag);
-  else delete next[COMPONENT_NS];
+  const clean = [...tags].sort((a, b) => a.gi - b.gi).map(cleanTag);
+  if (!clean.length) delete next[COMPONENT_NS];
+  else if (clean.length === 1) next[COMPONENT_NS] = clean[0];
+  else next[COMPONENT_NS] = { v: 2, tags: clean };
   return next;
+}
+
+const nonEmpty = (o: object | undefined): boolean => !!o && Object.keys(o).length > 0;
+
+function needsV2(tag: ComponentTag): boolean {
+  return (
+    !!tag.props?.length ||
+    nonEmpty(tag.pv) ||
+    nonEmpty(tag.npv) ||
+    (!!tag.overrides && "visible" in tag.overrides) ||
+    nonEmpty(tag.promoted?.pv)
+  );
 }
 
 function cleanTag(tag: ComponentTag): ComponentTag {
@@ -94,8 +234,18 @@ function cleanTag(tag: ComponentTag): ComponentTag {
   };
   if (tag.name) out.name = tag.name;
   if (tag.base) out.base = tag.base;
-  if (tag.overrides && Object.keys(tag.overrides).length) out.overrides = tag.overrides;
+  if (nonEmpty(tag.overrides)) out.overrides = tag.overrides;
   if (tag.promoted) out.promoted = tag.promoted;
+  if (tag.props?.length) out.props = tag.props;
+  if (nonEmpty(tag.pv)) out.pv = tag.pv;
+  if (tag.npv) {
+    const npv = Object.fromEntries(Object.entries(tag.npv).filter(([, v]) => nonEmpty(v)));
+    if (nonEmpty(npv)) out.npv = npv;
+  }
+  if (tag.source === "library") out.source = "library";
+  if (tag.libraryId) out.libraryId = tag.libraryId;
+  if (nonEmpty(tag.mv)) out.mv = tag.mv;
+  if (needsV2(out)) out.v = 2;
   return out;
 }
 
@@ -120,7 +270,22 @@ export interface ComponentInfo {
   masterGroupId: string | null;
   /** Live master child ids. */
   masterIds: string[];
-  instances: Array<{ groupId: string; ids: string[]; overriddenSlots: number }>;
+  instances: Array<{
+    groupId: string;
+    ids: string[];
+    overriddenSlots: number;
+    /** Property values set on this instance. */
+    values?: PropValues;
+    /** The component whose master / instance this instance sits in (nested components). */
+    parent?: { componentId: string; role: "master" | "instance"; groupId: string };
+  }>;
+  /** Declared properties (D-DX11). */
+  props: PropDef[];
+  /** Components with instances nested in this component's master. */
+  uses: string[];
+  /** "library" when the master lives in the library (no promotion of orphans). */
+  source?: "library";
+  libraryId?: string;
 }
 
 /** Info about the component an element belongs to, as seen from that element. */
@@ -131,10 +296,23 @@ export interface ElementComponentInfo {
   groupId: string | null;
   name?: string;
   overrides?: Overrides;
+  props?: PropDef[];
+  values?: PropValues;
+  source?: "library";
+  libraryId?: string;
+  /** Inner memberships (nested component instances this element is part of), inner → outer. */
+  nested?: Array<{
+    componentId: string;
+    role: "master" | "instance";
+    slot: string;
+    groupId: string | null;
+    name?: string;
+  }>;
 }
 
 export function elementComponentInfo(el: El): ElementComponentInfo | null {
-  const tag = tagOf(el);
+  const tags = tagsOf(el);
+  const tag = tags[tags.length - 1];
   if (!tag) return null;
   const out: ElementComponentInfo = {
     componentId: tag.componentId,
@@ -143,46 +321,143 @@ export function elementComponentInfo(el: El): ElementComponentInfo | null {
     groupId: groupOf(el, tag),
   };
   if (tag.name) out.name = tag.name;
-  if (tag.overrides && Object.keys(tag.overrides).length) out.overrides = tag.overrides;
+  if (nonEmpty(tag.overrides)) out.overrides = tag.overrides;
+  if (tag.props?.length) out.props = tag.props;
+  if (nonEmpty(tag.pv)) out.values = tag.pv;
+  if (tag.source) out.source = tag.source;
+  if (tag.libraryId) out.libraryId = tag.libraryId;
+  if (tags.length > 1)
+    out.nested = tags.slice(0, -1).map((t) => ({
+      componentId: t.componentId,
+      role: t.role,
+      slot: t.slot,
+      groupId: groupOf(el, t),
+      ...(t.name ? { name: t.name } : {}),
+    }));
   return out;
 }
 
 /** Every component in a scene (live elements only). */
 export function listComponents(elements: readonly El[]): ComponentInfo[] {
   const byId = new Map<string, ComponentInfo>();
-  const instanceIdx = new Map<string, Map<string, { ids: string[]; overriddenSlots: number }>>();
+  const instanceIdx = new Map<string, Map<string, ComponentInfo["instances"][number]>>();
+  const pendingUses: Array<[string, string]> = [];
   for (const el of elements) {
     if (el.isDeleted) continue;
-    const tag = tagOf(el);
-    const group = tag && groupOf(el, tag);
-    if (!tag || !group) continue;
-    let info = byId.get(tag.componentId);
-    if (!info) {
-      info = {
-        componentId: tag.componentId,
-        name: null,
-        masterGroupId: null,
-        masterIds: [],
-        instances: [],
-      };
-      byId.set(tag.componentId, info);
-      instanceIdx.set(tag.componentId, new Map());
-    }
-    if (tag.name && (tag.role === "master" || !info.name)) info.name = tag.name;
-    if (tag.role === "master") {
-      info.masterGroupId ??= group;
-      if (info.masterGroupId === group) info.masterIds.push(el.id);
-    } else {
-      const idx = instanceIdx.get(tag.componentId)!;
-      let inst = idx.get(group);
-      if (!inst) idx.set(group, (inst = { ids: [], overriddenSlots: 0 }));
-      inst.ids.push(el.id);
-      if (tag.overrides && Object.keys(tag.overrides).length) inst.overriddenSlots++;
-    }
+    const tags = tagsOf(el);
+    tags.forEach((tag, i) => {
+      const group = groupOf(el, tag);
+      if (!group) return;
+      let info = byId.get(tag.componentId);
+      if (!info) {
+        info = {
+          componentId: tag.componentId,
+          name: null,
+          masterGroupId: null,
+          masterIds: [],
+          instances: [],
+          props: [],
+          uses: [],
+        };
+        byId.set(tag.componentId, info);
+        instanceIdx.set(tag.componentId, new Map());
+      }
+      if (tag.name && (tag.role === "master" || !info.name)) info.name = tag.name;
+      if (tag.source) info.source = tag.source;
+      if (tag.libraryId) info.libraryId ??= tag.libraryId;
+      const outer = tags[i + 1];
+      if (tag.role === "master") {
+        info.masterGroupId ??= group;
+        if (info.masterGroupId === group) {
+          info.masterIds.push(el.id);
+          if (tag.props?.length && !info.props.length) info.props = tag.props;
+        }
+      } else {
+        const idx = instanceIdx.get(tag.componentId)!;
+        let inst = idx.get(group);
+        if (!inst) idx.set(group, (inst = { groupId: group, ids: [], overriddenSlots: 0 }));
+        inst.ids.push(el.id);
+        if (nonEmpty(tag.overrides)) inst.overriddenSlots++;
+        if (nonEmpty(tag.pv)) inst.values ??= tag.pv;
+        const og = outer && groupOf(el, outer);
+        if (outer && og)
+          inst.parent ??= { componentId: outer.componentId, role: outer.role, groupId: og };
+        if (!info.props.length && tag.props?.length) info.props = tag.props;
+      }
+      if (outer?.role === "master") {
+        const parent = byId.get(outer.componentId);
+        if (parent && !parent.uses.includes(tag.componentId)) parent.uses.push(tag.componentId);
+        else if (!parent) pendingUses.push([outer.componentId, tag.componentId]);
+      }
+    });
+  }
+  for (const [p, c] of pendingUses) {
+    const parent = byId.get(p);
+    if (parent && !parent.uses.includes(c)) parent.uses.push(c);
   }
   for (const [cid, info] of byId) {
-    for (const [groupId, inst] of instanceIdx.get(cid)!) info.instances.push({ groupId, ...inst });
+    info.instances = [...instanceIdx.get(cid)!.values()];
     info.instances.sort((a, b) => (a.groupId < b.groupId ? -1 : 1));
+    info.uses.sort();
   }
   return [...byId.values()];
+}
+
+/**
+ * Component dependency graph: `B → A` when B's master contains (a copy of) a component A.
+ * Nesting must stay acyclic.
+ */
+export function componentDeps(elements: readonly El[]): Map<string, Set<string>> {
+  const deps = new Map<string, Set<string>>();
+  for (const el of elements) {
+    if (el.isDeleted) continue;
+    const tags = tagsOf(el);
+    for (let i = 0; i < tags.length; i++) {
+      const outer = tags[i];
+      if (outer.role !== "master") continue;
+      for (const inner of tags.slice(0, i)) {
+        let set = deps.get(outer.componentId);
+        if (!set) deps.set(outer.componentId, (set = new Set()));
+        set.add(inner.componentId);
+      }
+    }
+  }
+  return deps;
+}
+
+/** True when `from` (transitively) depends on `to`, or they are the same component. */
+export function dependsOn(
+  deps: ReadonlyMap<string, ReadonlySet<string>>,
+  from: string,
+  to: string,
+): boolean {
+  const seen = new Set<string>();
+  const stack = [from];
+  while (stack.length) {
+    const c = stack.pop()!;
+    if (c === to) return true;
+    if (seen.has(c)) continue;
+    seen.add(c);
+    for (const d of deps.get(c) ?? []) stack.push(d);
+  }
+  return false;
+}
+
+/** Component ids ordered inner (dependencies) first. */
+export function topoOrder(
+  ids: Iterable<string>,
+  deps: ReadonlyMap<string, ReadonlySet<string>>,
+): string[] {
+  const out: string[] = [];
+  const state = new Map<string, 1 | 2>();
+  const visit = (c: string) => {
+    if (state.get(c)) return;
+    state.set(c, 1);
+    for (const d of [...(deps.get(c) ?? [])].sort()) visit(d);
+    state.set(c, 2);
+    out.push(c);
+  };
+  const want = new Set(ids);
+  for (const c of [...want].sort()) visit(c);
+  return out.filter((c) => want.has(c));
 }

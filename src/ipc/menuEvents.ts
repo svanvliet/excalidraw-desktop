@@ -29,6 +29,7 @@ export type MenuItemId =
   | "excalidraw:file:clearRecent"
   | "excalidraw:edit:undo"
   | "excalidraw:edit:redo"
+  | "excalidraw:edit:createComponent"
   | LayoutMenuId
   | "excalidraw:view:zoomIn"
   | "excalidraw:view:zoomOut"
@@ -49,6 +50,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:file:clearRecent",
   "excalidraw:edit:undo",
   "excalidraw:edit:redo",
+  "excalidraw:edit:createComponent",
   ...LAYOUT_IDS,
   "excalidraw:view:zoomIn",
   "excalidraw:view:zoomOut",

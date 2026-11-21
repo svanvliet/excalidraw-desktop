@@ -43,6 +43,7 @@ pub mod ids {
     pub const EDIT_UNDO: &str = "excalidraw:edit:undo";
     pub const EDIT_REDO: &str = "excalidraw:edit:redo";
     // Layout ▸ … items come from `LAYOUT_COMMANDS_JSON` (ids `excalidraw:layout:*`).
+    pub const EDIT_CREATE_COMPONENT: &str = "excalidraw:edit:createComponent";
 
     pub const VIEW_ZOOM_IN: &str = "excalidraw:view:zoomIn";
     pub const VIEW_ZOOM_OUT: &str = "excalidraw:view:zoomOut";
@@ -217,6 +218,15 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .copy()
         .paste()
         .select_all()
+        .separator()
+        // No accelerator: the webview owns Alt/Option+Cmd/Ctrl+K (FR-55) so it works outside Tauri.
+        .item(&MenuItem::with_id(
+            app,
+            ids::EDIT_CREATE_COMPONENT,
+            "Create Component",
+            true,
+            None::<&str>,
+        )?)
         .build()?;
     menu = menu.item(&edit);
 
@@ -373,6 +383,10 @@ mod tests {
         assert_eq!(ids::FILE_CLEAR_RECENT, "excalidraw:file:clearRecent");
         assert_eq!(ids::EDIT_UNDO, "excalidraw:edit:undo");
         assert_eq!(ids::EDIT_REDO, "excalidraw:edit:redo");
+        assert_eq!(
+            ids::EDIT_CREATE_COMPONENT,
+            "excalidraw:edit:createComponent"
+        );
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");
         assert_eq!(ids::VIEW_ZOOM_OUT, "excalidraw:view:zoomOut");
         assert_eq!(ids::VIEW_ZOOM_RESET, "excalidraw:view:zoomReset");
@@ -398,9 +412,15 @@ mod tests {
                 "excalidraw:layout:tree",
                 "excalidraw:layout:tidyArrows",
                 "excalidraw:layout:tidyArrowsConvert",
+                "excalidraw:layout:makeContainer",
+                "excalidraw:layout:removeContainer",
             ]
         );
-        assert!(entries.iter().any(Option::is_none), "has a separator");
+        assert_eq!(
+            entries.iter().filter(|e| e.is_none()).count(),
+            2,
+            "separators before Tidy Arrows and the container commands"
+        );
         for (id, label) in entries.iter().flatten() {
             assert!(id.starts_with("excalidraw:layout:"), "{id}");
             assert!(!label.is_empty(), "{id} has a label");

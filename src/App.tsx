@@ -56,6 +56,7 @@ import { restoreInitialData } from "./lib/excalidrawRestore";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
 import { runLayoutCommand } from "./layout/commands";
+import { createComponentFromSelection } from "./extensions/components/host";
 import { log } from "./lib/logger";
 import { remoteApi } from "./extensions/components/host";
 import {
@@ -664,6 +665,11 @@ export function App() {
         case "excalidraw:edit:redo":
           dispatchShortcut({ key: "z", shift: true });
           return;
+        case "excalidraw:edit:createComponent": {
+          const api = activeTabId ? apisRef.current.get(activeTabId) : undefined;
+          if (api) createComponentFromSelection(api);
+          return;
+        }
         case "excalidraw:view:zoomIn":
           dispatchShortcut({ key: "=" });
           return;

@@ -10,6 +10,15 @@ import ElkBundled from "elkjs/lib/elk.bundled.js";
 import { setElkFactory } from "../layout/elk";
 import { pathCrossesBox } from "../layout/route";
 import type { ToolContent } from "./types";
+import type { BinaryFileData } from "@excalidraw/excalidraw/types";
+import { Draft } from "./scene/draft";
+import { createComponent } from "../extensions/components/actions";
+import {
+  __resetMyComponentsForTest,
+  loadMyComponents,
+  putMyComponent,
+} from "../lib/componentLibraryStore";
+import { masterToEntry } from "../components/componentsUi/libraryCodec";
 
 vi.mock("@excalidraw/excalidraw", async (orig) => ({
   ...(await orig<typeof import("@excalidraw/excalidraw")>()),
@@ -1192,6 +1201,76 @@ describe("component tools", () => {
   });
 });
 
+describe("container tools", () => {
+  const stack = () =>
+    scene([
+      { type: "rectangle", id: "a", x: 0, y: 0, width: 100, height: 40 },
+      { type: "rectangle", id: "b", x: 0, y: 100, width: 60, height: 60 },
+      { type: "rectangle", id: "c", x: 400, y: 0, width: 50, height: 50 },
+      { type: "arrow", id: "x", x: 60, y: 130, start: { id: "b" }, end: { id: "c" } },
+    ]);
+
+  it("create, re-flow generic edits, update order, add, take out, remove", async () => {
+    setup(stack());
+    const made = await call("create_container", { ids: ["a", "b"], gap: 10, padding: 0 });
+    const box = made.containerId;
+    expect(made.container).toMatchObject({ direction: "vertical", x: 0, y: 0, height: 110 });
+    expect(api.byId("b").y).toBe(50);
+    expect(api.undoStack).toHaveLength(1);
+
+    // A generic edit to a child re-flows its container in the same commit; bound arrows follow.
+    const arrowY = api.byId("x").y;
+    await call("update_elements", { updates: [{ id: "a", patch: { height: 80 } }] });
+    expect(api.byId("b").y).toBe(90);
+    expect(api.byId("x").y).toBe(arrowY + 40);
+    expect(api.byId(box).height).toBe(150);
+    expect(api.undoStack).toHaveLength(2);
+
+    await call("update_container", {
+      containerId: "a",
+      order: ["b", "a"],
+      direction: "horizontal",
+    });
+    expect(api.byId("b")).toMatchObject({ x: 0, y: 0 });
+    expect(api.byId("a").x).toBe(70);
+
+    const added = await call("add_to_container", { containerId: box, ids: ["c"], index: 0 });
+    expect(added.container.children.map((c: { key: string }) => c.key)).toEqual(["c", "b", "a"]);
+    const listed = (await call("list_containers")).containers;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ containerId: box, width: 50 + 10 + 60 + 10 + 100 });
+
+    await call("remove_from_container", { ids: ["c"] });
+    expect(api.byId("c").groupIds).toEqual([]);
+    expect(api.byId(box).width).toBe(170);
+
+    await call("remove_container", { containerId: box });
+    expect(api.byId(box).isDeleted).toBe(true);
+    expect(api.byId("a").groupIds).toEqual([]);
+    expect((await call("list_containers")).containers).toEqual([]);
+  });
+
+  it("works inside apply_ops and rejects bad settings", async () => {
+    setup(stack());
+    const res = await call("apply_ops", {
+      ops: [
+        { tool: "create_container", args: { ids: ["a", "b"], direction: "horizontal", gap: 0 } },
+        { tool: "update_elements", args: { updates: [{ id: "a", patch: { width: 50 } }] } },
+      ],
+    });
+    expect(api.undoStack).toHaveLength(1);
+    // b's centre is further left, so it leads; a's new width re-flows the box.
+    expect(api.byId("a").x).toBe(api.byId("b").x + 60);
+    expect(api.byId(res.results[0].containerId).width).toBe(16 + 60 + 50 + 16);
+    await expect(
+      runSceneTool("update_container", { containerId: res.results[0].containerId, gap: -1 }, TAB),
+    ).rejects.toThrow(/gap must be/);
+    await expect(runSceneTool("update_container", { containerId: "c" }, TAB)).rejects.toThrow(
+      /not a smart container/,
+    );
+  });
+});
+
 describe("style tools", () => {
   it("create, list, update live, direct edits become overrides, reset, unlink, delete", async () => {
     setup(boxes());
@@ -1275,5 +1354,49 @@ describe("style tools", () => {
       runSceneTool("create_style", { ids: ["a"], props: { opacity: 500 } }, TAB),
     ).rejects.toThrow();
     await expect(runSceneTool("apply_style", { ids: ["a"], style: "Nope" }, TAB)).rejects.toThrow();
+  });
+});
+
+describe("My components tools", () => {
+  afterEach(() => __resetMyComponentsForTest());
+
+  it("lists My components and inserts one with its image as one undo step", async () => {
+    __resetMyComponentsForTest();
+    const file = {
+      id: "photo1",
+      mimeType: "image/png",
+      dataURL: "data:image/png;base64,iVBORw0KGgo=",
+      created: 1,
+    } as BinaryFileData;
+    const src = new Draft(
+      scene([
+        { type: "rectangle", id: "card", x: 0, y: 0, width: 200, height: 120 },
+        { type: "image", id: "pic", x: 10, y: 10, width: 60, height: 60, fileId: "photo1" },
+        { type: "text", id: "who", x: 80, y: 30, text: "Ada" },
+      ]),
+    );
+    const made = createComponent(src, ["card", "pic", "who"], "Person");
+    await loadMyComponents();
+    await putMyComponent(masterToEntry(src.toArray(), { photo1: file }, made.componentId));
+
+    setup(boxes());
+    const list = await call("list_my_components");
+    expect(list.components).toEqual([
+      expect.objectContaining({ id: made.componentId, name: "Person", elements: 3, images: 1 }),
+    ]);
+
+    const out = await call("insert_my_component", { component: "person" });
+    expect(out).toMatchObject({ componentId: made.componentId, images: 1 });
+    expect(out.ids).toHaveLength(3);
+    expect(api.undoStack).toHaveLength(1);
+    expect(api.addFiles).toHaveBeenCalledWith([expect.objectContaining({ id: "photo1" })]);
+    const img = out.ids.map((id: string) => api.byId(id)).find((e: El) => e.type === "image");
+    expect(img.fileId).toBe("photo1");
+    // Default spot: right of the existing content.
+    expect(Math.min(...out.ids.map((id: string) => api.byId(id).x))).toBeGreaterThan(400);
+
+    await expect(call("insert_my_component", { component: "nope" })).rejects.toThrow(
+      /not in My components/,
+    );
   });
 });

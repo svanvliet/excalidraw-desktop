@@ -8,6 +8,7 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import spec from "./commands.json";
 import { autoLayoutCanvas, tidyArrowsCanvas } from "./canvasAction";
+import { CONTAINER_COMMANDS, containerMenuId } from "./containers/commands";
 
 export type LayoutCommandId = `excalidraw:layout:${string}`;
 
@@ -27,6 +28,7 @@ const RUN: Record<string, LayoutCommand["run"]> = {
   "excalidraw:layout:tree": (api) => autoLayoutCanvas(api, "tree"),
   "excalidraw:layout:tidyArrows": (api) => tidyArrowsCanvas(api),
   "excalidraw:layout:tidyArrowsConvert": (api) => tidyArrowsCanvas(api, { convert: true }),
+  ...Object.fromEntries(CONTAINER_COMMANDS.map((c) => [containerMenuId(c), c.run])),
 };
 
 type SpecEntry = { id?: string; label?: string; shortcut?: string; separator?: boolean };

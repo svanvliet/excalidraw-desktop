@@ -1,5 +1,6 @@
 /**
- * Components v1 host: one reactor per editor, plus the functions and hook the UI calls.
+ * Components v1 host: one reactor per editor (also running the smart-container rule), plus the
+ * functions and hook the UI calls.
  *
  *  - `installComponents(api)` (idempotent) starts the live sync for an editor; patches are
  *    applied in place (`apply: "mutate"`) and are never undo steps of their own.
@@ -33,11 +34,14 @@ import {
   type ElementComponentInfo,
 } from "./model";
 import { createStyleRule } from "../styles/rule";
+import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 import { createComponentRule } from "./rule";
+import { createContainerRule, createHoldTracker } from "../../layout/containers/rule";
 
 type Api = ExcalidrawImperativeAPI;
 
 const engines = new WeakMap<Api, Reactor>();
+const holds = new WeakMap<Api, ReturnType<typeof createHoldTracker>>();
 const remotes = new WeakMap<Api, Api>();
 
 export function installComponents(
@@ -46,15 +50,19 @@ export function installComponents(
 ): Reactor {
   let reactor = engines.get(api);
   if (!reactor) {
+    const hold = createHoldTracker();
     reactor = createReactor({
       api,
-      // Styles first: a style writes master children, which components then copy to
-      // instances in the same flush (D-DX12, docs/styles.md § "Rule order").
-      rules: [createStyleRule(), createComponentRule()],
+      // Order matters (D-DX12, D-DX13; docs/styles.md § "Rule order", docs/containers.md §3):
+      // a style writes master children (and grows text), containers then re-flow around them,
+      // and components finally copy all of it to instances in the same flush.
+      rules: [createStyleRule(), createContainerRule({ held: hold.held }), createComponentRule()],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
+    hold.attach(api, reactor);
     engines.set(api, reactor);
+    holds.set(api, hold);
   }
   return reactor;
 }
@@ -66,6 +74,8 @@ export function componentsReactor(api: Api): Reactor | undefined {
 export function uninstallComponents(api: Api): void {
   engines.get(api)?.dispose();
   engines.delete(api);
+  holds.get(api)?.dispose();
+  holds.delete(api);
 }
 
 /** Forget sync state and re-index from the current scene (file opened into this editor). */
@@ -147,6 +157,17 @@ export const resetInstanceOverrides = (
 ) => runComponentCommand(api, (d) => resetOverrides(d, instance, opts));
 export const detachComponentInstance = (api: Api, instance: string) =>
   runComponentCommand(api, (d) => detachInstance(d, instance));
+
+/**
+ * Library-backed masters (docs/components.md § Library). Each is one undo step and returns
+ * null in view mode or when it fails (the reason is shown as a toast), like the actions above.
+ */
+export const materializeMaster = (api: Api, instanceGroupId: string): string | null =>
+  runComponentCommand(api, (d) => materialize(d, instanceGroupId));
+export const dematerializeMaster = (api: Api, masterGroupId: string): ComponentDefinition | null =>
+  runComponentCommand(api, (d) => dematerialize(d, masterGroupId));
+export const adoptInstanceAsMaster = (api: Api, instanceGroupId: string): string | null =>
+  runComponentCommand(api, (d) => adoptAsMaster(d, instanceGroupId));
 
 export function sceneComponents(api: Api): ComponentInfo[] {
   return listComponents(api.getSceneElementsIncludingDeleted());
