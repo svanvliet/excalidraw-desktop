@@ -1,7 +1,7 @@
 # Desktop extensions
 
 > Design contract for features the app adds on top of Excalidraw **without changing the
-> `.excalidraw` format**. Code: `src/extensions/`. Built-in extensions: image Mask and Border, stackable.
+> `.excalidraw` format**. Code: `src/extensions/`. Built-in extensions: image Grayscale, Tint, Mask, Border and Shadow, stackable.
 
 ## 1. Problem
 
@@ -39,10 +39,19 @@ share one recorded original and one output file.
   identically in stock Excalidraw, excalidraw.com, exports, PNG embeds and collab peers that don't
   know about extensions.
 
-**Canonical order.** Each extension declares a `stage` (`STAGE.shape` = 100, `STAGE.decoration` =
-200). The chain is always sorted by stage, then id, so the order the user applies things in doesn't
-matter: Mask (shape) always runs before Border (decoration), and the border traces whatever outline
-the earlier stages produced (circle, rounded rectangle, or the full rectangle when unmasked).
+**Canonical order.** Each extension declares a `stage`. The chain is always sorted by stage, then
+id, so the order the user applies things in doesn't matter:
+
+| Stage              | Value | Extensions (stage)        | Step                                                     |
+| ------------------ | ----- | ------------------------- | -------------------------------------------------------- |
+| `STAGE.color`      | 50    | Grayscale (50), Tint (60) | `pixels`: recolour the source pixels                     |
+| `STAGE.shape`      | 100   | Mask                      | `plan`: change the outline / output size                 |
+| `STAGE.decoration` | 200   | Border                    | `render`: paint inside the outline                       |
+| `STAGE.effect`     | 300   | Shadow                    | `plan` (`pad`) + `renderBehind`: paint outside the image |
+
+Colour stages run on the original pixels, so the border is never recoloured. The border traces
+whatever outline the earlier stages produced (circle, rounded rectangle, or the full rectangle when
+unmasked), and the shadow follows the finished, masked and bordered shape.
 
 ## 3. Lifecycle
 
@@ -103,8 +112,10 @@ interface DesktopExtension<P> {
   choices?: { param; label; options: { value; label; swatch? }[] }; // e.g. border colour
   normalizeParams(raw): P; // validate + fill defaults; throw a readable Error
   migrateParams?(params, fromVersion): unknown;
-  plan?(plan: ImagePlan, params: P): ImagePlan; // change output size / outline (shape stages)
+  plan?(plan: ImagePlan, params: P): ImagePlan; // change output size / outline / pad
+  pixels?(img: PixelBuffer, plan: ImagePlan, params: P): void; // edit RGBA in place (colour stages)
   render?(ctx: RenderTarget, plan: ImagePlan, params: P): void; // paint onto the output
+  renderBehind?(out: PixelBuffer, content: PixelBuffer, plan: ImagePlan, params: P): void; // effects
 }
 ```
 
@@ -112,6 +123,21 @@ interface DesktopExtension<P> {
 pixels and the current **outline** (`rect`, `ellipse` or `roundedRect`). The renderer draws the
 source, runs each `render` step in order, and finally clips the output to the outline, so shape
 stages only need `plan` and decorations only need `render` (drawing with `outlinePath`).
+`pixels` steps run in chain order with `render` steps on unpremultiplied RGBA. After clipping,
+`renderBehind` steps paint into a padded bitmap underneath the finished content, which is then
+composited over them. **Never use `ctx.filter`**: WKWebView doesn't implement it, so blurs and
+colour maths are done by hand in `pixels.ts` (three-pass box blur, Rec. 709 luma, `compositeOver`).
+
+**Drawing outside the image (`plan.pad`).** An effect that needs room outside the content returns
+`plan.pad` (`{ left, top, right, bottom }` in integer output pixels, bitmap orientation; `plan.flip`
+carries the element's mirroring). The pipeline grows the output bitmap by the pad and grows the
+element box by the same margin in scene units, moving `x`/`y` up and left by the left/top margin.
+The content pixels therefore land exactly where the image was, so the visible image never shifts.
+The stack stores the margin as `source.inset` (scene units at the applied size) and records the
+padded size as `appliedWidth/Height`; re-rendering and remove strip the inset first (`baseOf`) to
+get the content box back, so restoring the original lands on the original bounds even after a
+resize. `outputFileId` only hashes pad and flip when a pad is present, so every output written
+before effects existed keeps its id, and chain v2 documents load unchanged (`inset` is optional).
 
 Rules for an extension:
 
@@ -156,11 +182,25 @@ selection contains image elements:
   sloppiness only show once a border is applied; picking a colour applies one, transparent removes
   it. Each choice patches only its own param (`patchParams` in `groups.ts`), keeping the others.
 - **Mask** — No mask / Circle / Rounded rectangle.
+- **Grayscale** — an amount slider (0–100 %; 0 removes it).
+- **Tint** — the same colour picker (`image-tint-*` test ids; transparent removes it), then a
+  **strength** slider once applied.
+- **Shadow** — the colour picker (`image-shadow-*`), then **opacity**, **blur** (0–50 in the UI,
+  0–100 for the agent) and **X / Y offset** (−100–100) sliders once applied.
+
+Sliders (`RangeControl.tsx`) are native ranges styled like Excalidraw's opacity slider. Dragging
+previews nothing; the release (pointer-up or key-up) commits one `runExtension` call, so one undo
+step. The effect sections are one self-contained component, `EffectsSection.tsx`, taking the panel
+host's image-section props (`groups`, `onlyImages`, `label`, `busy`, `run`).
 
 With a mixed selection the legends read "Image stroke" / "Image mask" because they only affect the
 images. The sections are hidden in view and zen mode, for collab viewers, and while drawing, typing,
 dragging, resizing or rotating. Every click is one `runExtension` call (one undo step); buttons use
-`mousedown` `preventDefault`, so Excalidraw keeps focus and Ctrl/Cmd+Z still works.
+`mousedown` `preventDefault`, so Excalidraw keeps focus and Ctrl/Cmd+Z still works. A focused
+slider can't hand focus back, and the panel is a React sibling of `<Excalidraw>` that is portaled
+into its DOM, so React never routes the slider's keydown to Excalidraw's container handler. The
+slider therefore re-dispatches Ctrl/Cmd keydowns on `.excalidraw-container` (undo, redo, etc.), and
+marks itself busy with `aria-disabled` rather than `disabled`, which would drop focus to `<body>`.
 
 **DOM dependency.** 0.18.1 has no API for adding panel sections and doesn't export its colour or
 stroke pickers, so the host attaches to `PANEL_SELECTOR` — `.App-menu__left .panelColumn` on
@@ -244,3 +284,43 @@ border is baked into the output PNG.
 - **Resize:** the border is part of the bitmap, so it scales with the element until re-applied
   (re-applying re-renders at the new size). Flips need no special handling because every outline is
   symmetric.
+
+## 11. Extension: Grayscale
+
+- **Applies to:** image elements with a loaded file.
+- **Params:** `{ amount: 0–100 }` (%; default 100), like CSS `grayscale()`: each pixel is mixed
+  towards its Rec. 709 luma by `amount`.
+- **Presets / UI:** **Grayscale** (100); the panel slider sets any amount, and 0 removes it.
+- **Stage:** colour (50). Runs on the source pixels before tint, mask and border, so bounds never
+  change and the border keeps its colour.
+
+## 12. Extension: Tint
+
+- **Applies to:** image elements with a loaded file.
+- **Params:** `{ color: "#rgb" | "#rrggbb", strength: 0–100 }`, defaults `#1971c2` and `50`. Each
+  pixel's luma is mapped onto a black → colour → white ramp (so shading and highlights survive even
+  at 100 %), then mixed with the original by `strength`. Alpha is unchanged.
+- **Presets / UI:** **Tint** (the defaults); the colour picker applies it and keeps the strength,
+  and transparent removes it.
+- **Stage:** colour (60), after grayscale (grayscale then tint gives a duotone) and before the mask.
+
+## 13. Extension: Shadow
+
+- **Applies to:** image elements with a loaded file.
+- **Params:** `{ offsetX, offsetY: −100–100, blur: 0–100, color, opacity: 0–100 }` in scene units at
+  the image's size when applied; defaults `6`, `6`, `8`, `#000000`, `35`.
+- **Presets / UI:** **Soft** (0, 4, blur 16, 25 %), **Drop** (the defaults), **Hard** (6, 6, blur 0,
+  60 %). In the panel, picking a colour applies the defaults with that colour; transparent removes it.
+- **Rendering:** the finished content's alpha (after mask and border) is offset, blurred with a
+  three-pass box blur (≈ Gaussian), tinted and drawn underneath with `compositeOver`, all by hand.
+  Seeded file ids keep output deterministic.
+- **Stage:** effect (300), last. `plan` asks for exactly the margin the offset blur needs
+  (`plan.pad`); see §4 for how bounds grow without moving the image.
+- **Caveats:**
+  - The element's bounds include the shadow margin, so selection, snapping and arrow binding use
+    the padded box.
+  - The offset is baked into the bitmap: flipping the element after applying mirrors the shadow
+    until it is re-applied (re-applying uses the current flip).
+  - The padded bitmap may exceed the 1024 px output cap by the margin.
+  - As for every stage that swaps the element's file, Excalidraw draws its grey loading placeholder
+    at the new bounds for a frame or two.
