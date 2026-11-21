@@ -958,6 +958,24 @@ describe("nested components", () => {
     expect(slotChild(api, a, nestedGroup, "R").backgroundColor).toBe("#c3fae8");
   });
 
+  it("wrapping exactly one instance nests it in a fresh group", async () => {
+    const { api, clock, created, inst } = await setup(base());
+    const b = run(api, (d) => createComponent(d, inst.ids, "Wrapper"));
+    expect(b.masterGroupId).not.toBe(inst.groupId);
+    const el = get(api, inst.ids[0]);
+    expect(tagFor(el, created.componentId)!.role).toBe("instance");
+    expect(tagFor(el, b.componentId)!.role).toBe("master");
+    clock.frame();
+    const bInst = run(api, (d) => insertInstance(d, b.componentId, { x: 600, y: 280 }));
+    clock.frame();
+    userEdit(api, { R: { backgroundColor: "#ffc9c9" } });
+    clock.frame();
+    const copy = all(api).find(
+      (e) => bInst.ids.includes(e.id) && tagFor(e, created.componentId)?.slot === "R",
+    )!;
+    expect(copy.backgroundColor).toBe("#ffc9c9");
+  });
+
   it("Ctrl/Cmd+D on a Panel instance duplicates the nested copies too", async () => {
     const { api, clock, a, b, bInst } = await nested();
     const ids = listComponents(all(api)).find((c) => c.componentId === b.componentId)!.instances[0]

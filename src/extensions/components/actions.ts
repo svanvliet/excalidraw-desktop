@@ -163,7 +163,12 @@ export function createComponent(
   const covers = (g: string) => inside(g) && membersOf.get(g)!.length === selected.size;
 
   // Reuse an existing group that is exactly the selection, if every element has it.
-  const shared = els[0].groupIds.find((g) => covers(g) && els.every((e) => e.groupIds.includes(g)));
+  // A group that already is a (nested) component's can't be reused: wrapping exactly one
+  // instance nests it in a fresh outer group.
+  const componentGroups = new Set(els.flatMap((e) => tagsOf(e).map((t) => e.groupIds[t.gi])));
+  const shared = els[0].groupIds.find(
+    (g) => covers(g) && !componentGroups.has(g) && els.every((e) => e.groupIds.includes(g)),
+  );
   const group = shared ?? newId();
   const componentId = newId();
   const label = typeof name === "string" && name.trim() ? name.trim().slice(0, 80) : undefined;

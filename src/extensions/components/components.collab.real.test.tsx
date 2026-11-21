@@ -14,7 +14,14 @@ import { CollabSession, type CollabTiming } from "../../collab/CollabSession";
 import { MEMORY_HOST_TOKEN, MemoryRelay } from "../../collab/memoryRelay";
 import type { Payload } from "../../collab/protocol";
 import type { El } from "../reactor/reactor";
-import { createComponent, insertInstance, setOverrides } from "./actions";
+import {
+  createComponent,
+  defineProperty,
+  insertInstance,
+  instanceProperties,
+  setOverrides,
+  setProperties,
+} from "./actions";
 import {
   dematerializeMaster,
   installComponents,
@@ -269,4 +276,68 @@ it("library masters: dematerialize/materialize on A reach B without promotion or
   });
   expect(sceneUpdates(b)).toBe(0);
   expect(stamps(b)).toEqual(stamps(a));
+});
+
+it("property values and nested components sync across peers with no echo", async () => {
+  const relay = new MemoryRelay();
+  const a = await peer(relay, true, fixture());
+  let outer = "";
+  let nestedKey = "";
+  act(() => {
+    runComponentCommand(a.api, (d) => {
+      const card = createComponent(d, ["R"], "Card");
+      defineProperty(d, card.componentId, {
+        name: "Title",
+        type: "text",
+        bindings: [{ elementId: "R" }],
+      });
+      const inner = insertInstance(d, card.componentId, { x: 0, y: 200 });
+      const panel = createComponent(d, inner.ids, "Panel");
+      outer = insertInstance(d, panel.componentId, { x: 400, y: 200 }).groupId;
+    });
+  });
+  await settle(relay);
+  const b = await peer(relay, false);
+  await settle(relay);
+  expect(look(b)).toEqual(look(a));
+
+  // B sets the nested Card's Title from the outer Panel instance; A only receives.
+  a.sent.length = 0;
+  act(() => {
+    runComponentCommand(b.api, (d) => {
+      nestedKey = instanceProperties(d, outer).find((t) => t.nestedKey)!.nestedKey!;
+      setProperties(d, outer, { Title: "Nested" }, { nested: nestedKey });
+    });
+  });
+  await settle(relay);
+  expect(sceneUpdates(a)).toBe(0);
+  const texts = (p: Peer) =>
+    p.api
+      .getSceneElements()
+      .filter((e) => e.type === "text")
+      .map((e) => ("text" in e ? e.text : ""))
+      .sort();
+  expect(texts(a)).toEqual(["Hi", "Hi", "Nested"]);
+  expect(look(a)).toEqual(look(b));
+
+  // A edits the Card master: both nested levels follow, the value survives, B never re-derives.
+  b.sent.length = 0;
+  edit(a, "R", { backgroundColor: "#a5d8ff" });
+  await settle(relay);
+  expect(sceneUpdates(b)).toBe(0);
+  for (const p of [a, b]) {
+    expect(texts(p)).toEqual(["Hi", "Hi", "Nested"]);
+    const fills = p.api
+      .getSceneElements()
+      .filter((e) => e.type === "rectangle")
+      .map((e) => e.backgroundColor);
+    expect(fills).toEqual(["#a5d8ff", "#a5d8ff", "#a5d8ff"]);
+  }
+  expect(look(b)).toEqual(look(a));
+  expect(stamps(b)).toEqual(stamps(a));
+
+  a.sent.length = 0;
+  b.sent.length = 0;
+  await settle(relay, 150);
+  expect(sceneUpdates(a) + sceneUpdates(b)).toBe(0);
 });
