@@ -17,6 +17,12 @@ import { ParticipantList } from "../components/ParticipantList";
 import { ViewerBar } from "../components/RoleBar";
 import type { Role } from "../collab/protocol";
 import { log } from "../lib/logger";
+import {
+  componentsOnDuplicate,
+  installComponents,
+  registerComponentActions,
+  remoteApi,
+} from "../extensions/components";
 
 export const GUEST_NAME_KEY = "excalidraw-desktop:guest-name";
 export const E2E_FLAG_KEY = "excalidraw-desktop:e2e";
@@ -71,6 +77,12 @@ export interface GuestAppProps {
 export function GuestApp({ link }: GuestAppProps) {
   const theme = useSystemTheme();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  // Components sync runs here too, so a guest's master edits reach every peer's instances.
+  const handleApi = useCallback((next: ExcalidrawImperativeAPI) => {
+    installComponents(next);
+    registerComponentActions(next);
+    setApi(next);
+  }, []);
   const [username, setUsername] = useState(readStoredName);
   const [promptOpen, setPromptOpen] = useState(() => username === "");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -78,7 +90,7 @@ export function GuestApp({ link }: GuestAppProps) {
 
   const { status, error, peers, role, editRequest, requestEdit, handlers, session } =
     useCollabSession({
-      api,
+      api: remoteApi(api),
       // Hold off joining until the guest has a name so peers never see a blank one.
       link: username && !left ? link : null,
       username,
@@ -166,7 +178,8 @@ export function GuestApp({ link }: GuestAppProps) {
       ) : null}
       <div className="guest-app__canvas">
         <Excalidraw
-          excalidrawAPI={setApi}
+          excalidrawAPI={handleApi}
+          onDuplicate={componentsOnDuplicate}
           initialData={initialData}
           onChange={handlers.onChange}
           onPointerUpdate={handlers.onPointerUpdate}

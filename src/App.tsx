@@ -57,6 +57,7 @@ import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
 import { autoLayoutCanvas, type CanvasLayoutPreset } from "./layout/canvasAction";
 import { log } from "./lib/logger";
+import { remoteApi } from "./extensions/components/host";
 import {
   registerSceneTab,
   listSceneTabs,
@@ -361,7 +362,9 @@ export function App() {
     return { publicBase: relayLocalBase, roomId: collabSession.roomId, key: collabSession.key };
   }, [collabSession, relayRunning, relayLocalBase, relayRoomId]);
   const collabApi = useMemo(
-    () => (collabTabId ? (apisRef.current.get(collabTabId) ?? null) : null),
+    // Remote applies are tagged so the components engine doesn't re-derive them (the sender
+    // already synced its instances).
+    () => remoteApi(collabTabId ? (apisRef.current.get(collabTabId) ?? null) : null),
     // apiTick re-reads the ref once the bound tab's canvas mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [collabTabId, apiTick],

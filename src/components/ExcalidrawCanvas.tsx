@@ -22,6 +22,13 @@ import {
   saveLibrary,
 } from "../lib/libraryStore";
 import { log } from "../lib/logger";
+import {
+  componentsOnDuplicate,
+  installComponents,
+  registerComponentActions,
+  reseedComponents,
+  uninstallComponents,
+} from "../extensions/components";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -95,6 +102,9 @@ export function ExcalidrawCanvas({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       registerAutoLayoutAction(api);
+      // Before onApi, so the parent can wrap this editor's collab API right away.
+      installComponents(api);
+      registerComponentActions(api);
       apiRef.current = api;
       setApi(api);
       onApi(api);
@@ -110,6 +120,17 @@ export function ExcalidrawCanvas({
   useEffect(() => {
     contentKeyRef.current = null;
   }, [initialData]);
+
+  // Components: a file opened into this editor starts a fresh sync baseline; stop on unmount.
+  useEffect(() => {
+    if (api) reseedComponents(api);
+  }, [api, initialData]);
+  useEffect(
+    () => () => {
+      if (apiRef.current) uninstallComponents(apiRef.current);
+    },
+    [],
+  );
 
   const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
     (elements, appState, files) => {
@@ -194,6 +215,7 @@ export function ExcalidrawCanvas({
         excalidrawAPI={handleApi}
         onChange={handleChange}
         onLibraryChange={handleLibraryChange}
+        onDuplicate={componentsOnDuplicate}
         aiEnabled={aiEnabled ?? false}
         isCollaborating={isCollaborating ?? false}
         // `undefined` (not false) hands view mode back to the user when promoted.
