@@ -1,7 +1,8 @@
 import "../agent/scene/testHarness";
 import { describe, expect, it } from "vitest";
 import spec from "./commands.json";
-import { formatShortcut, LAYOUT_COMMANDS, LAYOUT_MENU } from "./commands";
+import { LAYOUT_COMMANDS, LAYOUT_MENU } from "./commands";
+import { formatShortcut } from "./format";
 import { MENU_ITEM_IDS } from "../ipc/menuEvents";
 
 describe("Layout commands", () => {

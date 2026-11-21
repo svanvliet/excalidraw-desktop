@@ -49,13 +49,3 @@ export function runLayoutCommand(id: string, api: ExcalidrawImperativeAPI): bool
   void cmd.run(api);
   return true;
 }
-
-/** "Alt+Shift+L" → "⌥⇧L" on macOS. */
-export function formatShortcut(shortcut: string, mac: boolean): string {
-  if (!mac) return shortcut;
-  const sym: Record<string, string> = { Alt: "⌥", Shift: "⇧", Ctrl: "⌃", Cmd: "⌘", Mod: "⌘" };
-  return shortcut
-    .split("+")
-    .map((k) => sym[k] ?? k)
-    .join("");
-}

@@ -100,8 +100,7 @@ export function routeArrows(
 
   // Per start shape, the farthest arrow first: it lays the bus the nearer ones then branch off.
   const order = [...requests].sort(
-    (a, b) =>
-      cmp(a.start.key, b.start.key) || endDistance(b) - endDistance(a) || cmp(a.id, b.id),
+    (a, b) => cmp(a.start.key, b.start.key) || endDistance(b) - endDistance(a) || cmp(a.id, b.id),
   );
   for (const req of order) {
     const shared = [

@@ -762,6 +762,10 @@ export function App() {
         liveElsewhere={!!collabSession && collabTabId !== activeTabId}
         onToggleAgent={aiEnabled ? toggleAgentPanel : undefined}
         agentOpen={aiEnabled && agentPanelOpen}
+        onLayoutCommand={(id) => {
+          const api = activeTabId ? apisRef.current.get(activeTabId) : undefined;
+          if (api) runLayoutCommand(id, api);
+        }}
       >
         <RecentMenu
           paths={recentPaths}

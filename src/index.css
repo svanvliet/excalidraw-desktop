@@ -1089,6 +1089,23 @@ button {
   text-align: left;
 }
 
+.popover__panel--compact {
+  min-width: 220px;
+}
+
+.popover__item--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.popover__item-shortcut {
+  font-size: var(--font-size-xs);
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+
 .popover__separator {
   height: 1px;
   background: var(--border-subtle);

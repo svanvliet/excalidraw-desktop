@@ -11,6 +11,7 @@ import {
   UsersIcon,
 } from "./icons";
 import { ThemeToggle } from "./ThemeToggle";
+import { LayoutMenu } from "./LayoutMenu";
 import { displayName } from "../lib/fileFormat";
 
 function isMac(): boolean {
@@ -40,6 +41,8 @@ export interface ToolbarProps {
   onToggleAgent?: () => void;
   /** AI agent panel is open. */
   agentOpen?: boolean;
+  /** Runs a Layout command (src/layout/commands.json). Omit to hide the Layout dropdown. */
+  onLayoutCommand?: (id: string) => void;
   /** Slot rendered between Open and Save — used for the Recent menu. */
   children?: ReactNode;
 }
@@ -68,6 +71,7 @@ export function Toolbar({
   liveElsewhere = false,
   onToggleAgent,
   agentOpen = false,
+  onLayoutCommand,
   children,
 }: ToolbarProps) {
   const live = livePeerCount !== null && livePeerCount !== undefined;
@@ -127,6 +131,12 @@ export function Toolbar({
           >
             <ExportIcon />
           </button>
+        ) : null}
+        {onLayoutCommand ? (
+          <>
+            <span className="toolbar__divider" aria-hidden="true" />
+            <LayoutMenu onRun={onLayoutCommand} />
+          </>
         ) : null}
         {onShare || onJoin ? <span className="toolbar__divider" aria-hidden="true" /> : null}
         {onShare ? (

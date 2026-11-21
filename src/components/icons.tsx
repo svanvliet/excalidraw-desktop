@@ -57,6 +57,16 @@ export const ExportIcon = (props: IconProps) => (
   </Icon>
 );
 
+/** Auto-layout / Layout menu: a small org chart (parent, bus, two children). */
+export const LayoutIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="9" y="3" width="6" height="5" rx="1" />
+    <rect x="3" y="16" width="6" height="5" rx="1" />
+    <rect x="15" y="16" width="6" height="5" rx="1" />
+    <path d="M12 8v4M6 16v-4h12v4" />
+  </Icon>
+);
+
 export const SettingsIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="3" />
