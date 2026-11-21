@@ -125,9 +125,12 @@ export class Draft {
     return next as T;
   }
 
-  add(el: El): void {
+  /** Add on top of the z-order, or right after `afterId` when given. */
+  add(el: El, afterId?: string): void {
     if (this.map.has(el.id)) throw new ToolError(`Element id "${el.id}" already exists`);
-    this.order.push(el.id);
+    const at = afterId === undefined ? -1 : this.order.indexOf(afterId);
+    if (at < 0) this.order.push(el.id);
+    else this.order.splice(at + 1, 0, el.id);
     this.map.set(el.id, el);
     this.changed.add(el.id);
   }
