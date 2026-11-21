@@ -141,6 +141,13 @@ IMMEDIATELY })`. Several selected elements become **one undo step**.
 - **Collab:** it's an ordinary scene change plus files, so peers receive the output and intent like
   any other edit. Peers without extensions just see the output.
 
+**Derived sync (experimental).** Features where one element drives others (components, named
+styles, smart containers) need a different path: a "reactor" that re-derives targets with
+`captureUpdate: NEVER` whenever a source changes locally. The Wave 1 spike validated undo/redo,
+drag performance, collab convergence, text re-measure and duplicate→instance against the real
+0.18.1 editor. See [reactor-spike.md](reactor-spike.md) for the findings and the recommended
+Components v1 design. The prototype in `src/extensions/reactor/` is not wired into the app.
+
 ## 6. UI surface
 
 Image controls live **inside Excalidraw's own properties panel** (the left "selected shape actions"
