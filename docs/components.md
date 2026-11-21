@@ -194,11 +194,43 @@ reseeds whenever `initialData` changes.
 The shortcut isn't a registered Excalidraw action. Excalidraw cancels any shortcut that two
 actions match, and its hyperlink action matches every Ctrl/Cmd+K, with or without Alt.
 
+## 7a. UI: Components tab, panel section, My components (FR-55)
+
+Code lives in `src/components/componentsUi/`, and the personal store in `src/lib/componentLibraryStore.ts`.
+
+- **Components tab** (`ComponentsPanel.tsx`) is a `SidebarTabs` tab next to Layers. It has three lists, each with `exportToSvg` thumbnails:
+  - **In this drawing**: the masters on this canvas.
+  - **My components**: the personal cross-document library.
+  - **From your library**: Excalidraw library items, each with a **Make component** action.
+  - Click a row to place an instance at the viewport centre, or drag it onto the canvas. Either way it's one undo step.
+  - My components rows can also be renamed, removed, or exported as `.excalidrawlib`.
+- **My components** is stored in app data per profile (`my-components.json`), following the pattern of `libraryStore.ts`:
+  - Changes fan out to every tab.
+  - A failed load never wipes the file.
+  - Collab guests can't save to it.
+  - Outside Tauri it lives in memory.
+  - Each entry is a snapshot of the master's elements plus the `BinaryFiles` they reference, so image components work. Excalidraw's own library rejects images. On insert the files go through `api.addFiles` first.
+  - `.excalidrawlib` can't carry files, so export drops images, with a warning.
+- **Inserting** a My components entry:
+  - If the drawing already has the master, it places an instance.
+  - Otherwise it places only an instance tagged `source:"library"` (§4a): the master stays in My components.
+  - When the library-master engine is missing, the master is placed beside the instance instead.
+- **Panel section** (`ComponentSection.tsx`, in `PANEL_SECTIONS`) appears when the selection is a component.
+  - Plain shapes: **Create component**.
+  - Master: **Save to / Update in My components**, and **Move to My components**, which saves it and dematerializes the master.
+  - Instance: **Go to master**, **Reset overrides**, **Detach**, and a per-slot override list with a reset for each slot.
+  - Library-backed instance: **Edit master…**, or **Add to my components** if this machine's library lacks the `libraryId` (`adoptInstanceAsMaster` plus a save).
+- **Edit master…** materializes the master and shows a banner (`MasterEditBanner.tsx`) with **Done** and **Cancel**.
+  - **Done** saves the master, with its images, to My components, then dematerializes it.
+  - **Cancel** removes the master and restores the instances as one undo step.
+- **Create** is available from Alt/Option+Cmd/Ctrl+K, the panel, and **Edit → Create Component** in the native menu (`excalidraw:edit:createComponent`, no accelerator because the shortcut is handled in the webview).
+
 ## 8. Agent tools
 
 `create_component`, `insert_instance`, `list_components`, `set_overrides`,
-`reset_overrides` and `detach_instance` are described in `docs/ai-integration.md`. All of the
-edit tools work inside `apply_ops`.
+`reset_overrides` and `detach_instance` are described in `docs/ai-integration.md`, along with
+`list_my_components` and `insert_my_component` for My components (§7a). All of the edit tools
+work inside `apply_ops`.
 
 `get_scene_summary` rows carry
 `cmp: { id, role, slot, group, overrides? }`, and `get_elements` returns a `components` map.
@@ -211,7 +243,10 @@ reverted.
 ## 9. Out of scope and caveats
 
 - Nested components, component properties and styles (Wave 3). Nesting is rejected.
-- The UI (sidebar tab, panel section and personal component library) is a follow-up lane.
+- My components entries are snapshots. Updating one doesn't re-sync other drawings that already
+  hold instances of it: their library-backed instances update the next time their master is edited
+  there with Edit master… → Done.
+- `.excalidrawlib` export drops images (the format has no files); the UI warns.
 - Bound text in rotated instances, and arrow labels, have only light test coverage.
 - Alt-drag role swap is covered by a unit test of `componentsOnDuplicate`, not by a real
   browser drag.
