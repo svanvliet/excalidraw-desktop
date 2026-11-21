@@ -24,7 +24,7 @@ function fakeApi(initial: Array<Partial<El> & { id: string }>) {
   );
   const listeners = new Set<(els: readonly El[]) => void>();
   const api: ReactorApi = {
-    getSceneElementsIncludingDeleted: () => elements,
+    getSceneElementsIncludingDeleted: (() => elements) as never,
     onChange: ((cb: (els: readonly El[]) => void) => {
       listeners.add(cb);
       return () => listeners.delete(cb);
