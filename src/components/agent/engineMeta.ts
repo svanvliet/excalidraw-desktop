@@ -126,6 +126,12 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   set_overrides: "Overrode instance values",
   reset_overrides: "Reset instance overrides",
   detach_instance: "Detached an instance",
+  create_container: "Made a container",
+  update_container: "Updated a container",
+  remove_container: "Removed a container",
+  add_to_container: "Added to a container",
+  remove_from_container: "Took elements out of a container",
+  list_containers: "Read the containers",
 };
 
 export function toolLabel(name: string, title: string | null): string {
