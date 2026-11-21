@@ -144,6 +144,10 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 
 - **FR-54** **Components**: a selection or group can become a component **master** on the canvas; duplicating, pasting or Alt-dragging the master (or `insert_instance`) places **instances** that follow it live: geometry under each instance's own translate / scale / rotation, styles, text (re-measured, never copied) and added or removed children. Each instance can override text, fill/stroke colour, opacity, link and image per child, reset them, or be detached. A master edit and the instance updates it causes are **one undo step**. Deleting the master promotes one instance (undo restores the original). Component data is versioned `customData` (D-DX2) that survives save, reload and collab. The agent gets `create_component`, `insert_instance`, `list_components`, `set_overrides`, `reset_overrides` and `detach_instance`. The UI (sidebar tab, panel section) is a follow-up; until then Alt/Option+Cmd/Ctrl+K creates a component. See `docs/components.md`.
 
+### 4.15 Named styles (DX wave 2)
+
+- **FR-58** **Named styles**: elements link to a named style (stroke and fill colour, fill style, stroke width and style, sloppiness, opacity, edges, font family and size, text colour). Editing the style updates every linked element live, including component instances through their master, as **one undo step**. A direct edit to a linked element becomes a per-element **override** until reset, or can be pushed into the style. Definitions are versioned `customData` on the linked elements (D-DX2), so styles survive save, reload, paste and collab; a style exists while an element uses it. UI: a **Styles** sidebar tab (create from selection, apply, select, rename, edit, delete → unlink) and a **Style** picker in the properties panel. The agent gets `list_styles`, `create_style`, `apply_style`, `update_style`, `delete_style` and `reset_style_overrides`. See `docs/styles.md`.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.
