@@ -159,6 +159,8 @@ export const CANVAS_TOOL_NAMES = [
   "apply_ops",
   "apply_extension",
   "remove_extension",
+  "list_layers",
+  "update_layer",
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
 

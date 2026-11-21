@@ -41,6 +41,7 @@ import { isFoldedText, rowOf } from "./scene/summary";
 import { applyPreparedToDraft, EXTENSION_TOOLS, prepareExtensionTool } from "./scene/extensions";
 import type { Prepared } from "../extensions/runner";
 import { extensionStateOf } from "../extensions/stack";
+import { applyLayerEdit, buildLayerTree, flattenLayers } from "../layers/layers";
 import { commitDraft } from "./scene/turns";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
@@ -67,6 +68,7 @@ const EDIT_TOOLS = new Set([
   "arrange",
   "move_elements",
   "duplicate_elements",
+  "update_layer",
   "apply_extension",
   "remove_extension",
 ]);
@@ -1243,6 +1245,32 @@ function arrange(draft: Draft, args: Args): unknown {
   return { arranged: targets.map((el) => el.id) };
 }
 
+// --- layers ------------------------------------------------------------------
+
+function listLayers(tab: SceneTab, tabId: string): ToolContent[] {
+  const elements = tab.api.getSceneElementsIncludingDeleted();
+  return json({
+    tabId,
+    revision: revisionOf(elements),
+    layers: flattenLayers(buildLayerTree(elements)),
+  });
+}
+
+function updateLayer(draft: Draft, args: Args): unknown {
+  const id = optStr(args, "id");
+  if (!id) throw new ToolError(`"id" is required`);
+  const name = optStr(args, "name");
+  const locked = args.locked;
+  if (locked !== undefined && typeof locked !== "boolean") {
+    throw new ToolError(`"locked" must be a boolean`);
+  }
+  if (name === undefined && locked === undefined) {
+    throw new ToolError(`Pass "name" and/or "locked"`);
+  }
+  const kind = applyLayerEdit(draft, id, { name, locked });
+  return { updated: id, kind };
+}
+
 function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknown {
   switch (tool) {
     case "add_elements":
@@ -1263,6 +1291,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return moveBy(draft, args);
     case "duplicate_elements":
       return duplicate(draft, args);
+    case "update_layer":
+      return updateLayer(draft, args);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);
@@ -1387,6 +1417,8 @@ export async function runSceneTool(
       return canvasState(tab, tabId);
     case "set_canvas":
       return setCanvas(tab, tabId, args);
+    case "list_layers":
+      return listLayers(tab, tabId);
     default:
       return runEdit(tool, tab, tabId, args);
   }

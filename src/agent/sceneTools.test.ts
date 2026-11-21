@@ -746,3 +746,36 @@ describe("turns", () => {
     expect(api.byId("b").y).toBe(0);
   });
 });
+
+describe("layer tools", () => {
+  it("list_layers returns the tree rows; update_layer renames and locks a group in one undo step", async () => {
+    setup(
+      boxes().map((e) => (e.id === "b" || e.id === "c" ? ({ ...e, groupIds: ["g1"] } as El) : e)),
+    );
+    const before = await call("list_layers");
+    expect(before.layers.map((r: { id: string; depth: number }) => [r.id, r.depth])).toEqual([
+      ["g1", 0],
+      ["c", 1],
+      ["b", 1],
+      ["a", 0],
+    ]);
+    expect(before.layers.find((r: { id: string }) => r.id === "a").label).toBe("Alpha");
+
+    const res = await call("update_layer", { id: "g1", name: "Pair", locked: true });
+    expect(res).toMatchObject({ updated: "g1", kind: "group" });
+    expect(api.undoStack).toHaveLength(1);
+    expect(api.byId("b").locked && api.byId("c").locked).toBe(true);
+    const after = await call("list_layers");
+    expect(after.layers[0]).toMatchObject({ id: "g1", name: "Pair", locked: true });
+  });
+
+  it("update_layer is an apply_ops edit tool and validates its args", async () => {
+    setup(boxes());
+    await call("apply_ops", { ops: [{ tool: "update_layer", args: { id: "b", name: "Logo" } }] });
+    expect(api.byId("b").customData).toEqual({ "excalidrawDesktop.layer": { v: 1, name: "Logo" } });
+    await expect(runSceneTool("update_layer", { id: "b" }, TAB)).rejects.toThrow(/name.*locked/);
+    await expect(runSceneTool("update_layer", { id: "zz", locked: true }, TAB)).rejects.toThrow(
+      /No element or group/,
+    );
+  });
+});
