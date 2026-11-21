@@ -1,6 +1,7 @@
 /**
- * Smart-container commands for the shortcut and the (future) Layout menu / toolbar. This is the
- * only place they're registered, so they can move into the shared Layout command list as a unit.
+ * Smart-container commands: the shortcut action and their `run`s. The native Layout menu and the
+ * toolbar's Layout dropdown list them via src/layout/commands.json (labels, order) and
+ * src/layout/commands.ts (which delegates to `run` here).
  */
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";

@@ -614,9 +614,35 @@
       }
     },
     {
+      "name": "tidy_arrows",
+      "readOnly": false,
+      "description": "Re-route arrows bound at both ends as orthogonal (elbow) paths around the other shapes, without moving any shape (runs locally). Arrows leaving the same shape share a trunk, org-chart style; ends pinned to a side (set_arrow_anchors) keep that side. ids: arrows, or shapes whose arrows to tidy; omit for every arrow. convert: also turn bound straight/curved arrows into elbow arrows first (default false; otherwise only elbow arrows are tidied). Returns routed, skipped (no clear route; left unchanged) and converted ids. Works inside apply_ops. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "convert": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, tidy_arrows, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
