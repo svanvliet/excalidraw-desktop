@@ -84,10 +84,11 @@ on the shared reactor (D-DX1) with `apply: "mutate"`, so:
 
 ### Rule order: styles before components
 
-`installComponents` installs `[createStyleRule(), createComponentRule()]` on one reactor. The
-reactor now runs key-level rules **in order** and **chains their writes**: elements an earlier
-rule writes in a flush count as changes for later rules in that same flush, never earlier ones.
-This was a small, generic change to `src/extensions/reactor/reactor.ts`, covered by
+`installComponents` installs `[createStyleRule(), createContainerRule(), createComponentRule()]`
+on one reactor (containers: `docs/containers.md` §3). The reactor runs key-level rules **in
+order** and **chains their writes**: elements a rule writes in a flush count as changes for the
+later rules in the same pass. Earlier rules never re-run for later writes unless they opt in with
+`seesLaterWrites` (next pass, bounded by `maxPasses`); only the container rule does. This is a small, generic part of `src/extensions/reactor/reactor.ts`, covered by
 `reactor.real.test.tsx`.
 
 Why styles first:
@@ -98,8 +99,11 @@ Why styles first:
 - **It is never an instance override.** Instance children are not style members (`links`
   excludes them), so the styles rule never writes to them. Their new look arrives through the
   components rule as a master change, which is not recorded as an override.
-- **Components second can't be undone by styles.** Components writes only instance children,
-  which styles ignores, so no ping-pong and no second pass is needed.
+- **Components last can't be undone by styles.** Components writes only instance children,
+  which styles ignores, so no ping-pong. Containers write only positions and box sizes, never
+  style keys, so a later pass that re-checks a styled element finds nothing to change.
+- **Containers in between.** A font change grows text, the container holding it re-flows, and
+  components carries both to instances, all in one flush and one undo step.
 
 The other order would let components copy the master's _old_ look to instances before styles
 updated the master, needing a second flush and a second undo step.
@@ -108,8 +112,8 @@ Instance children carry no style tag of their own: components copies only the ma
 `elementStyleInfo(el, get)` reports their style from the master slot with `fromMaster: true`, and
 the panel shows "Follows its component master" for them. Style actions reject instance children.
 
-The agent path (`runEdit` in `sceneTools.ts`) mirrors this order: `syncStylesEdited(draft)` runs
-before the components `syncEdited(draft)`.
+The agent path (`runEdit` in `sceneTools.ts`) mirrors this order: `syncStylesEdited(draft)`, then
+the container re-flow (`reflowEdited`), then the components `syncEdited(draft)`.
 
 ## 3. UI
 

@@ -208,6 +208,12 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `set_overrides`         | Per-slot instance overrides: text, colours, opacity, link, image (`null` clears)                         |
 | `reset_overrides`       | Clears an instance's overrides (all, or some slots/keys)                                                 |
 | `detach_instance`       | Turns an instance into plain elements that keep their look                                               |
+| `create_container`      | Makes a stack container from elements (direction, gap, padding, align, sizing)                           |
+| `update_container`      | Changes a container's settings and/or child `order`                                                      |
+| `remove_container`      | Dissolves a container; `keepBox` keeps a plain group with its box                                        |
+| `add_to_container`      | Moves elements into a container, optionally at `index`                                                   |
+| `remove_from_container` | Takes elements out of their container                                                                    |
+| `list_containers`       | Lists containers with their settings and ordered children                                                |
 | `list_styles`           | Named styles with props and linked element ids; no undo step (FR-58, `docs/styles.md`)                   |
 | `create_style`          | New style from `ids` (their look, or `props`), linked to them                                            |
 | `apply_style`           | Links `ids` to a style (dropping their overrides); `null` unlinks                                        |

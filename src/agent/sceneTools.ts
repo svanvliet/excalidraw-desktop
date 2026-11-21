@@ -78,6 +78,18 @@ import {
   tagOf,
 } from "../extensions/components/model";
 import {
+  addToContainer,
+  describeContainers,
+  makeContainer,
+  removeContainer,
+  removeFromContainer,
+  resolveContainer,
+  updateContainer,
+  type ContainerChanges,
+} from "../layout/containers/actions";
+import { reflowDraft } from "../layout/containers/draftAccess";
+import { isActiveBox } from "../layout/containers/model";
+import {
   applyStyle,
   createStyle,
   deleteStyle,
@@ -129,6 +141,11 @@ const EDIT_TOOLS = new Set([
   "set_overrides",
   "reset_overrides",
   "detach_instance",
+  "create_container",
+  "update_container",
+  "remove_container",
+  "add_to_container",
+  "remove_from_container",
   "create_style",
   "apply_style",
   "update_style",
@@ -1555,6 +1572,84 @@ function detachInstanceTool(draft: Draft, args: Args) {
   return { detached: detachInstance(draft, args.instance) };
 }
 
+// --- smart containers (docs/plan.md D-DX13) -------------------------------------
+
+const CONTAINER_KEYS = [
+  "direction",
+  "gap",
+  "padding",
+  "align",
+  "justify",
+  "sizing",
+  "width",
+  "height",
+] as const;
+
+function containerChanges(args: Args): ContainerChanges {
+  const out: Record<string, unknown> = {};
+  for (const k of CONTAINER_KEYS) if (args[k] !== undefined) out[k] = args[k];
+  return out as ContainerChanges;
+}
+
+function describeContainer(draft: Draft, containerId: string) {
+  return describeContainers(draft).find((c) => c.containerId === containerId);
+}
+
+function createContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const made = makeContainer(draft, ids, containerChanges(args));
+  return { ...made, container: describeContainer(draft, made.containerId) };
+}
+
+function updateContainerTool(draft: Draft, args: Args) {
+  const order = strArray(args, "order");
+  const c = updateContainer(draft, args.containerId, {
+    ...containerChanges(args),
+    ...(order ? { order } : {}),
+  });
+  return { container: describeContainer(draft, c.box.id) };
+}
+
+function removeContainerTool(draft: Draft, args: Args) {
+  if (args.keepBox !== undefined && typeof args.keepBox !== "boolean") {
+    throw new ToolError(`"keepBox" must be a boolean`);
+  }
+  removeContainer(draft, args.containerId, { keepBox: args.keepBox === true });
+  return { removed: args.containerId };
+}
+
+function addToContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const added = addToContainer(draft, args.containerId, ids, optNum(args, "index"));
+  return {
+    added,
+    container: describeContainer(draft, resolveContainer(draft, args.containerId).box.id),
+  };
+}
+
+function removeFromContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  return { removed: removeFromContainer(draft, ids) };
+}
+
+function listContainersTool(tab: SceneTab, tabId: string): ToolContent[] {
+  const elements = tab.api.getSceneElementsIncludingDeleted();
+  return json({
+    tabId,
+    revision: revisionOf(elements),
+    containers: describeContainers(new Draft(elements)),
+  });
+}
+
+/** Containers holding anything a generic edit touched re-flow in the same step. */
+function reflowEdited(draft: Draft): void {
+  if (!draft.changed.size || !draft.live().some(isActiveBox)) return;
+  reflowDraft(draft, [...draft.changed]);
+}
+
 // --- named styles (docs/styles.md) ------------------------------------------
 
 function listStylesTool(tab: SceneTab, tabId: string): ToolContent[] {
@@ -1712,6 +1807,16 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return resetOverridesTool(draft, args);
     case "detach_instance":
       return detachInstanceTool(draft, args);
+    case "create_container":
+      return createContainerTool(draft, args);
+    case "update_container":
+      return updateContainerTool(draft, args);
+    case "remove_container":
+      return removeContainerTool(draft, args);
+    case "add_to_container":
+      return addToContainerTool(draft, args);
+    case "remove_from_container":
+      return removeFromContainerTool(draft, args);
     case "create_style":
       return createStyleTool(draft, args);
     case "apply_style":
@@ -1818,9 +1923,11 @@ async function runEdit(
         "The canvas kept changing while the layout was being computed; no changes were applied. Retry.",
       );
     }
-    // Styles first, then components (the live reactor's rule order, D-DX12): direct edits to
-    // styled elements become style overrides, and styled master children reach their instances.
+    // The live reactor's rule order (D-DX12, D-DX13): styles (direct edits to styled elements
+    // become overrides; font changes re-measure text), then containers touched by the edit or by
+    // the style sync re-flow, then components keep instances in sync.
     syncStylesEdited(draft);
+    reflowEdited(draft);
     syncEdited(draft);
     commitDraft(tabId, tab, draft, ctx.files);
     return json({
@@ -1877,6 +1984,8 @@ export async function runSceneTool(
       return getShapeData(tab, tabId, args);
     case "list_components":
       return listComponentsTool(tab, tabId);
+    case "list_containers":
+      return listContainersTool(tab, tabId);
     case "list_styles":
       return listStylesTool(tab, tabId);
     default:
