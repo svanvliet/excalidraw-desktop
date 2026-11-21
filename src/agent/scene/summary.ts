@@ -3,6 +3,7 @@ import { elementStyleInfo } from "../../extensions/styles/model";
 import { extensionStateOf } from "../../extensions/stack";
 import { elementComponentInfo } from "../../extensions/components/model";
 import { isElbowArrow, sideOf } from "../../lib/elbowAnchors";
+import { endAnchors } from "../../lib/lineAnchors";
 import { dataRecord } from "../../lib/shapeData";
 import { type Draft, type El, isLinear, isText } from "./draft";
 
@@ -86,6 +87,11 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
     row.elbow = true;
     const start = sideOf(el.startBinding?.fixedPoint);
     const end = sideOf(el.endBinding?.fixedPoint);
+    if (start) row.startAnchor = start;
+    if (end) row.endAnchor = end;
+  } else if (el.type === "arrow") {
+    // Straight / curved ends pinned to a face midpoint or centre (D-DX15).
+    const { start, end } = endAnchors(el as never);
     if (start) row.startAnchor = start;
     if (end) row.endAnchor = end;
   }

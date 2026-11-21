@@ -35,6 +35,7 @@
 | DX-6 | DX wave 2: Smart containers                                                                   | ✅     | Stack containers (gap, padding, align, distribute, hug or fixed), live re-flow on the reactor (one undo step, no collab echo), Container panel section + Alt/Option+Shift+A, 6 MCP tools (FR-59, D-DX13). Vitest + `e2e/containers.spec.ts` green. Layout menu/toolbar entries via DX-7.                                                                                                                                                                          |
 | DX-7 | DX wave 2: Tidy arrows + Layout menu                                                          | ✅     | Layout ▸ Tidy Arrows (selection or all, one undo step, optional convert) with an orthogonal obstacle-avoiding router and org-chart trunks; top-level Layout menu + toolbar Layout dropdown from one command list (auto-layout, tidy, containers); `tidy_arrows` MCP tool (FR-60, D-DX14). Vitest + `e2e/tidy-arrows.spec.ts` green.                                                                                                                               |
 | DX-4 | DX wave 2: Component properties + nested components                                           | ✅     | Typed properties bound to slots (instance values = overrides), Properties panel section, nested components (cycles rejected, cascade sync, overrides at both levels), 3 MCP tools (FR-56, FR-57, D-DX11). Real-Excalidraw + collab vitest and `e2e/component-properties.spec.ts` (incl. real Alt-drag) green.                                                                                                                                                     |
+| DX-8 | DX wave 2: Line anchors (face-centre snap)                                                    | ✅     | Snap dots at face midpoints + centre while dragging an arrow end; release within 12px snaps, binds and pins the end so it follows move/resize/rotate (straight, curved, elbow; Cmd/Ctrl bypass; setting). Anchors panel + `set_arrow_anchors`/`connect` pin straight ends (FR-61, D-DX15). Vitest + `e2e/line-anchors.spec.ts` green.                                                                                                                             |
 
 ## Acceptance checks (per milestone)
 
@@ -187,6 +188,13 @@
 - [x] Toolbar Layout ▸ Tidy Arrows on an org chart: no arrow crosses a non-endpoint card, shapes unmoved, one undo restores (Playwright `tidy-arrows.spec.ts`).
 - [ ] Manual run in the packaged macOS/Windows app.
 
+### DX Wave 2 — Line anchors (face-centre snap)
+
+- [x] Face points, hit-testing, snap patches and pin re-application for move/resize/rotate (Vitest `lineAnchors.test.ts`, `rule` via `anchors.real.test.tsx`).
+- [x] Pinned ends follow shapes in real Excalidraw, one undo step, no echo; panel pin/free undo (Vitest `anchors.real.test.tsx`, `AnchorsSection`).
+- [x] `set_arrow_anchors` (incl. `free`, inside `apply_ops`), `connect` `elbow: false` anchors, summary anchors, tool moves keep pins (Vitest `sceneTools`).
+- [x] Drag end onto a dot, shape drag follows, undo; Cmd/Ctrl bypass; arrow-tool creation; panel pin/free (Playwright `line-anchors.spec.ts`).
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -212,3 +220,4 @@
 | 2026-11-22 | DX-3       | ⬜ → ✅   | Components UI (FR-55, D-DX10).                                                                                                         |
 | 2026-11-21 | DX-7       | — → ✅    | Tidy Arrows + Layout menu/toolbar (FR-60, D-DX14).                                                                                     |
 | 2026-11-22 | DX-4       | ⬜ → ✅   | Component properties and nested components (FR-56, FR-57, D-DX11).                                                                     |
+| 2026-11-22 | DX-8       | — → ✅    | Line anchors / face-centre snap (FR-61, D-DX15).                                                                                       |

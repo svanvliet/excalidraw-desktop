@@ -21,6 +21,7 @@ import {
   type LinearEl,
 } from "../agent/scene/draft";
 import { anchorPoint, fixedPointFor, sideOf, SIDES } from "../lib/elbowAnchors";
+import { activePin, hasPin, PIN_KEY } from "../lib/lineAnchors";
 import { log } from "../lib/logger";
 import { extractGraph, layoutTargets } from "./graph";
 import { routeArrows, type Obstacle, type Port, type RouteEnd, type RouteRequest } from "./route";
@@ -136,6 +137,8 @@ export function tidyArrowsDraft(draft: Draft, opts: TidyOptions = {}): TidySumma
       fixedSegments: fixedSegmentsFor(points),
       startIsSpecial: false,
       endIsSpecial: false,
+      // An elbow arrow pins by fixedPoint; drop the straight-arrow pin it was converted from.
+      ...(hasPin(arrow) ? { customData: withoutPin(arrow.customData) } : {}),
     } as Partial<LinearEl>);
     // Written as-is: Excalidraw re-routing it on commit would throw the route away.
     draft.reroute.delete(arrow.id);
@@ -144,6 +147,12 @@ export function tidyArrowsDraft(draft: Draft, opts: TidyOptions = {}): TidySumma
     summary.routed.push(arrow.id);
   }
   return summary;
+}
+
+function withoutPin(data: Record<string, unknown> | undefined): Record<string, unknown> {
+  const { [PIN_KEY]: _pin, ...rest } = data ?? {};
+  void _pin;
+  return rest;
 }
 
 /** Arrows to tidy: bound at both ends to two different unrotated shapes. */
@@ -177,11 +186,16 @@ const centre = (el: El): [number, number] => [el.x + el.width / 2, el.y + el.hei
  */
 function endSides(draft: Draft, arrows: readonly LinearEl[]): Map<string, Side> {
   const out = new Map<string, Side>();
-  const pinnedSide = (a: LinearEl, b: Binding) =>
-    isElbow(a) ? sideOf((b as { fixedPoint?: [number, number] }).fixedPoint) : null;
+  // Straight/curved arrows being converted keep a face-centre pin (D-DX15) as their side.
+  const pinnedSide = (a: LinearEl, end: "start" | "end"): Side | null => {
+    if (isElbow(a))
+      return sideOf((a[`${end}Binding`] as { fixedPoint?: [number, number] }).fixedPoint);
+    const anchor = activePin(a as never, end)?.anchor;
+    return anchor && anchor !== "center" ? anchor : null;
+  };
   for (const a of arrows) {
-    const ps = pinnedSide(a, a.startBinding!);
-    const pe = pinnedSide(a, a.endBinding!);
+    const ps = pinnedSide(a, "start");
+    const pe = pinnedSide(a, "end");
     if (ps) out.set(`s:${a.id}`, ps);
     if (pe) out.set(`e:${a.id}`, pe);
   }

@@ -7,6 +7,7 @@ import { boundsOf, Draft, ToolError, type El, type LinearEl } from "../agent/sce
 type FP = { fixedPoint?: [number, number] };
 const fp = (b: unknown) => (b as FP).fixedPoint;
 import { fixedPointFor, sideOf } from "../lib/elbowAnchors";
+import { PIN_KEY } from "../lib/lineAnchors";
 import { pathCrossesBox, type Pt } from "./route";
 import { fixedSegmentsFor, tidyArrowsDraft } from "./tidy";
 
@@ -124,6 +125,19 @@ describe("tidyArrowsDraft", () => {
     expect(a.elbowed).toBe(true);
     expect(a.roundness).toBeNull();
     expectClean(d, ["a1", "a2", "a3"]);
+  });
+
+  it("keeps a straight arrow's face-centre pin as its side when converting", () => {
+    const els = orgChart(false).map((e) =>
+      e.id === "a1"
+        ? ({ ...e, customData: { [PIN_KEY]: { start: { id: "ceo", anchor: "w" } } } } as El)
+        : e,
+    );
+    const d = new Draft(els);
+    tidyArrowsDraft(d, { convert: true });
+    const a = d.get("a1") as LinearEl;
+    expect(sideOf(fp(a.startBinding))).toBe("w");
+    expect(a.customData?.[PIN_KEY]).toBeUndefined();
   });
 });
 

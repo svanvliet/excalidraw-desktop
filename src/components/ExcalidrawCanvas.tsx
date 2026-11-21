@@ -40,6 +40,9 @@ import {
   reseedComponents,
   uninstallComponents,
 } from "../extensions/components";
+import { installLineAnchors } from "../extensions/anchors/pointer";
+import { SnapDotsOverlay } from "./lineAnchors/SnapDotsOverlay";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -179,6 +182,15 @@ export function ExcalidrawCanvas({
     [],
   );
 
+  // Line anchors: snap dragged arrow ends to face centres (D-DX15).
+  const snapArrowAnchors = useSettingsStore((s) => s.snapArrowAnchors);
+  useEffect(() => {
+    if (!api) return;
+    return installLineAnchors(api, {
+      enabled: () => useSettingsStore.getState().snapArrowAnchors,
+    });
+  }, [api]);
+
   const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
     (elements, appState, files) => {
       onCollabChange?.(elements, appState, files);
@@ -306,6 +318,7 @@ export function ExcalidrawCanvas({
         <PropertiesPanelHost api={api} container={canvasRef} sections={PANEL_SECTIONS} />
       )}
       {!viewOnly && <MasterEditBanner api={api} />}
+      {api && !viewOnly && <SnapDotsOverlay api={api} enabled={snapArrowAnchors} />}
     </div>
   );
 }

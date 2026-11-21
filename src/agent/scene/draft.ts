@@ -8,6 +8,7 @@
  */
 import { newElementWith, hashElementsVersion } from "@excalidraw/excalidraw";
 import { anchorPoint, isElbowArrow, sideOf } from "../../lib/elbowAnchors";
+import { hasPin, pinnedPatch } from "../../lib/lineAnchors";
 import type {
   BoundElement,
   ExcalidrawElement,
@@ -331,6 +332,11 @@ export function routeArrow(draft: Draft, arrowId: string): void {
   if (startEl) abs[0] = edgePoint(startEl, startAim, arrow.startBinding!.gap);
   if (endEl) abs[n - 1] = edgePoint(endEl, endAim, arrow.endBinding!.gap);
   setArrowPoints(draft, arrowId, abs);
+  // Ends pinned to a face midpoint or centre (D-DX15) go back on their pins.
+  if (hasPin(arrow)) {
+    const pinned = pinnedPatch(draft.get(arrowId) as never, (id) => draft.get(id));
+    if (pinned) draft.update(arrowId, { ...pinned });
+  }
 }
 
 function setArrowPoints(draft: Draft, arrowId: string, abs: [number, number][]): void {

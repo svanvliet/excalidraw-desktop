@@ -1,20 +1,23 @@
 /**
- * "Anchors" properties-panel section (docs/plan.md D-DX8): pin a bound elbow arrow's ends to a
- * side of their shapes.
+ * "Anchors" properties-panel section: pin a bound elbow arrow's ends to a side of their shapes
+ * (docs/plan.md D-DX8), or a straight / curved arrow's ends to a face midpoint or the centre
+ * (D-DX15).
  */
-import { isElbowArrow, sideOf, type Side } from "../../lib/elbowAnchors";
+import { isElbowArrow, type Anchor } from "../../lib/elbowAnchors";
+import { endAnchors, isArrow } from "../../lib/lineAnchors";
 import type { PanelSection } from "../propertiesPanel/panel";
 import { AnchorsSection } from "./AnchorsSection";
 
 export interface EndView {
-  /** null = this end isn't bound to a shape. */
+  /** Whether this end is bound to a shape. */
   bound: boolean;
-  /** The pinned side, or null when the end is free / at a custom point. */
-  side: Side | null;
+  /** The pinned anchor, or null when the end is free / at a custom point. */
+  anchor: Anchor | null;
 }
 
 export interface AnchorsView {
   id: string;
+  elbow: boolean;
   start: EndView;
   end: EndView;
 }
@@ -26,11 +29,13 @@ export const anchorsPanelSection: PanelSection<AnchorsView> = {
   view({ selected }) {
     if (selected.length !== 1) return null;
     const arrow = selected[0];
-    if (!isElbowArrow(arrow) || (!arrow.startBinding && !arrow.endBinding)) return null;
+    if (!isArrow(arrow) || (!arrow.startBinding && !arrow.endBinding)) return null;
+    const anchors = endAnchors(arrow);
     return {
       id: arrow.id,
-      start: { bound: !!arrow.startBinding, side: sideOf(arrow.startBinding?.fixedPoint) },
-      end: { bound: !!arrow.endBinding, side: sideOf(arrow.endBinding?.fixedPoint) },
+      elbow: isElbowArrow(arrow),
+      start: { bound: !!arrow.startBinding, anchor: anchors.start },
+      end: { bound: !!arrow.endBinding, anchor: anchors.end },
     };
   },
   Component: AnchorsSection,

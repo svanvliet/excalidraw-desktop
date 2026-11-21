@@ -37,6 +37,7 @@ import {
   type ComponentInfo,
   type ElementComponentInfo,
 } from "./model";
+import { createAnchorRule, type AnchorRule } from "../anchors/rule";
 import { createStyleRule } from "../styles/rule";
 import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 import { createComponentRule } from "./rule";
@@ -47,6 +48,7 @@ type Api = ExcalidrawImperativeAPI;
 const engines = new WeakMap<Api, Reactor>();
 const holds = new WeakMap<Api, ReturnType<typeof createHoldTracker>>();
 const remotes = new WeakMap<Api, Api>();
+const anchorRules = new WeakMap<Api, AnchorRule>();
 
 export function installComponents(
   api: Api,
@@ -54,13 +56,21 @@ export function installComponents(
 ): Reactor {
   let reactor = engines.get(api);
   if (!reactor) {
+    const anchors = createAnchorRule();
+    anchorRules.set(api, anchors);
     const hold = createHoldTracker();
     reactor = createReactor({
       api,
       // Order matters (D-DX12, D-DX13; docs/styles.md § "Rule order", docs/containers.md §3):
       // a style writes master children (and grows text), containers then re-flow around them,
-      // and components finally copy all of it to instances in the same flush.
-      rules: [createStyleRule(), createContainerRule({ held: hold.held }), createComponentRule()],
+      // components then copy all of it to instances, and line anchors finally re-snap pinned
+      // arrow ends to the shapes the earlier rules moved (D-DX15).
+      rules: [
+        createStyleRule(),
+        createContainerRule({ held: hold.held }),
+        createComponentRule(),
+        anchors,
+      ],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
@@ -75,9 +85,15 @@ export function componentsReactor(api: Api): Reactor | undefined {
   return engines.get(api);
 }
 
+/** The editor's line-anchors rule (suspends pinned arrows while the user drags them). */
+export function lineAnchorRule(api: Api): AnchorRule | undefined {
+  return anchorRules.get(api);
+}
+
 export function uninstallComponents(api: Api): void {
   engines.get(api)?.dispose();
   engines.delete(api);
+  anchorRules.delete(api);
   holds.get(api)?.dispose();
   holds.delete(api);
 }
