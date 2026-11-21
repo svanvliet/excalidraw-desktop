@@ -11,6 +11,7 @@ import { ImagePropertiesPanel } from "./imageProps/ImagePropertiesPanel";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
+import { autoLayoutCanvas, isAutoLayoutShortcut } from "../layout/canvasAction";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -77,6 +78,7 @@ export function ExcalidrawCanvas({
 
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
+      registerAutoLayoutAction(api);
       apiRef.current = api;
       setApi(api);
       onApi(api);
@@ -136,4 +138,24 @@ export function ExcalidrawCanvas({
       {api && !viewOnly && <ImagePropertiesPanel api={api} container={canvasRef} />}
     </div>
   );
+}
+
+/**
+ * Alt/Option+Shift+L → layered top-to-bottom auto-layout. Registered as an Excalidraw action
+ * so the editor's own key routing applies (ignored while typing, in view mode, etc.). The
+ * layout itself is async (ELK runs in a worker) and commits its own undo step, so `perform`
+ * only kicks it off and returns `false` to leave the scene untouched for now.
+ */
+function registerAutoLayoutAction(api: ExcalidrawImperativeAPI): void {
+  api.registerAction({
+    // Not in Excalidraw's ActionName union; the registry is keyed by plain strings.
+    name: "autoLayout" as never,
+    label: "Auto-layout",
+    trackEvent: false,
+    keyTest: (event) => isAutoLayoutShortcut(event),
+    perform: () => {
+      void autoLayoutCanvas(api, "down");
+      return false;
+    },
+  });
 }

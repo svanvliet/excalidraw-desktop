@@ -118,6 +118,16 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-39** **Border** for images, with the same treatment as native shape strokes: a colour picker matching the native one (top picks, palette, shades, hex; transparent removes the border), stroke width (thin / bold / extra bold), stroke style (solid / dashed / dotted) and sloppiness (architect / artist / cartoonist). Drawn inside the current outline (the mask shape when masked), so bounds never change; dashes and sloppiness follow that outline and re-render identically. Works with or without a mask; older borders keep loading.
 - **FR-40** Image controls MUST appear in Excalidraw's own properties panel when images are selected (including the mobile properties sheet), and fall back to a compact docked panel when that panel isn't available — never a long floating strip. Each change is one undo step and keyboard focus stays on the canvas.
 
+### 4.11 Auto-layout (Wave 1)
+
+> Lane-scoped ids (`FR-LAYOUT-n`) so parallel lanes don't collide; renumber on merge if needed.
+
+- **FR-LAYOUT-1** A one-shot **Auto-layout** action MUST lay out the current selection, or the whole diagram when nothing is selected, as a **layered** graph (top-to-bottom or left-to-right) or a **tree**. Entry points: **Edit ▸ Auto-layout ▸ Top to Bottom / Left to Right / Tree** in the native menu, and **Alt/Option+Shift+L** (top-to-bottom) in the editor.
+- **FR-LAYOUT-2** Arrows bound at both ends are the graph's edges. Groups and frames (with their children) move as single nodes; text bound to a container moves with it. Arrows are re-routed afterwards so every binding stays valid, and arrows from outside the laid-out set to moved shapes follow.
+- **FR-LAYOUT-3** The whole layout is **one undo step** (for the agent: part of the turn's single undo step). If the user edits the canvas while the layout is computing, the result is discarded rather than overwriting the edit.
+- **FR-LAYOUT-4** The layout engine (ELK) MUST be bundled and run in a **web worker** loaded from the app's own origin, offline, under the shipped CSP (no `unsafe-eval`; `worker-src 'self' blob:`). It is loaded lazily on first use.
+- **FR-LAYOUT-5** The agent gets the same capability as an `auto_layout` canvas tool (algorithm, direction, spacing, optional ids) that also works inside `apply_ops`.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.

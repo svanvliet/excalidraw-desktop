@@ -31,3 +31,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## elkjs (Eclipse Layout Kernel)
+
+Source: https://github.com/kieler/elkjs
+
+The auto-layout feature ships elkjs unmodified (`elk-api` and `elk-worker.min.js` in the app bundle). elkjs is licensed under the Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-2.0/), with GPL-3.0 as a Secondary License; this app uses it under EPL-2.0. Its source code is available at the URL above and in the `elkjs` npm package.

@@ -42,6 +42,9 @@ pub mod ids {
 
     pub const EDIT_UNDO: &str = "excalidraw:edit:undo";
     pub const EDIT_REDO: &str = "excalidraw:edit:redo";
+    pub const EDIT_LAYOUT_DOWN: &str = "excalidraw:edit:layoutDown";
+    pub const EDIT_LAYOUT_RIGHT: &str = "excalidraw:edit:layoutRight";
+    pub const EDIT_LAYOUT_TREE: &str = "excalidraw:edit:layoutTree";
 
     pub const VIEW_ZOOM_IN: &str = "excalidraw:view:zoomIn";
     pub const VIEW_ZOOM_OUT: &str = "excalidraw:view:zoomOut";
@@ -176,6 +179,31 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // Cut/Copy/Paste/Select All are predefined so they delegate to the OS
     // (and for inputs, do the right thing). Undo/Redo are custom because
     // Excalidraw owns its own history stack.
+    // Auto-layout has no accelerator: the webview owns Alt/Option+Shift+L (top to bottom) so
+    // the shortcut also works outside Tauri.
+    let auto_layout = SubmenuBuilder::new(app, "Auto-layout")
+        .item(&MenuItem::with_id(
+            app,
+            ids::EDIT_LAYOUT_DOWN,
+            "Top to Bottom",
+            true,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            ids::EDIT_LAYOUT_RIGHT,
+            "Left to Right",
+            true,
+            None::<&str>,
+        )?)
+        .item(&MenuItem::with_id(
+            app,
+            ids::EDIT_LAYOUT_TREE,
+            "Tree",
+            true,
+            None::<&str>,
+        )?)
+        .build()?;
     let edit = SubmenuBuilder::new(app, "&Edit")
         .item(&MenuItem::with_id(
             app,
@@ -196,6 +224,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .copy()
         .paste()
         .select_all()
+        .separator()
+        .item(&auto_layout)
         .build()?;
     menu = menu.item(&edit);
 
@@ -338,6 +368,9 @@ mod tests {
         assert_eq!(ids::FILE_CLEAR_RECENT, "excalidraw:file:clearRecent");
         assert_eq!(ids::EDIT_UNDO, "excalidraw:edit:undo");
         assert_eq!(ids::EDIT_REDO, "excalidraw:edit:redo");
+        assert_eq!(ids::EDIT_LAYOUT_DOWN, "excalidraw:edit:layoutDown");
+        assert_eq!(ids::EDIT_LAYOUT_RIGHT, "excalidraw:edit:layoutRight");
+        assert_eq!(ids::EDIT_LAYOUT_TREE, "excalidraw:edit:layoutTree");
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");
         assert_eq!(ids::VIEW_ZOOM_OUT, "excalidraw:view:zoomOut");
         assert_eq!(ids::VIEW_ZOOM_RESET, "excalidraw:view:zoomReset");

@@ -113,6 +113,7 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   move_elements: "Moved elements",
   duplicate_elements: "Duplicated elements",
   set_canvas: "Changed the canvas settings",
+  auto_layout: "Laid out the diagram",
   apply_ops: "Edited the canvas",
 };
 

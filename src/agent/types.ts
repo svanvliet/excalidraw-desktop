@@ -156,6 +156,7 @@ export const CANVAS_TOOL_NAMES = [
   "move_elements",
   "duplicate_elements",
   "set_canvas",
+  "auto_layout",
   "apply_ops",
   "apply_extension",
   "remove_extension",

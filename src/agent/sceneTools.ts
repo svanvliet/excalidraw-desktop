@@ -42,6 +42,7 @@ import { applyPreparedToDraft, EXTENSION_TOOLS, prepareExtensionTool } from "./s
 import type { Prepared } from "../extensions/runner";
 import { extensionStateOf } from "../extensions/stack";
 import { commitDraft } from "./scene/turns";
+import { autoLayoutDraft } from "../layout/apply";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
 
@@ -67,9 +68,13 @@ const EDIT_TOOLS = new Set([
   "arrange",
   "move_elements",
   "duplicate_elements",
+  "auto_layout",
   "apply_extension",
   "remove_extension",
 ]);
+
+/** Retries of an edit whose async op (auto_layout) raced a concurrent canvas change. */
+const MAX_ASYNC_EDIT_ATTEMPTS = 3;
 
 // --- arg helpers -------------------------------------------------------------
 
@@ -1044,6 +1049,22 @@ function moveBy(draft: Draft, args: Args): unknown {
   return { moved: targets.map((el) => el.id) };
 }
 
+async function autoLayout(draft: Draft, args: Args): Promise<unknown> {
+  const algorithm =
+    args.algorithm == null ? undefined : oneOf(args.algorithm, ["layered", "tree"], "algorithm");
+  const direction =
+    args.direction == null
+      ? undefined
+      : oneOf(args.direction, ["down", "right", "up", "left"], "direction");
+  const spacing = optNum(args, "spacing");
+  if (spacing !== undefined && (spacing < 0 || spacing > 1000)) {
+    throw new ToolError(`"spacing" must be between 0 and 1000`);
+  }
+  const ids = strArray(args, "ids");
+  const summary = await autoLayoutDraft(draft, { ids, algorithm, direction, spacing });
+  return { laidOut: summary.nodes, edges: summary.edges, moved: summary.moved.length };
+}
+
 function duplicate(draft: Draft, args: Args): unknown {
   const dx = optNum(args, "dx") ?? 20;
   const dy = optNum(args, "dy") ?? 20;
@@ -1263,6 +1284,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return moveBy(draft, args);
     case "duplicate_elements":
       return duplicate(draft, args);
+    case "auto_layout":
+      return autoLayout(draft, args);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);
@@ -1323,29 +1346,44 @@ async function runEdit(
     }
   }
 
-  const draft = new Draft(tab.api.getSceneElementsIncludingDeleted());
-  checkRevision(draft, args);
-  let result: unknown;
-  if (tool === "apply_ops") {
-    const results: unknown[] = [];
-    for (const [i, op] of ops.entries()) {
-      try {
-        results.push(applyEdit(op.tool, draft, op.args, ctx));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new ToolError(`op ${i} (${op.tool}) failed: ${msg}; no changes were applied`);
+  // auto_layout awaits ELK mid-batch, so the canvas can change underneath the draft. When it
+  // does, rebuild the draft from the fresh scene and re-run the ops (a few times at most).
+  // Without async ops the apply phase below stays fully synchronous.
+  for (let attempt = 1; ; attempt++) {
+    ctx.files = [];
+    const draft = new Draft(tab.api.getSceneElementsIncludingDeleted());
+    const baseRevision = draft.revision();
+    checkRevision(draft, args);
+    let result: unknown;
+    if (tool === "apply_ops") {
+      const results: unknown[] = [];
+      for (const [i, op] of ops.entries()) {
+        try {
+          const r = applyEdit(op.tool, draft, op.args, ctx);
+          results.push(r instanceof Promise ? await r : r);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new ToolError(`op ${i} (${op.tool}) failed: ${msg}; no changes were applied`);
+        }
       }
+      result = { results };
+    } else {
+      const r = applyEdit(tool, draft, args, ctx);
+      result = r instanceof Promise ? await r : r;
     }
-    result = { results };
-  } else {
-    result = applyEdit(tool, draft, args, ctx);
+    if (revisionOf(tab.api.getSceneElementsIncludingDeleted()) !== baseRevision) {
+      if (attempt < MAX_ASYNC_EDIT_ATTEMPTS) continue;
+      throw new ToolError(
+        "The canvas kept changing while the layout was being computed; no changes were applied. Retry.",
+      );
+    }
+    commitDraft(tabId, tab, draft, ctx.files);
+    return json({
+      tabId,
+      ...(result as object),
+      revision: revisionOf(tab.api.getSceneElementsIncludingDeleted()),
+    });
   }
-  commitDraft(tabId, tab, draft, ctx.files);
-  return json({
-    tabId,
-    ...(result as object),
-    revision: revisionOf(tab.api.getSceneElementsIncludingDeleted()),
-  });
 }
 
 /**
