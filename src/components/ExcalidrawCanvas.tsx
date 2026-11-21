@@ -30,7 +30,7 @@ import { log } from "../lib/logger";
 import {
   componentsOnDuplicate,
   installComponents,
-  registerComponentActions,
+  handleComponentShortcut,
   reseedComponents,
   uninstallComponents,
 } from "../extensions/components";
@@ -136,7 +136,6 @@ export function ExcalidrawCanvas({
       registerAutoLayoutAction(api);
       // Before onApi, so the parent can wrap this editor's collab API right away.
       installComponents(api);
-      registerComponentActions(api);
       apiRef.current = api;
       setApi(api);
       onApi(api);
@@ -242,7 +241,11 @@ export function ExcalidrawCanvas({
   );
 
   return (
-    <div ref={canvasRef} className="excalidraw-canvas">
+    <div
+      ref={canvasRef}
+      className="excalidraw-canvas"
+      onKeyDownCapture={(e) => handleComponentShortcut(apiRef.current, e)}
+    >
       <Excalidraw
         initialData={initialData ?? undefined}
         excalidrawAPI={handleApi}

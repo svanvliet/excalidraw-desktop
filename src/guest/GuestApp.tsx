@@ -20,7 +20,7 @@ import { log } from "../lib/logger";
 import {
   componentsOnDuplicate,
   installComponents,
-  registerComponentActions,
+  handleComponentShortcut,
   remoteApi,
 } from "../extensions/components";
 
@@ -80,7 +80,6 @@ export function GuestApp({ link }: GuestAppProps) {
   // Components sync runs here too, so a guest's master edits reach every peer's instances.
   const handleApi = useCallback((next: ExcalidrawImperativeAPI) => {
     installComponents(next);
-    registerComponentActions(next);
     setApi(next);
   }, []);
   const [username, setUsername] = useState(readStoredName);
@@ -176,7 +175,7 @@ export function GuestApp({ link }: GuestAppProps) {
       ) : status === "connected" && role === "viewer" ? (
         <ViewerBar state={editRequest} onRequest={requestEdit} />
       ) : null}
-      <div className="guest-app__canvas">
+      <div className="guest-app__canvas" onKeyDownCapture={(e) => handleComponentShortcut(api, e)}>
         <Excalidraw
           excalidrawAPI={handleApi}
           onDuplicate={componentsOnDuplicate}

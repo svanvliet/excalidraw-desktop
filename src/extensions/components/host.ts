@@ -190,15 +190,19 @@ export function isCreateComponentShortcut(e: KeyboardEvent | React.KeyboardEvent
   return e.code === "KeyK" && e.altKey && (e.metaKey || e.ctrlKey) && !e.shiftKey;
 }
 
-export function registerComponentActions(api: Api): void {
-  api.registerAction({
-    name: "createComponent" as never,
-    label: "Create component",
-    trackEvent: false,
-    keyTest: (event) => isCreateComponentShortcut(event),
-    perform: () => {
-      createComponentFromSelection(api);
-      return false;
-    },
-  });
+/**
+ * Capture-phase keydown handler for the editor's wrapper element. A registered Excalidraw action
+ * can't own this shortcut: Excalidraw's hyperlink action matches any Ctrl/Cmd+K (Alt or not), and
+ * Excalidraw cancels a shortcut that two actions match. Typing in text fields is left alone.
+ */
+export function handleComponentShortcut(
+  api: Api | null,
+  e: KeyboardEvent | React.KeyboardEvent,
+): void {
+  if (!api || !isCreateComponentShortcut(e)) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  e.preventDefault();
+  e.stopPropagation();
+  createComponentFromSelection(api);
 }
