@@ -189,3 +189,6 @@ reverted.
 - Alt-drag role swap is covered by a unit test of `componentsOnDuplicate`, not by a real
   browser drag.
 - A component's elements must all share one frame, or none. Each instance keeps its own frame.
+- Smart containers (`docs/containers.md`) work with components: a container inside a master is
+  synced to instances like any other children (their copy of the box is inert), and an instance
+  can be a container child. The container moves it as one unit without creating overrides.

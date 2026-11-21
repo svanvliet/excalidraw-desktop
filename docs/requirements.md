@@ -144,6 +144,10 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 
 - **FR-54** **Components**: a selection or group can become a component **master** on the canvas; duplicating, pasting or Alt-dragging the master (or `insert_instance`) places **instances** that follow it live: geometry under each instance's own translate / scale / rotation, styles, text (re-measured, never copied) and added or removed children. Each instance can override text, fill/stroke colour, opacity, link and image per child, reset them, or be detached. A master edit and the instance updates it causes are **one undo step**. Deleting the master promotes one instance (undo restores the original). Component data is versioned `customData` (D-DX2) that survives save, reload and collab. The agent gets `create_component`, `insert_instance`, `list_components`, `set_overrides`, `reset_overrides` and `detach_instance`. The UI (sidebar tab, panel section) is a follow-up; until then Alt/Option+Cmd/Ctrl+K creates a component. See `docs/components.md`.
 
+### 4.15 Smart containers (DX wave 2)
+
+- **FR-59** **Smart containers**: a selection can become a **container**, a group with a tagged background rectangle that stacks its children vertically or horizontally with a gap, padding (per side), cross-axis alignment, main-axis distribution and per-axis hug or fixed size. Children re-flow live, and the box resizes to fit, when a child moves (reorders), resizes, grows from a text edit, or is added or removed. Each user action is **one undo step**, collab peers don't echo, and bound arrows follow. A Container section in the properties panel makes, edits and removes containers and reorders or takes out children; Alt/Option+Shift+A makes one. Containers nest, can sit inside component masters, can hold component instances, and are one node for auto-layout. The agent gets `create_container`, `update_container`, `remove_container`, `add_to_container`, `remove_from_container` and `list_containers` (all `apply_ops`-capable). See `docs/containers.md`.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.

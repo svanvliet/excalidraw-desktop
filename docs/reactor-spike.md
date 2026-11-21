@@ -239,3 +239,13 @@ No unexported helpers or deep imports are used, and nothing is patched or forked
    instance children.
 8. **Tests to carry forward:** the 13 real-Excalidraw Vitest findings, the collab pair test, and the
    headless drag perf check (p95 frame ≤ 33 ms on 1,000 elements) as a non-CI spike suite.
+
+## Later core changes (smart containers, D-DX13)
+
+- `Reactor.invalidate(ids)` marks elements as locally changed again, without a new stamp, and
+  schedules a flush. The container hold tracker uses it to re-flow elements once a drag or resize
+  ends.
+- Key-level (`reconcile`) rules run in declared order. What one rule writes dirties the keys it
+  links to in the other reconcile rules: later rules see them in the same pass, earlier ones in
+  the next pass, bounded by `maxPasses`. That lets a container re-flow inside a master reach
+  instances in one flush.

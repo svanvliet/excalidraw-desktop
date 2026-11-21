@@ -170,43 +170,49 @@ flowchart LR
 Every tool takes an optional `tabId` (default: the active tab). Read tools return a `revision`. Edit
 tools accept `expectedRevision` and are rejected if the scene changed since that read.
 
-| Tool                 | What it does                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `list_tabs`          | Lists open tabs                                                                                  |
-| `get_scene_summary`  | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                        |
-| `get_selection`      | Returns the current selection                                                                    |
-| `get_elements`       | Returns elements by id                                                                           |
-| `render_canvas_png`  | Renders all / viewport / selection as a PNG ≤1280px for the model to look at                     |
-| `add_elements`       | Adds skeleton-format elements; agent-chosen ids are checked for collisions                       |
-| `update_elements`    | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                |
-| `delete_elements`    | Tombstones elements and cascades to bound text and arrows                                        |
-| `connect`            | Draws an arrow between shapes with manual bindings; `startAnchor`/`endAnchor` pin elbow ends     |
-| `add_mermaid`        | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
-| `add_image`          | Places a png/jpeg/gif/webp/svg (≤10 MB) from a conversation-folder `path` or inline `data`       |
-| `arrange`            | align / distribute / grid / group / z-order / frame (put into or take out of a frame)            |
-| `set_viewport`       | Moves the viewport, without an undo step                                                         |
-| `find_elements`      | Searches by text or regex, type, color, group, frame and bbox                                    |
-| `select_elements`    | Sets the user's selection (replace/add/remove/clear, optional reveal); no undo step              |
-| `get_canvas_state`   | Viewport rect and zoom, scene bounds, selection, theme, background, grid, current item styles    |
-| `move_elements`      | Moves by dx/dy; labels and frame contents follow, bound arrows re-route                          |
-| `duplicate_elements` | Copies with labels, frame contents and internal arrows; returns an old → new id map              |
-| `set_canvas`         | Background color (undoable, saved) and grid mode                                                 |
-| `apply_extension`    | Applies a desktop extension preset/params (e.g. mask an image to a circle); see `extensions.md`  |
-| `remove_extension`   | Removes an extension and restores the element from its stored source                             |
-| `auto_layout`        | Lays out the canvas or `ids` (layered/tree, direction, spacing) with ELK; re-routes bound arrows |
-| `list_layers`        | Layers tree as flat rows (frames → groups → elements) with names, lock state and depth           |
-| `update_layer`       | Renames and/or locks an element, frame or group by id (works in `apply_ops`)                     |
-| `set_shape_data`     | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)            |
-| `get_shape_data`     | Returns elements' key/value data as JSON or CSV                                                  |
-| `set_arrow_anchors`  | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX8)                 |
-| `create_component`   | Turns `ids` (or a group) into a component master (D-DX9, `docs/components.md`)                   |
-| `insert_instance`    | Places an instance of a component (`x`, `y`, `scale`, `angle` in degrees)                        |
-| `list_components`    | Masters and instances with slots and overrides; no undo step                                     |
-| `set_overrides`      | Per-slot instance overrides: text, colours, opacity, link, image (`null` clears)                 |
-| `reset_overrides`    | Clears an instance's overrides (all, or some slots/keys)                                         |
-| `detach_instance`    | Turns an instance into plain elements that keep their look                                       |
-| `apply_ops`          | Batches several edits into one undo step                                                         |
-| `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
+| Tool                    | What it does                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `list_tabs`             | Lists open tabs                                                                                  |
+| `get_scene_summary`     | Compact element rows plus bounds, with pagination by bbox, ids, or cursor                        |
+| `get_selection`         | Returns the current selection                                                                    |
+| `get_elements`          | Returns elements by id                                                                           |
+| `render_canvas_png`     | Renders all / viewport / selection as a PNG ≤1280px for the model to look at                     |
+| `add_elements`          | Adds skeleton-format elements; agent-chosen ids are checked for collisions                       |
+| `update_elements`       | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                |
+| `delete_elements`       | Tombstones elements and cascades to bound text and arrows                                        |
+| `connect`               | Draws an arrow between shapes with manual bindings; `startAnchor`/`endAnchor` pin elbow ends     |
+| `add_mermaid`           | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
+| `add_image`             | Places a png/jpeg/gif/webp/svg (≤10 MB) from a conversation-folder `path` or inline `data`       |
+| `arrange`               | align / distribute / grid / group / z-order / frame (put into or take out of a frame)            |
+| `set_viewport`          | Moves the viewport, without an undo step                                                         |
+| `find_elements`         | Searches by text or regex, type, color, group, frame and bbox                                    |
+| `select_elements`       | Sets the user's selection (replace/add/remove/clear, optional reveal); no undo step              |
+| `get_canvas_state`      | Viewport rect and zoom, scene bounds, selection, theme, background, grid, current item styles    |
+| `move_elements`         | Moves by dx/dy; labels and frame contents follow, bound arrows re-route                          |
+| `duplicate_elements`    | Copies with labels, frame contents and internal arrows; returns an old → new id map              |
+| `set_canvas`            | Background color (undoable, saved) and grid mode                                                 |
+| `apply_extension`       | Applies a desktop extension preset/params (e.g. mask an image to a circle); see `extensions.md`  |
+| `remove_extension`      | Removes an extension and restores the element from its stored source                             |
+| `auto_layout`           | Lays out the canvas or `ids` (layered/tree, direction, spacing) with ELK; re-routes bound arrows |
+| `list_layers`           | Layers tree as flat rows (frames → groups → elements) with names, lock state and depth           |
+| `update_layer`          | Renames and/or locks an element, frame or group by id (works in `apply_ops`)                     |
+| `set_shape_data`        | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)            |
+| `get_shape_data`        | Returns elements' key/value data as JSON or CSV                                                  |
+| `set_arrow_anchors`     | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX8)                 |
+| `create_component`      | Turns `ids` (or a group) into a component master (D-DX9, `docs/components.md`)                   |
+| `insert_instance`       | Places an instance of a component (`x`, `y`, `scale`, `angle` in degrees)                        |
+| `list_components`       | Masters and instances with slots and overrides; no undo step                                     |
+| `set_overrides`         | Per-slot instance overrides: text, colours, opacity, link, image (`null` clears)                 |
+| `reset_overrides`       | Clears an instance's overrides (all, or some slots/keys)                                         |
+| `detach_instance`       | Turns an instance into plain elements that keep their look                                       |
+| `create_container`      | Makes a stack container from elements (direction, gap, padding, align, justify, sizing)          |
+| `update_container`      | Changes a container's settings and/or child `order`                                              |
+| `remove_container`      | Dissolves a container; `keepBox` keeps a plain group with its box                                |
+| `add_to_container`      | Moves elements into a container, optionally at `index`                                           |
+| `remove_from_container` | Takes elements out of their container                                                            |
+| `list_containers`       | Lists containers with settings and ordered children                                              |
+| `apply_ops`             | Batches several edits into one undo step                                                         |
+| `approve`               | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 
 A system prompt (appended) explains the coordinate system, the tool workflow (summary, then render,
 then edit), and the style defaults.
