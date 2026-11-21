@@ -12,6 +12,7 @@ import { runComponentCommand } from "../../extensions/components/host";
 import { listComponents } from "../../extensions/components/model";
 import { getMyComponents, type MyComponent } from "../../lib/componentLibraryStore";
 import { insertMyComponent } from "./libraryCodec";
+import { libraryMasterEngine } from "./libraryMasters";
 
 type Api = ExcalidrawImperativeAPI;
 
@@ -86,8 +87,9 @@ export function placeInstance(api: Api, componentId: string, center = viewportCe
 }
 
 /**
- * A saved component, centred on `center`: an instance when the document has its master, else
- * the master there plus an instance beside it (both in one undo step).
+ * A saved component, centred on `center`: an instance when the document has its master. If it
+ * doesn't, a library-backed instance when the engine supports that (the master stays in
+ * My components), else the master there plus an instance beside it. One undo step either way.
  */
 export function placeMyComponent(api: Api, entry: MyComponent, center = viewportCenter(api)) {
   if (api.getAppState().viewModeEnabled) return null;
@@ -96,12 +98,20 @@ export function placeMyComponent(api: Api, entry: MyComponent, center = viewport
   // Images first, so the new elements render straight away; files aren't part of undo.
   if (files.length) api.addFiles(files);
   const res = runComponentCommand(api, (d) =>
-    insertMyComponent(d, entry, { x: center.x - w / 2, y: center.y - h / 2 }),
+    insertMyComponent(
+      d,
+      entry,
+      { x: center.x - w / 2, y: center.y - h / 2 },
+      { libraryBacked: !!libraryMasterEngine() },
+    ),
   );
   if (res) {
     selectGroup(api, res.instance.groupId, res.instance.ids);
     if (res.placedMaster)
-      api.setToast({ message: `Added "${entry.name}" and its master to this drawing`, duration: 2500 });
+      api.setToast({
+        message: `Added "${entry.name}" and its master to this drawing`,
+        duration: 2500,
+      });
   }
   return res;
 }
@@ -111,7 +121,8 @@ export function setDragPayload(e: DragEvent, payload: ComponentDragPayload) {
   e.dataTransfer.effectAllowed = "copy";
 }
 
-const hasPayload = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes(COMPONENT_DRAG_MIME);
+const hasPayload = (e: DragEvent) =>
+  Array.from(e.dataTransfer?.types ?? []).includes(COMPONENT_DRAG_MIME);
 
 /** Capture-phase dragover on the editor wrapper: accept component drags. */
 export function handleComponentDragOver(api: Api | null, e: DragEvent) {

@@ -2178,3 +2178,171 @@ button {
   width: 1.25rem;
   height: 1.25rem;
 }
+
+/* ---- Components tab (FR-55) ------------------------------------------------------------ */
+
+.desktop-components__body {
+  padding-top: 0.25rem;
+}
+
+.desktop-components__section + .desktop-components__section {
+  margin-top: 0.75rem;
+}
+
+.desktop-components__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 1.75rem;
+  padding: 0 0.25rem;
+  color: var(--color-muted-darker);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.desktop-components__row {
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--text-primary-color);
+}
+
+.desktop-components__row[draggable="true"] {
+  cursor: grab;
+}
+
+.desktop-components__row:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.desktop-components__thumb {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.5rem;
+  overflow: hidden;
+  border-radius: var(--border-radius-md);
+  background: var(--color-surface-low);
+}
+
+.desktop-components__thumb svg {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
+.desktop-components__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.desktop-components__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-components__detail {
+  color: var(--color-muted-darker);
+  font-size: 0.75rem;
+}
+
+/* Row actions appear on hover / focus, like the Layers lock. */
+.desktop-components__btn {
+  opacity: 0;
+}
+
+.desktop-components__row:hover .desktop-components__btn,
+.desktop-components__row:focus-within .desktop-components__btn,
+.desktop-components__section-title .desktop-components__btn {
+  opacity: 1;
+}
+
+.desktop-components__make {
+  flex: 0 0 auto;
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--default-border-color);
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--text-primary-color);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.desktop-components__make:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* "Edit master…" banner, top-centre over the canvas (outside .excalidraw, so app tokens). */
+.desktop-master-edit {
+  position: absolute;
+  top: 4.25rem;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 2rem);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  color: var(--fg-default);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  transform: translateX(-50%);
+}
+
+.desktop-master-edit__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-master-edit__btn {
+  flex: 0 0 auto;
+  height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg-default);
+  font: inherit;
+  cursor: pointer;
+}
+
+.desktop-master-edit__btn:hover {
+  background: var(--bg-hover);
+}
+
+.desktop-master-edit__btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.desktop-master-edit__btn--primary:hover {
+  background: var(--accent-hover);
+}
+
+.desktop-master-edit__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.desktop-master-edit__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

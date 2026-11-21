@@ -316,6 +316,14 @@ export const LayersIcon = () => (
   </NativeIcon>
 );
 
+/** Components tab: a master diamond over an instance. */
+export const ComponentsIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="m12 3 4 4-4 4-4-4 4-4" />
+    <path d="m12 13 4 4-4 4-4-4 4-4" strokeDasharray="2 2" />
+  </NativeIcon>
+);
+
 export const LockIcon = () => (
   <NativeIcon grid={24}>
     <rect x="5" y="11" width="14" height="10" rx="2" />

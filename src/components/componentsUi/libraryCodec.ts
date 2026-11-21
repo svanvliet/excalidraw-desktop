@@ -4,7 +4,9 @@
  *  - `masterToEntry`: a document's master → a `MyComponent` snapshot (top-left at 0,0).
  *  - `insertMyComponent`: a `MyComponent` → this document. If the document already has a master
  *    for that component id, places an instance of it; otherwise places the master at the point
- *    and an instance beside it. Runs on a Draft, so the caller commits one undo step.
+ *    and an instance beside it. With `libraryBacked`, places only the instance (tagged
+ *    `source: "library"`); the master stays in My components. Runs on a Draft, so the caller
+ *    commits one undo step.
  *  - `libraryItemToEntry`: an Excalidraw library item → a new component (via the engine's
  *    `createComponent` on a scratch Draft, so the tags are the engine's own).
  *  - `entriesToExcalidrawLib`: `.excalidrawlib` JSON. The tags travel with the elements, so a
@@ -18,6 +20,7 @@ import { Draft, newId, ToolError, type El } from "../../agent/scene/draft";
 import { componentsOf, createComponent, insertInstance } from "../../extensions/components/actions";
 import { componentMembers } from "../../extensions/components/sync";
 import {
+  COMPONENT_NS,
   listComponents,
   tagOf,
   withTag,
@@ -99,6 +102,24 @@ function masterOf(
   return { info, els: elements.filter((e) => ids.has(e.id) && !e.isDeleted) };
 }
 
+/** Library-backed tag fields (the engine's contract; `withTag` doesn't know them in v1). */
+export interface LibrarySource {
+  source?: "library";
+  libraryId?: string;
+}
+
+export function librarySourceOf(el: El | undefined): LibrarySource | null {
+  const t = tagOf(el) as (LibrarySource & object) | null;
+  return t?.source === "library" ? { source: "library", libraryId: t.libraryId } : null;
+}
+
+function withLibrarySource(el: El, libraryId: string): Record<string, unknown> {
+  return {
+    ...(el.customData ?? {}),
+    [COMPONENT_NS]: { ...tagOf(el)!, source: "library", libraryId },
+  };
+}
+
 /** Snapshot a document's master for the personal library. */
 export function masterToEntry(
   elements: readonly El[],
@@ -124,7 +145,8 @@ export interface InsertedMyComponent {
   componentId: string;
   /** True when the master was placed too (it wasn't in this document yet). */
   placedMaster: boolean;
-  masterGroupId: string;
+  /** Null when the instance is library-backed (no master in the document). */
+  masterGroupId: string | null;
   instance: { groupId: string; ids: string[] };
   /** Image files the caller must add to the editor. */
   files: BinaryFileData[];
@@ -138,6 +160,7 @@ export function insertMyComponent(
   draft: Draft,
   entry: MyComponent,
   at: { x: number; y: number },
+  opts: { libraryBacked?: boolean } = {},
 ): InsertedMyComponent {
   const existing = componentsOf(draft).find((c) => c.componentId === entry.id && c.masterGroupId);
   if (existing) {
@@ -172,6 +195,8 @@ export function insertMyComponent(
     const copy = el as unknown as Mut;
     copy.id = ids.get(el.id)!;
     copy.groupIds = el.groupIds.map(group);
+    // The entry's name wins (it may have been renamed in My components).
+    copy.customData = withTag(el, { ...tagOf(el)!, name: entry.name });
     if (Array.isArray(copy.boundElements))
       copy.boundElements = (copy.boundElements as { id: string; type: string }[]).map((b) => ({
         ...b,
@@ -190,6 +215,23 @@ export function insertMyComponent(
   }
   const placed = componentsOf(draft).find((c) => c.componentId === entry.id && c.masterGroupId);
   if (!placed) throw new ToolError(`Saved component "${entry.name}" couldn't be placed`);
+  if (opts.libraryBacked) {
+    // Library-backed: the master stays in My components. Place the instance at the point, then
+    // take the scratch master away again; the tag tells the engine not to promote the instance.
+    const instance = insertInstance(draft, entry.id, at);
+    for (const id of placed.masterIds) draft.update(id, { isDeleted: true });
+    for (const id of instance.ids) {
+      const el = draft.get(id)!;
+      draft.update(id, { customData: withLibrarySource(el, entry.id) });
+    }
+    return {
+      componentId: entry.id,
+      placedMaster: false,
+      masterGroupId: null,
+      instance,
+      files: Object.values(entry.files ?? {}),
+    };
+  }
   const instance = insertInstance(draft, entry.id);
   return {
     componentId: entry.id,
@@ -232,9 +274,7 @@ export function libraryItemToEntry(
     if (f) out.files = f;
     return out;
   }
-  const clean = snapshot(live, 0, 0).map(
-    (e) => ({ ...e, customData: withTag(e, null) }) as El,
-  );
+  const clean = snapshot(live, 0, 0).map((e) => ({ ...e, customData: withTag(e, null) }) as El);
   const draft = new Draft(clean);
   const roots = clean.filter((e) => !("containerId" in e && e.containerId)).map((e) => e.id);
   const res = createComponent(draft, roots, name);

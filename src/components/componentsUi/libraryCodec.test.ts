@@ -13,6 +13,7 @@ import {
   masterToEntry,
   renameComponent,
   topLeft,
+  librarySourceOf,
 } from "./libraryCodec";
 
 function scene(): El[] {
@@ -44,11 +45,13 @@ describe("libraryCodec", () => {
   it("inserts master + instance into a document without the component (one draft)", () => {
     const { draft, made } = withComponent();
     const entry = masterToEntry(draft.toArray(), undefined, made.componentId);
+    entry.name = "Renamed";
     const other = new Draft([]);
     const res = insertMyComponent(other, entry, { x: 1000, y: 500 });
     expect(res.placedMaster).toBe(true);
     const comps = listComponents(other.toArray());
     expect(comps).toHaveLength(1);
+    expect(comps[0].name).toBe("Renamed");
     expect(comps[0].componentId).toBe(made.componentId);
     expect(comps[0].instances).toHaveLength(1);
     const master = other.toArray().filter((e) => comps[0].masterIds.includes(e.id));
@@ -57,7 +60,9 @@ describe("libraryCodec", () => {
     const srcIds = new Set(draft.toArray().map((e) => e.id));
     expect(other.toArray().some((e) => srcIds.has(e.id))).toBe(false);
     // Bound text stays bound to its (renamed) container.
-    const text = other.toArray().find((e) => e.type === "text" && comps[0].masterIds.includes(e.id));
+    const text = other
+      .toArray()
+      .find((e) => e.type === "text" && comps[0].masterIds.includes(e.id));
     const container = other.get((text as { containerId: string }).containerId);
     expect(container?.boundElements?.some((b) => b.id === text!.id)).toBe(true);
   });
@@ -69,6 +74,21 @@ describe("libraryCodec", () => {
     expect(res.placedMaster).toBe(false);
     const [c] = listComponents(draft.toArray());
     expect(c.instances).toHaveLength(1);
+  });
+
+  it("inserts a library-backed instance alone, tagged with its library id", () => {
+    const { draft, made } = withComponent();
+    const entry = masterToEntry(draft.toArray(), undefined, made.componentId);
+    const other = new Draft([]);
+    const res = insertMyComponent(other, entry, { x: 500, y: 300 }, { libraryBacked: true });
+    expect(res).toMatchObject({ placedMaster: false, masterGroupId: null });
+    const live = other.live();
+    expect(live.map((e) => e.id).sort()).toEqual([...res.instance.ids].sort());
+    expect(topLeft(live)).toEqual({ x: 500, y: 300 });
+    for (const el of live) {
+      expect(tagOf(el)?.role).toBe("instance");
+      expect(librarySourceOf(el)).toEqual({ source: "library", libraryId: made.componentId });
+    }
   });
 
   it("rejects a damaged entry", () => {
