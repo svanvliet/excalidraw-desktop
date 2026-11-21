@@ -11,10 +11,11 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
-import { LayersIcon } from "./icons";
+import { LayersIcon, StylesIcon } from "./icons";
 import { PropertiesPanelHost } from "./propertiesPanel/PropertiesPanelHost";
 import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
+import { StylesPanel } from "./sidebar/StylesPanel";
 import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
@@ -235,6 +236,12 @@ export function ExcalidrawCanvas({
         title: "Layers",
         icon: <LayersIcon />,
         render: () => api && <LayersPanel api={api} readOnly={viewOnly} />,
+      },
+      {
+        tab: "styles",
+        title: "Styles",
+        icon: <StylesIcon />,
+        render: () => api && <StylesPanel api={api} readOnly={viewOnly} />,
       },
     ],
     [api, viewOnly],

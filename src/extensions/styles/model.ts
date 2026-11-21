@@ -170,7 +170,6 @@ export function elementPatchFor(el: El, key: StyleKey, value: unknown): Patch {
 
 const FILL = ["hachure", "cross-hatch", "solid", "zigzag"];
 const STROKE = ["solid", "dashed", "dotted"];
-const FONT_IDS = new Set<number>(Object.values(FONT_FAMILY) as number[]);
 
 export class StyleError extends Error {}
 
@@ -207,7 +206,7 @@ export function normaliseValue(key: StyleKey, v: unknown): unknown {
     case "fontFamily": {
       if (typeof v === "string" && v in FONT_FAMILY)
         return (FONT_FAMILY as Record<string, number>)[v];
-      if (typeof v !== "number" || !FONT_IDS.has(v))
+      if (typeof v !== "number" || !(Object.values(FONT_FAMILY) as number[]).includes(v))
         fail(`must be a font id or one of ${Object.keys(FONT_FAMILY).join(", ")}`);
       return v;
     }
