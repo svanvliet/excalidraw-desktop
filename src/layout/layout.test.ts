@@ -1,5 +1,5 @@
-import "../agent/scene/testHarness";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { FakeApi } from "../agent/scene/testHarness";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import ElkBundled from "elkjs/lib/elk.bundled.js";
@@ -7,6 +7,7 @@ import { boundsOf, Draft, edgePoint, type El, type LinearEl } from "../agent/sce
 import { extractGraph, layoutTargets } from "./graph";
 import { setElkFactory, toElkGraph } from "./elk";
 import { autoLayoutDraft } from "./apply";
+import { autoLayoutCanvas, isAutoLayoutShortcut } from "./canvasAction";
 
 beforeAll(() => setElkFactory(async () => new ElkBundled()));
 afterAll(() => setElkFactory(null));
@@ -221,5 +222,58 @@ describe("autoLayoutDraft", () => {
   it("refuses to lay out fewer than two nodes", async () => {
     const draft = new Draft(scene([box("a", 0, 0)]));
     await expect(autoLayoutDraft(draft)).rejects.toThrow(/at least two/);
+  });
+});
+
+describe("autoLayoutCanvas (user action)", () => {
+  function fakeApi(elements: El[], selected: string[] = []) {
+    const api = new FakeApi(elements);
+    for (const id of selected) api.selectedElementIds[id] = true;
+    return Object.assign(api, { setToast: vi.fn() });
+  }
+
+  it("lays out the selection as one IMMEDIATELY undo step", async () => {
+    const api = fakeApi(orgChart(), ["ceo", "cto", "cfo"]);
+    const dev = api.byId("dev");
+    expect(await autoLayoutCanvas(api as never, "tree")).toBe(true);
+    expect(api.calls.map((c) => c.captureUpdate)).toEqual(["IMMEDIATELY"]);
+    expect(api.byId("ceo").y).toBeLessThan(api.byId("cto").y);
+    expect(api.byId("dev")).toMatchObject({ x: dev.x, y: dev.y });
+  });
+
+  it("toasts instead of failing when there is nothing to lay out", async () => {
+    const api = fakeApi(scene([box("a", 0, 0)]));
+    expect(await autoLayoutCanvas(api as never, "down")).toBe(false);
+    expect(api.setToast).toHaveBeenCalledWith({ message: expect.stringMatching(/at least two/) });
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it("drops the result if the user edits while ELK is computing", async () => {
+    const api = fakeApi(orgChart());
+    setElkFactory(async () => {
+      const elk = new ElkBundled();
+      return {
+        layout: async (g: never) => {
+          api.externalEdit("dev", { backgroundColor: "#ffc9c9" });
+          return elk.layout(g);
+        },
+      } as never;
+    });
+    try {
+      expect(await autoLayoutCanvas(api as never, "down")).toBe(false);
+    } finally {
+      setElkFactory(async () => new ElkBundled());
+    }
+    expect(api.calls).toHaveLength(0);
+    expect(api.setToast).toHaveBeenCalledWith({ message: expect.stringMatching(/changed/) });
+  });
+
+  it("matches only Alt/Option+Shift+L", () => {
+    const k = (o: Partial<KeyboardEvent>) =>
+      isAutoLayoutShortcut({ code: "KeyL", altKey: true, shiftKey: true, ...o } as KeyboardEvent);
+    expect(k({})).toBe(true);
+    expect(k({ shiftKey: false })).toBe(false);
+    expect(k({ metaKey: true })).toBe(false);
+    expect(k({ code: "KeyK" })).toBe(false);
   });
 });

@@ -24,6 +24,9 @@ export type MenuItemId =
   | "excalidraw:file:clearRecent"
   | "excalidraw:edit:undo"
   | "excalidraw:edit:redo"
+  | "excalidraw:edit:layoutDown"
+  | "excalidraw:edit:layoutRight"
+  | "excalidraw:edit:layoutTree"
   | "excalidraw:view:zoomIn"
   | "excalidraw:view:zoomOut"
   | "excalidraw:view:zoomReset"
@@ -43,6 +46,9 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:file:clearRecent",
   "excalidraw:edit:undo",
   "excalidraw:edit:redo",
+  "excalidraw:edit:layoutDown",
+  "excalidraw:edit:layoutRight",
+  "excalidraw:edit:layoutTree",
   "excalidraw:view:zoomIn",
   "excalidraw:view:zoomOut",
   "excalidraw:view:zoomReset",
