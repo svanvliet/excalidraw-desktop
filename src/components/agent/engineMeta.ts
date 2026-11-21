@@ -129,6 +129,14 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   define_property: "Declared a component property",
   remove_property: "Removed a component property",
   set_properties: "Set instance properties",
+  list_styles: "Read the styles",
+  create_style: "Created a style",
+  apply_style: "Applied a style",
+  update_style: "Updated a style",
+  delete_style: "Deleted a style",
+  reset_style_overrides: "Reset style overrides",
+  list_my_components: "Read My components",
+  insert_my_component: "Inserted from My components",
 };
 
 export function toolLabel(name: string, title: string | null): string {

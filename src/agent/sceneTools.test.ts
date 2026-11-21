@@ -9,6 +9,15 @@ import { resetTurns } from "./scene/turns";
 import ElkBundled from "elkjs/lib/elk.bundled.js";
 import { setElkFactory } from "../layout/elk";
 import type { ToolContent } from "./types";
+import type { BinaryFileData } from "@excalidraw/excalidraw/types";
+import { Draft } from "./scene/draft";
+import { createComponent } from "../extensions/components/actions";
+import {
+  __resetMyComponentsForTest,
+  loadMyComponents,
+  putMyComponent,
+} from "../lib/componentLibraryStore";
+import { masterToEntry } from "../components/componentsUi/libraryCodec";
 
 vi.mock("@excalidraw/excalidraw", async (orig) => ({
   ...(await orig<typeof import("@excalidraw/excalidraw")>()),
@@ -1202,5 +1211,135 @@ describe("component tools", () => {
 
     await call("remove_property", { component: card.componentId, property: "Title" });
     expect((api.byId(label.id) as unknown as { text: string }).text).toBe("Alpha");
+  });
+});
+
+describe("style tools", () => {
+  it("create, list, update live, direct edits become overrides, reset, unlink, delete", async () => {
+    setup(boxes());
+    const made = await call("create_style", {
+      ids: ["a", "b"],
+      name: "Primary",
+      props: { strokeColor: "#1971c2", backgroundColor: "#a5d8ff", fillStyle: "solid" },
+    });
+    expect(made.styleId).toBeTruthy();
+    expect(api.undoStack).toHaveLength(1);
+    expect(api.byId("b").backgroundColor).toBe("#a5d8ff");
+
+    let list = (await call("list_styles")).styles;
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ name: "Primary" });
+    expect(list[0].elementIds).toEqual(expect.arrayContaining(["a", "b"]));
+
+    await call("update_style", { style: "primary", props: { backgroundColor: "#ffc9c9" } });
+    expect(api.byId("a").backgroundColor).toBe("#ffc9c9");
+    expect(api.byId("b").backgroundColor).toBe("#ffc9c9");
+
+    // A direct edit to a styled element becomes a local override, kept across style edits.
+    await call("update_elements", { updates: [{ id: "b", patch: { strokeColor: "#e03131" } }] });
+    await call("update_style", { style: made.styleId, props: { strokeColor: "#2f9e44" } });
+    expect(api.byId("a").strokeColor).toBe("#2f9e44");
+    expect(api.byId("b").strokeColor).toBe("#e03131");
+    const summary = await call("get_scene_summary");
+    const rowB = summary.elements.find((r: { id: string }) => r.id === "b");
+    expect(rowB.sty).toEqual({ id: made.styleId, ov: ["strokeColor"] });
+    expect((await call("get_elements", { ids: ["b"] })).styles.b).toMatchObject({
+      styleId: made.styleId,
+      name: "Primary",
+    });
+
+    expect((await call("reset_style_overrides", { ids: ["b"] })).reset).toBe(1);
+    expect(api.byId("b").strokeColor).toBe("#2f9e44");
+
+    await call("apply_style", { ids: ["b"], style: null });
+    await call("update_style", { style: made.styleId, props: { backgroundColor: "#ffec99" } });
+    expect(api.byId("b").backgroundColor).toBe("#ffc9c9");
+    expect(api.byId("a").backgroundColor).toBe("#ffec99");
+
+    const del = await call("delete_style", { style: "Primary" });
+    expect(del).toMatchObject({ styleId: made.styleId, unlinked: 2 }); // a + its label
+    list = (await call("list_styles")).styles;
+    expect(list).toHaveLength(0);
+    expect(api.byId("a").backgroundColor).toBe("#ffec99");
+  });
+
+  it("styles a component master and its instance follows; instance children can't be styled", async () => {
+    setup(boxes());
+    await call("create_component", { ids: ["a"], name: "Card" });
+    const inst = await call("insert_instance", { component: "a", x: 500, y: 200 });
+    const instRect = inst.ids.map((id: string) => api.byId(id)).find((e: El) => e.type !== "text");
+    await expect(
+      runSceneTool("create_style", { ids: [instRect.id], props: { opacity: 50 } }, TAB),
+    ).rejects.toThrow(/style the master/);
+
+    const made = await call("apply_ops", {
+      ops: [
+        { tool: "create_style", args: { ids: ["a"], props: { backgroundColor: "#b2f2bb" } } },
+        { tool: "update_style", args: { style: "Style 1", props: { strokeWidth: 4 } } },
+      ],
+    });
+    expect(made.results[0].styleId).toBeTruthy();
+    expect(api.byId(instRect.id).backgroundColor).toBe("#b2f2bb");
+    expect(api.byId(instRect.id).strokeWidth).toBe(4);
+    // Propagated from the master, not an instance override.
+    const comps = (await call("list_components")).components;
+    expect(comps[0].instances[0].overriddenSlots ?? 0).toBe(0);
+    const row = (await call("get_scene_summary")).elements.find(
+      (r: { id: string }) => r.id === instRect.id,
+    );
+    expect(row.cmp.overrides).toBeUndefined();
+    expect(row.sty).toMatchObject({ fromMaster: true });
+  });
+
+  it("rejects bad props and unknown styles", async () => {
+    setup(boxes());
+    await expect(
+      runSceneTool("create_style", { ids: ["a"], props: { opacity: 500 } }, TAB),
+    ).rejects.toThrow();
+    await expect(runSceneTool("apply_style", { ids: ["a"], style: "Nope" }, TAB)).rejects.toThrow();
+  });
+});
+
+describe("My components tools", () => {
+  afterEach(() => __resetMyComponentsForTest());
+
+  it("lists My components and inserts one with its image as one undo step", async () => {
+    __resetMyComponentsForTest();
+    const file = {
+      id: "photo1",
+      mimeType: "image/png",
+      dataURL: "data:image/png;base64,iVBORw0KGgo=",
+      created: 1,
+    } as BinaryFileData;
+    const src = new Draft(
+      scene([
+        { type: "rectangle", id: "card", x: 0, y: 0, width: 200, height: 120 },
+        { type: "image", id: "pic", x: 10, y: 10, width: 60, height: 60, fileId: "photo1" },
+        { type: "text", id: "who", x: 80, y: 30, text: "Ada" },
+      ]),
+    );
+    const made = createComponent(src, ["card", "pic", "who"], "Person");
+    await loadMyComponents();
+    await putMyComponent(masterToEntry(src.toArray(), { photo1: file }, made.componentId));
+
+    setup(boxes());
+    const list = await call("list_my_components");
+    expect(list.components).toEqual([
+      expect.objectContaining({ id: made.componentId, name: "Person", elements: 3, images: 1 }),
+    ]);
+
+    const out = await call("insert_my_component", { component: "person" });
+    expect(out).toMatchObject({ componentId: made.componentId, images: 1 });
+    expect(out.ids).toHaveLength(3);
+    expect(api.undoStack).toHaveLength(1);
+    expect(api.addFiles).toHaveBeenCalledWith([expect.objectContaining({ id: "photo1" })]);
+    const img = out.ids.map((id: string) => api.byId(id)).find((e: El) => e.type === "image");
+    expect(img.fileId).toBe("photo1");
+    // Default spot: right of the existing content.
+    expect(Math.min(...out.ids.map((id: string) => api.byId(id).x))).toBeGreaterThan(400);
+
+    await expect(call("insert_my_component", { component: "nope" })).rejects.toThrow(
+      /not in My components/,
+    );
   });
 });
