@@ -769,6 +769,21 @@ describe("layer tools", () => {
     expect(after.layers[0]).toMatchObject({ id: "g1", name: "Pair", locked: true });
   });
 
+  it("records a first customData write as {} → {...} so undo can revert it", async () => {
+    setup(boxes());
+    expect(api.byId("b").customData).toBeUndefined();
+    await call("update_layer", { id: "b", name: "Logo" });
+    expect(api.calls.map((c) => c.captureUpdate)).toEqual(["NEVER", "IMMEDIATELY"]);
+    expect(api.undoStack).toHaveLength(1);
+    expect(api.undoStack[0].get("b")!.before!.customData).toEqual({});
+
+    beginTurn(TAB, "t1");
+    await call("update_layer", { id: "c", name: "Box" });
+    endTurn(TAB, "t1");
+    expect(api.undoStack).toHaveLength(2);
+    expect(api.undoStack[1].get("c")!.before!.customData).toEqual({});
+  });
+
   it("update_layer is an apply_ops edit tool and validates its args", async () => {
     setup(boxes());
     await call("apply_ops", { ops: [{ tool: "update_layer", args: { id: "b", name: "Logo" } }] });
