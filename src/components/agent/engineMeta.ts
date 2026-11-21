@@ -120,6 +120,12 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   set_shape_data: "Set shape data",
   set_arrow_anchors: "Pin arrow anchors",
   get_shape_data: "Read shape data",
+  create_component: "Created a component",
+  insert_instance: "Inserted a component instance",
+  list_components: "Read the components",
+  set_overrides: "Overrode instance values",
+  reset_overrides: "Reset instance overrides",
+  detach_instance: "Detached an instance",
 };
 
 export function toolLabel(name: string, title: string | null): string {

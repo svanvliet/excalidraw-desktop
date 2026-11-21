@@ -48,6 +48,35 @@ export function syncDraft(draft: Draft, componentIds?: Iterable<string>): void {
   for (const cid of ids) syncComponent(cid, access);
 }
 
+/**
+ * After generic edits (agent `update_elements`, `delete_elements`, …): bring the components
+ * those edits touched in line, adopting direct edits to instance children as overrides — the
+ * same thing the live sync does for UI edits, but inside the draft so the result commits as one
+ * consistent step.
+ */
+export function syncEdited(draft: Draft): void {
+  if (!draft.changed.size) return;
+  const masterGroups = new Map<string, string>();
+  for (const el of draft.toArray()) {
+    const t = tagOf(el);
+    const g = t?.role === "master" ? groupOf(el, t) : null;
+    if (g && !el.isDeleted) masterGroups.set(g, t!.componentId);
+  }
+  const cids = new Set<string>();
+  for (const id of draft.changed) {
+    for (const el of [draft.original.get(id), draft.peek(id)]) {
+      if (!el) continue;
+      const t = tagOf(el);
+      if (t) cids.add(t.componentId);
+      for (const g of el.groupIds) if (masterGroups.has(g)) cids.add(masterGroups.get(g)!);
+    }
+  }
+  if (!cids.size) return;
+  const access = draftAccess(draft);
+  const changed = new Set(draft.changed);
+  for (const cid of cids) syncComponent(cid, access, { changed });
+}
+
 export function componentsOf(draft: Draft): ComponentInfo[] {
   return listComponents(draft.toArray());
 }

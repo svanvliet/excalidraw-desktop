@@ -61,6 +61,22 @@ import { extensionStateOf } from "../extensions/stack";
 import { applyLayerEdit, buildLayerTree, flattenLayers } from "../layers/layers";
 import { commitDraft } from "./scene/turns";
 import { autoLayoutDraft } from "../layout/apply";
+import {
+  componentsOf,
+  createComponent,
+  detachInstance,
+  insertInstance,
+  resetOverrides,
+  setOverrides,
+  syncEdited,
+  type OverrideEntry,
+} from "../extensions/components/actions";
+import {
+  elementComponentInfo,
+  groupOf,
+  listComponents,
+  tagOf,
+} from "../extensions/components/model";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
 
@@ -92,6 +108,11 @@ const EDIT_TOOLS = new Set([
   "remove_extension",
   "set_shape_data",
   "set_arrow_anchors",
+  "create_component",
+  "insert_instance",
+  "set_overrides",
+  "reset_overrides",
+  "detach_instance",
 ]);
 
 /** Retries of an edit whose async op (auto_layout) raced a concurrent canvas change. */
@@ -333,11 +354,14 @@ function getElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
   }
   const extensions: Record<string, unknown> = {};
   const data: Record<string, Record<string, string>> = {};
+  const components: Record<string, unknown> = {};
   for (const el of found) {
     const state = extensionStateOf(el);
     if (state) extensions[el.id] = state;
     const d = dataRecord(el);
     if (d) data[el.id] = d;
+    const c = elementComponentInfo(el);
+    if (c) components[el.id] = c;
   }
   return json({
     tabId,
@@ -345,6 +369,7 @@ function getElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
     elements: found,
     ...(Object.keys(extensions).length ? { extensions } : {}),
     ...(Object.keys(data).length ? { data } : {}),
+    ...(Object.keys(components).length ? { components } : {}),
     ...(missing.length ? { missing } : {}),
   });
 }
@@ -1388,6 +1413,73 @@ function updateLayer(draft: Draft, args: Args): unknown {
   return { updated: id, kind };
 }
 
+// --- components (docs/components.md) -----------------------------------------
+
+function listComponentsTool(tab: SceneTab, tabId: string): ToolContent[] {
+  const elements = tab.api.getSceneElementsIncludingDeleted();
+  return json({ tabId, revision: revisionOf(elements), components: listComponents(elements) });
+}
+
+/** A component id, or any element / group id belonging to one of its masters or instances. */
+function componentIdOf(draft: Draft, ref: unknown): string {
+  if (typeof ref !== "string" || !ref) throw new ToolError(`"component" must be a string id`);
+  const comps = componentsOf(draft);
+  if (comps.some((c) => c.componentId === ref)) return ref;
+  const tag = tagOf(draft.get(ref));
+  if (tag) return tag.componentId;
+  for (const el of draft.live()) {
+    const t = tagOf(el);
+    if (t && groupOf(el, t) === ref) return t.componentId;
+  }
+  throw new ToolError(
+    `"${ref}" is not a component (or an element / group of one); see list_components`,
+  );
+}
+
+function createComponentTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  return createComponent(draft, ids, optStr(args, "name"));
+}
+
+function insertInstanceTool(draft: Draft, args: Args) {
+  const angle = optNum(args, "angle");
+  const out = insertInstance(draft, componentIdOf(draft, args.component), {
+    x: optNum(args, "x"),
+    y: optNum(args, "y"),
+    scale: optNum(args, "scale"),
+    angle: angle === undefined ? undefined : (angle * Math.PI) / 180,
+  });
+  return { componentId: componentIdOf(draft, out.groupId), ...out };
+}
+
+function setOverridesTool(draft: Draft, args: Args) {
+  const entries = reqArray(args, "overrides").map((e, i): OverrideEntry => {
+    if (!isObj(e) || !isObj(e.values))
+      throw new ToolError(`overrides[${i}] must be {elementId or slot, values}`);
+    const elementId = optStr(e, "elementId");
+    const slot = optStr(e, "slot");
+    if (!elementId === !slot)
+      throw new ToolError(`overrides[${i}] needs exactly one of "elementId" or "slot"`);
+    return { elementId, slot, values: e.values };
+  });
+  setOverrides(draft, args.instance, entries);
+  return { instance: args.instance, updated: entries.length };
+}
+
+function resetOverridesTool(draft: Draft, args: Args) {
+  resetOverrides(draft, args.instance, {
+    slots: strArray(args, "slots"),
+    elementIds: strArray(args, "elementIds"),
+    keys: strArray(args, "keys"),
+  });
+  return { instance: args.instance, reset: true };
+}
+
+function detachInstanceTool(draft: Draft, args: Args) {
+  return { detached: detachInstance(draft, args.instance) };
+}
+
 // --- shape data (docs/plan.md D-DX2) ------------------------------------------
 
 function shapeDataError(err: unknown, id?: string): ToolError {
@@ -1501,6 +1593,16 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return setShapeData(draft, args);
     case "set_arrow_anchors":
       return setArrowAnchors(draft, args);
+    case "create_component":
+      return createComponentTool(draft, args);
+    case "insert_instance":
+      return insertInstanceTool(draft, args);
+    case "set_overrides":
+      return setOverridesTool(draft, args);
+    case "reset_overrides":
+      return resetOverridesTool(draft, args);
+    case "detach_instance":
+      return detachInstanceTool(draft, args);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);
@@ -1592,6 +1694,8 @@ async function runEdit(
         "The canvas kept changing while the layout was being computed; no changes were applied. Retry.",
       );
     }
+    // Components touched by generic edits stay in sync (and instance edits become overrides).
+    syncEdited(draft);
     commitDraft(tabId, tab, draft, ctx.files);
     return json({
       tabId,
@@ -1644,6 +1748,8 @@ export async function runSceneTool(
       return listLayers(tab, tabId);
     case "get_shape_data":
       return getShapeData(tab, tabId, args);
+    case "list_components":
+      return listComponentsTool(tab, tabId);
     default:
       return runEdit(tool, tab, tabId, args);
   }
