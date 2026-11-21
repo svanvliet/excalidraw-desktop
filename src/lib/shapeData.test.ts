@@ -51,7 +51,7 @@ describe("shapeData", () => {
       [DATA_KEY]: { v: 1, entries: [["a", "2"]] },
     });
     expect(customDataWith(el, [])).toEqual({ excalidrawDesktop: { chain: [] } });
-    expect(customDataWith(withData([["a", "1"]]), [])).toBeUndefined();
+    expect(customDataWith(withData([["a", "1"]]), [])).toEqual({});
   });
 
   it("validates keys and values", () => {

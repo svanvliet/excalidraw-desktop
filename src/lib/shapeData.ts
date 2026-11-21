@@ -101,7 +101,8 @@ export function renameKey(entries: readonly DataEntry[], from: string, to: strin
 
 /**
  * The element's customData with `entries` stored (removed when empty), or the same object when
- * nothing changes. Throws for read-only data.
+ * nothing changes. Throws for read-only data. Never `undefined` for a change: Excalidraw's
+ * `newElementWith` / `mutateElement` skip undefined updates, which would drop the removal.
  */
 export function customDataWith(
   el: WithCustomData,
@@ -111,7 +112,7 @@ export function customDataWith(
   if (cur.readOnly) throw new Error("This element's data was written by a newer version");
   if (JSON.stringify(cur.entries) === JSON.stringify(entries)) return el.customData;
   const { [DATA_KEY]: _old, ...rest } = el.customData ?? {};
-  if (!entries.length) return Object.keys(rest).length ? rest : undefined;
+  if (!entries.length) return rest;
   return { ...rest, [DATA_KEY]: { v: DATA_VERSION, entries: entries.map(([k, v]) => [k, v]) } };
 }
 

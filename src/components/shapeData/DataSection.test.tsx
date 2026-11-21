@@ -93,6 +93,14 @@ describe("Data section", () => {
     ]);
   });
 
+  it("removes the last row of an element with no other customData", () => {
+    renderFor("b");
+    addRow("owner", "ann");
+    fireEvent.click(screen.getByLabelText("Remove owner"));
+    expect(dataOf("b")).toEqual([]);
+    expect(api.undoStack).toHaveLength(2);
+  });
+
   it("puts data on the container, not its selected label", () => {
     const label = api.elements.find((e) => e.type === "text")!;
     renderFor("a", label.id);
