@@ -70,6 +70,12 @@ export interface ReactorRule {
   reconcile?(key: string, change: ReconcileChange, ctx: ReconcileContext): void;
   /** Called before the reactor (re)seeds, so the rule can drop caches/indexes. */
   reset?(): void;
+  /**
+   * Key-level rules always see what *earlier* rules wrote in the same flush. With this set, the
+   * rule also re-runs (next pass, bounded by `maxPasses`) for what *later* rules wrote, e.g.
+   * containers re-flowing around an instance that the components rule resized.
+   */
+  seesLaterWrites?: boolean;
 }
 
 export type ReactorApi = Pick<
@@ -326,9 +332,11 @@ export function createReactor(opts: ReactorOptions): Reactor {
     dirtyTargets.clear();
 
     if (dirtyRec.size > 0) {
-      // Key-level rules run in declared order. What one writes marks the keys it links to in the
-      // *other* key-level rules dirty (e.g. a container re-flow moving a component master's
-      // children re-syncs its instances, and vice versa), bounded by `maxPasses`.
+      // Key-level rules run in declared order. What one writes marks the keys it links to (now
+      // or before this flush) dirty in every *later* rule in the same pass, and in earlier rules
+      // that opt in (`seesLaterWrites`) in the next pass, bounded by `maxPasses`. So a style
+      // growing a text re-flows its container and both reach component instances in one flush,
+      // and an instance the components rule resized re-flows the container holding it.
       const contexts = new Map<ReactorRule, { rctx: ReconcileContext; wrote: Set<string> }>();
       const contextFor = (rule: ReactorRule) => {
         const known = contexts.get(rule);
@@ -387,13 +395,15 @@ export function createReactor(opts: ReactorOptions): Reactor {
               log.error(`reactor: ${rule.name} failed to reconcile ${key}`, err);
             }
           }
-          // Later rules see this rule's writes in the same pass; earlier ones in the next.
           recRules.forEach((other, oi) => {
-            if (other === rule) return;
+            if (other === rule || (oi < ri && !other.seesLaterWrites)) return;
+            const into = oi > ri ? round : next;
             for (const id of wrote) {
               const el = ctx.get(id);
               if (!el) continue;
-              for (const link of other.links(el)) markRec(other, link, id, oi > ri ? round : next);
+              const before = byId.get(id);
+              for (const link of other.links(el)) markRec(other, link, id, into);
+              if (before) for (const link of other.links(before)) markRec(other, link, id, into);
             }
           });
         });

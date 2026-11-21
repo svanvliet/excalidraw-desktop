@@ -246,6 +246,6 @@ No unexported helpers or deep imports are used, and nothing is patched or forked
   schedules a flush. The container hold tracker uses it to re-flow elements once a drag or resize
   ends.
 - Key-level (`reconcile`) rules run in declared order. What one rule writes dirties the keys it
-  links to in the other reconcile rules: later rules see them in the same pass, earlier ones in
-  the next pass, bounded by `maxPasses`. That lets a container re-flow inside a master reach
+  links to in later reconcile rules in the same pass. An earlier rule that sets
+  `seesLaterWrites` also sees them in the next pass, bounded by `maxPasses`. That lets a container re-flow inside a master reach
   instances in one flush.

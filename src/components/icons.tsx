@@ -316,6 +316,24 @@ export const LayersIcon = () => (
   </NativeIcon>
 );
 
+/** Styles tab: a paint palette. */
+export const StylesIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5C21 6.4 17 3 12 3Z" />
+    <circle cx="7.5" cy="11.5" r="1" />
+    <circle cx="10.5" cy="7.5" r="1" />
+    <circle cx="15.5" cy="8.5" r="1" />
+  </NativeIcon>
+);
+
+/** Components tab: a master diamond over an instance. */
+export const ComponentsIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="m12 3 4 4-4 4-4-4 4-4" />
+    <path d="m12 13 4 4-4 4-4-4 4-4" strokeDasharray="2 2" />
+  </NativeIcon>
+);
+
 export const LockIcon = () => (
   <NativeIcon grid={24}>
     <rect x="5" y="11" width="14" height="10" rx="2" />

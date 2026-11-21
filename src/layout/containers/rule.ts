@@ -19,6 +19,8 @@ export function createContainerRule(
 ): ReactorRule {
   return {
     name: "containers",
+    // Runs before the components rule but must re-flow around instances it resizes.
+    seesLaterWrites: true,
     links(el: El) {
       if (!el.groupIds.length) return NONE;
       const own = hasLayoutTag(el) ? containerGroupOf(el) : null;

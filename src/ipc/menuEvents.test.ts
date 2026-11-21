@@ -39,6 +39,7 @@ describe("menuEvents", () => {
       "excalidraw:edit:layoutDown",
       "excalidraw:edit:layoutRight",
       "excalidraw:edit:layoutTree",
+      "excalidraw:edit:createComponent",
       "excalidraw:view:zoomIn",
       "excalidraw:view:zoomOut",
       "excalidraw:view:zoomReset",

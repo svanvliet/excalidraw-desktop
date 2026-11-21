@@ -8,6 +8,7 @@ import { extractGraph, layoutTargets } from "./graph";
 import { setElkFactory, toElkGraph } from "./elk";
 import { autoLayoutDraft } from "./apply";
 import { autoLayoutCanvas, isAutoLayoutShortcut } from "./canvasAction";
+import { sideOf } from "../lib/elbowAnchors";
 
 beforeAll(() => setElkFactory(async () => new ElkBundled()));
 afterAll(() => setElkFactory(null));
@@ -177,6 +178,30 @@ describe("autoLayoutDraft", () => {
     expect(cy(cto)).toBeCloseTo(cy(cfo), 3);
     expect(cy(cto)).toBeLessThan(cy(dev));
     for (const a of ["a1", "a2", "a3"]) expectBoundEnds(draft, a);
+  });
+
+  it("pins elbow arrows along the flow and hands them to Excalidraw's router", async () => {
+    // Scott's case: tree layout of elbow arrows whose old pins faced elsewhere (east side).
+    const draft = new Draft(
+      scene([
+        box("p", 400, 0),
+        box("l", 0, 300),
+        box("r", 900, 300),
+        { ...arrow("pl", "p", "l"), elbowed: true },
+        { ...arrow("pr", "p", "r"), elbowed: true },
+      ]),
+    );
+    await autoLayoutDraft(draft, { algorithm: "tree", direction: "down" });
+    const sides = (id: string) => {
+      const a = el(draft, id) as unknown as {
+        startBinding: { fixedPoint?: [number, number] };
+        endBinding: { fixedPoint?: [number, number] };
+      };
+      return [sideOf(a.startBinding.fixedPoint), sideOf(a.endBinding.fixedPoint)];
+    };
+    expect(sides("pl")).toEqual(["s", "n"]);
+    expect(sides("pr")).toEqual(["s", "n"]);
+    for (const id of ["pl", "pr"]) expect(draft.reroute.has(id)).toBe(true);
   });
 
   it("only moves the selection and re-routes arrows into it", async () => {

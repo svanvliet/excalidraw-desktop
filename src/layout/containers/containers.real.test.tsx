@@ -16,6 +16,8 @@ import { createComponent, insertInstance } from "../../extensions/components/act
 import { componentsOnDuplicate } from "../../extensions/components/duplicate";
 import { installComponents, uninstallComponents } from "../../extensions/components/host";
 import { groupOf, tagOf } from "../../extensions/components/model";
+import { dematerialize, materialize } from "../../extensions/components/library";
+import { createStyle, updateStyle } from "../../extensions/styles/actions";
 import { addToContainer, makeContainer, updateContainer } from "./actions";
 import { runContainerCommand } from "./host";
 
@@ -286,6 +288,58 @@ describe("components interplay", () => {
     // Same reactor pass: the master's re-flow reached the instance.
     expect(copyOf("B").y - b0).toBe(50);
     expect(copyOf(made.containerId).height).toBe(pos(api, made.containerId).h);
+  });
+
+  it("a style font change grows a text, re-flows its container and reaches instances", async () => {
+    const { api, clock } = await setup([
+      ...base(),
+      ...skeleton([{ type: "text", id: "T", x: 0, y: -100, text: "Hi", fontSize: 20 }]),
+    ]);
+    const made = run(api, (d) => makeContainer(d, ["T", "B"], { gap: 10, padding: 0 }));
+    const { styleId } = run(api, (d) => createStyle(d, ["T"], "Type", { fontSize: 20 }));
+    const comp = run(api, (d) => createComponent(d, [made.containerId, "T", "B"], "Card"));
+    const inst = run(api, (d) => insertInstance(d, comp.componentId, { x: 0, y: 900 }));
+    clock.frame();
+    const copyB = () =>
+      all(api).find((e) => !e.isDeleted && inst.ids.includes(e.id) && tagOf(e)?.slot === "B")!;
+    const gap0 = copyB().y - 900;
+    const h0 = pos(api, "T").h;
+    run(api, (d) => updateStyle(d, styleId, { props: { fontSize: 40 } }));
+    clock.frame();
+    const grew = pos(api, "T").h - h0;
+    expect(grew).toBeGreaterThan(0);
+    expect(pos(api, "B").y).toBe(pos(api, "T").y + pos(api, "T").h + 10);
+    expect(copyB().y - 900).toBeCloseTo(gap0 + grew);
+    // One undo step for the whole chain.
+    click("Undo");
+    clock.frame();
+    expect(pos(api, "T").h).toBe(h0);
+    expect(copyB().y - 900).toBeCloseTo(gap0);
+  });
+
+  it("a container in a library-backed master survives dematerialize/materialize", async () => {
+    const { api, clock } = await setup();
+    const made = run(api, (d) => makeContainer(d, ["A", "B"], { gap: 10, padding: 0 }));
+    const comp = run(api, (d) => createComponent(d, [made.containerId, "A", "B"], "Stack"));
+    const inst = run(api, (d) => insertInstance(d, comp.componentId, { x: 0, y: 500 }));
+    clock.frame();
+    const masterGroup = groupOf(get(api, "A"), tagOf(get(api, "A"))!)!;
+    run(api, (d) => dematerialize(d, masterGroup));
+    clock.frame();
+    expect(get(api, made.containerId).isDeleted).toBe(true);
+    const group = run(api, (d) => materialize(d, inst.groupId));
+    clock.frame();
+    const master = all(api).filter(
+      (e) => !e.isDeleted && e.groupIds.includes(group) && tagOf(e)?.role !== "instance",
+    );
+    const box = master.find((e) => e.customData?.["excalidrawDesktop.layout"])!;
+    const first = master.find((e) => tagOf(e)?.slot === "A")!;
+    const second = master.find((e) => tagOf(e)?.slot === "B")!;
+    expect(box).toBeTruthy();
+    userEdit(api, { [first.id]: { height: 90 } });
+    clock.frame();
+    expect(get(api, second.id).y).toBe(get(api, first.id).y + 100);
+    expect(get(api, box.id).height).toBe(160);
   });
 
   it("an instance is one child; moving it doesn't create overrides", async () => {

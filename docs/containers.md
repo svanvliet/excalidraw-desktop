@@ -67,10 +67,12 @@ are _held_. Siblings re-flow around a held unit live, but the held unit itself i
 `createHoldTracker` watches `onChange`. When the gesture ends it calls `reactor.invalidate()`
 for the held ids, so the container settles and snaps them into their slots.
 
-Nested containers re-flow inner first, then outward. The rule is installed on the components
-reactor and runs before the component rule (`[containerRule, componentRule]`). A re-flow inside
-a master reaches its instances in the same pass, and a container that moves an instance never
-turns that into overrides.
+Nested containers re-flow inner first, then outward. The rule shares the components reactor,
+in the order `[style, container, component]` (see `docs/styles.md` § "Rule order"): a style
+font change grows a text, its container re-flows, and components carries both to instances in
+one flush. A rule's writes dirty later rules in the same pass. The container rule also opts
+into later rules' writes (`seesLaterWrites`, next pass, bounded by `maxPasses`), so an instance
+that the component rule resizes re-flows the container holding it. A container that moves an instance never turns that into overrides.
 
 ## 4. Commands and UI
 
@@ -96,7 +98,7 @@ the shortcut is wired.
 `create_container`, `update_container` (settings and/or `order`), `remove_container`
 (`keepBox` keeps a plain group), `add_to_container`, `remove_from_container` and the read-only
 `list_containers`. All edit tools work inside `apply_ops`. After any agent edit, the containers
-it touched re-flow in the same draft before components sync, so `update_elements` on a child
+it touched re-flow in the same draft, after styles sync and before components sync, so `update_elements` on a child
 behaves like a user edit.
 
 ## 6. Interactions

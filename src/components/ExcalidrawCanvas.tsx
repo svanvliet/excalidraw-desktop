@@ -7,14 +7,19 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
   ExcalidrawProps,
+  LibraryItems,
 } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
-import { LayersIcon } from "./icons";
+import { ComponentsIcon, LayersIcon, StylesIcon } from "./icons";
+import { ComponentsPanel } from "./componentsUi/ComponentsPanel";
+import { handleComponentDragOver, handleComponentDrop } from "./componentsUi/insert";
+import { MasterEditBanner } from "./componentsUi/MasterEditBanner";
 import { PropertiesPanelHost } from "./propertiesPanel/PropertiesPanelHost";
 import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
+import { StylesPanel } from "./sidebar/StylesPanel";
 import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
@@ -91,6 +96,8 @@ declare global {
     __e2e?: {
       convertToExcalidrawElements: typeof convertToExcalidrawElements;
       runSceneTool: typeof import("../agent/sceneTools").runSceneTool;
+      /** Whether the engine's library-backed master primitives are present (docs/components.md). */
+      libraryMasters: boolean;
     };
   }
 }
@@ -102,9 +109,15 @@ function exposeForE2e(api: ExcalidrawImperativeAPI): void {
   try {
     if (localStorage.getItem(E2E_FLAG_KEY) !== "1") return;
     window.__canvas = api;
-    void import("../agent/sceneTools").then(({ runSceneTool }) => {
-      window.__e2e = { convertToExcalidrawElements, runSceneTool };
-    });
+    void Promise.all([import("../agent/sceneTools"), import("./componentsUi/libraryMasters")]).then(
+      ([{ runSceneTool }, { libraryMasterEngine }]) => {
+        window.__e2e = {
+          convertToExcalidrawElements,
+          runSceneTool,
+          libraryMasters: libraryMasterEngine() !== null,
+        };
+      },
+    );
   } catch {
     // storage unavailable
   }
@@ -184,6 +197,7 @@ export function ExcalidrawCanvas({
   persistLibraryRef.current = persistLibrary ?? false;
   const librarySinkRef = useRef<LibrarySink | null>(null);
   const librarySeededRef = useRef(false);
+  const [libraryItems, setLibraryItems] = useState<LibraryItems>([]);
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
@@ -196,6 +210,7 @@ export function ExcalidrawCanvas({
         if (cancelled) return;
         const merged = await api.updateLibrary({ libraryItems: items, merge: true });
         if (cancelled) return;
+        setLibraryItems(merged);
         librarySeededRef.current = true;
         if (persistLibraryRef.current) await saveLibrary(merged, sink);
       })
@@ -209,6 +224,7 @@ export function ExcalidrawCanvas({
 
   const handleLibraryChange = useCallback<NonNullable<ExcalidrawProps["onLibraryChange"]>>(
     (items) => {
+      setLibraryItems(items);
       if (!librarySeededRef.current || !persistLibraryRef.current) return;
       void saveLibrary(items, librarySinkRef.current ?? undefined);
     },
@@ -238,8 +254,28 @@ export function ExcalidrawCanvas({
         icon: <LayersIcon />,
         render: () => api && <LayersPanel api={api} readOnly={viewOnly} />,
       },
+      {
+        tab: "styles",
+        title: "Styles",
+        icon: <StylesIcon />,
+        render: () => api && <StylesPanel api={api} readOnly={viewOnly} />,
+      },
+      {
+        tab: "components",
+        title: "Components",
+        icon: <ComponentsIcon />,
+        render: () =>
+          api && (
+            <ComponentsPanel
+              api={api}
+              readOnly={viewOnly}
+              canSave={persistLibrary ?? false}
+              libraryItems={libraryItems}
+            />
+          ),
+      },
     ],
-    [api, viewOnly],
+    [api, viewOnly, persistLibrary, libraryItems],
   );
 
   return (
@@ -247,6 +283,8 @@ export function ExcalidrawCanvas({
       ref={canvasRef}
       className="excalidraw-canvas"
       onKeyDownCapture={(e) => handleComponentShortcut(apiRef.current, e)}
+      onDragOverCapture={(e) => handleComponentDragOver(apiRef.current, e)}
+      onDropCapture={(e) => handleComponentDrop(apiRef.current, e)}
     >
       <Excalidraw
         initialData={initialData ?? undefined}
@@ -267,6 +305,7 @@ export function ExcalidrawCanvas({
       {api && !viewOnly && (
         <PropertiesPanelHost api={api} container={canvasRef} sections={PANEL_SECTIONS} />
       )}
+      {!viewOnly && <MasterEditBanner api={api} />}
     </div>
   );
 }

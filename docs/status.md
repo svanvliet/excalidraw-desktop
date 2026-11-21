@@ -30,7 +30,9 @@
 | AI-6 | AI agent: 3 engines × 2 OS validation + terms review                                          | ⬜     | `docs/ai-testing.md`                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | DX-1 | DX wave 1: properties-panel host, shape data, elbow anchors                                   | ✅     | Generic `PropertiesPanelHost` with a Ctrl/Cmd key bridge (D-DX4); key/value shape data with a Data section, CSV copy and `set_shape_data`/`get_shape_data` (D-DX2); elbow anchors in an Anchors section, `connect` anchors and `set_arrow_anchors` (D-DX8). Vitest + `e2e/shape-data-anchors.spec.ts` green.                                                                                                                                                      |
 | DX-2 | DX wave 2: Components core (engine + agent tools)                                             | 🟡     | Engine, live sync, overrides, orphans, duplicate, collab, 6 MCP tools, smoke. UI is a follow-up lane.                                                                                                                                                                                                                                                                                                                                                             |
-| DX-6 | DX wave 2: Smart containers                                                                   | ✅     | Stack containers with gap/padding/align/distribute/hug-or-fixed, live re-flow through the reactor (one undo step, no collab echo), Container panel section + Alt/Option+Shift+A, 6 MCP tools (FR-59, D-DX13). Vitest + `e2e/containers.spec.ts` green. Layout menu/toolbar entries arrive with the shared Layout menu.                                                                                                                                            |
+| DX-5 | DX wave 2: Named styles                                                                       | ✅     | Style definitions on linked elements, live reactor rule before components (chained), overrides, 6 MCP tools, Styles tab + panel picker. Vitest + `e2e/styles.spec.ts` green.                                                                                                                                                                                                                                                                                      |
+| DX-3 | DX wave 2: Components UI (tab, My components, panel section, library masters)                 | ✅     | Components tab, My components with images and `.excalidrawlib` export, panel section, Edit master… / Done / Cancel on the engine primitives, Edit → Create Component, 2 MCP tools (FR-55, D-DX10). Vitest + `e2e/components-ui.spec.ts` green.                                                                                                                                                                                                                    |
+| DX-6 | DX wave 2: Smart containers                                                                   | ✅     | Stack containers (gap, padding, align, distribute, hug or fixed), live re-flow on the reactor (one undo step, no collab echo), Container panel section + Alt/Option+Shift+A, 6 MCP tools (FR-59, D-DX13). Vitest + `e2e/containers.spec.ts` green. Layout menu/toolbar entries come with the shared Layout menu.                                                                                                                                                  |
 
 ## Acceptance checks (per milestone)
 
@@ -152,11 +154,21 @@
 - [x] Master edit updates the instance, one undo reverts both (Playwright `components.spec.ts`).
 - [ ] Components sidebar tab / panel section (follow-up lane); real-browser Alt-drag check.
 
+### DX Wave 2 — Named styles
+
+- [x] Create/apply/update/delete styles; linked elements (incl. bound and free text, re-measured) update live as one undo step; undo restores a deleted style (Vitest `styles.real`).
+- [x] Direct edits become per-element overrides; reset and push-to-style; stale pasted copies adopt the current definition (Vitest `styles.real`).
+- [x] Rule order: a styled master child reaches instances in the same undo step, never as an instance override; instance children can't be styled (Vitest `styles.real`, `reactor.real`, `sceneTools`).
+- [x] Save → reload round-trip and collab convergence without echo (Vitest `styles.real`, `styles.collab.real`).
+- [x] MCP tools + summary/get_elements style info (Vitest `sceneTools`).
+- [x] Panel picker creates a style, Styles tab edits it live, one undo reverts, overrides reset (Playwright `styles.spec.ts`).
+
 ### DX Wave 2 — Smart containers
 
 - [x] Make/update/remove containers; vertical and horizontal stacks with gap, padding, align, distribute and hug/fixed sizing (Vitest `actions`, `containers.real`).
 - [x] Live re-flow on move/reorder, resize, text growth, add and remove; gestures settle on release; one undo step; Redo kept (Vitest `containers.real`).
 - [x] Nested containers, a container inside a component master, an instance as a child (no overrides), bound arrows follow (Vitest `containers.real`).
+- [x] A style font change re-flows its container and reaches instances in one step; a container inside a library-backed master survives dematerialize/materialize (Vitest `containers.real`).
 - [x] Collab convergence without echo (Vitest `containers.collab.real`).
 - [x] Panel section, shortcut, auto-layout treats a container as one node (Vitest `ContainerSection`).
 - [x] MCP tools incl. inside `apply_ops` and re-flow after generic edits (Vitest `sceneTools`).
@@ -183,4 +195,6 @@
 | 2026-11-19 | AI-0, AI-5 | ⬜ → 🟡   | Copilot/Windows validation and TTD/resume/context chips remain.                                                                        |
 | 2026-11-21 | DX-1       | ⬜ → ✅   | Panel host, shape data (FR-52) and elbow anchors (FR-53).                                                                              |
 | 2026-11-21 | DX-2       | ⬜ → 🟡   | Components engine + agent tools (FR-54, D-DX9); UI pending.                                                                            |
+| 2026-11-21 | DX-5       | ⬜ → ✅   | Named styles (FR-58, D-DX12): engine, UI and agent tools.                                                                              |
 | 2026-11-21 | DX-6       | — → ✅    | Smart containers (FR-59, D-DX13).                                                                                                      |
+| 2026-11-22 | DX-3       | ⬜ → ✅   | Components UI (FR-55, D-DX10).                                                                                                         |

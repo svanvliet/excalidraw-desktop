@@ -441,3 +441,76 @@ describe("loop guard and idempotency", () => {
     expect(get(api, "T1").locked).toBe(false);
   });
 });
+
+describe("key-level rules run in order and chain", () => {
+  it("a later rule sees what an earlier rule wrote; never the reverse; one undo step", async () => {
+    const api = await mount(fixture());
+    const clock = manualSchedule();
+    const calls: string[] = [];
+    // "first": S changes → paint T1 red. "second": T1 changes → copy its colour onto T2.
+    const first: ReactorRule = {
+      name: "first",
+      links: (el) =>
+        el.id === "S"
+          ? [{ role: "source", key: "a" }]
+          : el.id === "T1"
+            ? [{ role: "target", key: "a" }]
+            : [],
+      reconcile: (_key, change, ctx) => {
+        calls.push(`first:${[...change.targets].join(",")}:${change.sourceChanged}`);
+        if (change.sourceChanged) ctx.patch("T1", { strokeColor: "#ff0000" });
+      },
+    };
+    const second: ReactorRule = {
+      name: "second",
+      links: (el) =>
+        el.id === "T1"
+          ? [{ role: "source", key: "b" }]
+          : el.id === "T2"
+            ? [{ role: "target", key: "b" }]
+            : [],
+      reconcile: (_key, change, ctx) => {
+        calls.push(`second:${change.sourceChanged}`);
+        if (change.sourceChanged) ctx.patch("T2", { strokeColor: ctx.get("T1")!.strokeColor });
+      },
+    };
+    reactor = createReactor({
+      api,
+      rules: [first, second],
+      schedule: clock.schedule,
+      apply: APPLY,
+    });
+    userEdit(api, "S", { x: 5 });
+    clock.frame();
+    expect(get(api, "T1").strokeColor).toBe("#ff0000");
+    expect(get(api, "T2").strokeColor).toBe("#ff0000");
+    expect(calls).toEqual(["first::true", "second:true"]);
+    expect(clock.scheduled()).toBe(0);
+
+    click("Undo");
+    clock.frame();
+    expect(get(api, "S").x).toBe(0);
+
+    // A later rule's write never re-enters an earlier one in the same flush.
+    calls.length = 0;
+    const back: ReactorRule = {
+      ...second,
+      reconcile: (_key, _change, ctx) => {
+        calls.push("back");
+        ctx.patch("S", { strokeColor: "#00ff00" });
+      },
+      links: (el) =>
+        el.id === "S"
+          ? [{ role: "target", key: "b" }]
+          : el.id === "T1"
+            ? [{ role: "source", key: "b" }]
+            : [],
+    };
+    reactor.dispose();
+    reactor = createReactor({ api, rules: [first, back], schedule: clock.schedule, apply: APPLY });
+    userEdit(api, "S", { x: 9 });
+    clock.frame();
+    expect(calls.filter((c) => c.startsWith("first"))).toHaveLength(1);
+    expect(get(api, "S").strokeColor).toBe("#00ff00");
+  });
+});

@@ -15,7 +15,14 @@ import { MEMORY_HOST_TOKEN, MemoryRelay } from "../../collab/memoryRelay";
 import type { Payload } from "../../collab/protocol";
 import type { El } from "../reactor/reactor";
 import { createComponent, insertInstance, setOverrides } from "./actions";
-import { installComponents, remoteApi, runComponentCommand, uninstallComponents } from "./host";
+import {
+  dematerializeMaster,
+  installComponents,
+  materializeMaster,
+  remoteApi,
+  runComponentCommand,
+  uninstallComponents,
+} from "./host";
 import { tagOf } from "./model";
 
 type Api = ExcalidrawImperativeAPI;
@@ -204,4 +211,62 @@ it("master edits on either peer reach both instances once, with no echo", async 
   b.sent.length = 0;
   await settle(relay, 150);
   expect(sceneUpdates(a) + sceneUpdates(b)).toBe(0);
+});
+
+it("library masters: dematerialize/materialize on A reach B without promotion or echo", async () => {
+  const relay = new MemoryRelay();
+  const a = await peer(relay, true, fixture());
+  let master = "";
+  let instGroup = "";
+  let instRect = "";
+  act(() => {
+    runComponentCommand(a.api, (d) => {
+      const c = createComponent(d, ["R"]);
+      master = c.masterGroupId;
+      const out = insertInstance(d, c.componentId, { x: 400, y: 0 });
+      instGroup = out.groupId;
+      instRect = out.ids.find((id) => d.get(id)!.type === "rectangle")!;
+    });
+  });
+  await settle(relay);
+  const b = await peer(relay, false);
+  await settle(relay);
+
+  a.sent.length = 0;
+  b.sent.length = 0;
+  act(() => {
+    expect(dematerializeMaster(a.api, master)).not.toBeNull();
+  });
+  await settle(relay);
+  expect(sceneUpdates(b)).toBe(0);
+  for (const p of [a, b]) {
+    const tagged = p.api.getSceneElements().filter((e) => tagOf(e));
+    expect(tagged).toHaveLength(2);
+    for (const e of tagged) expect(tagOf(e)).toMatchObject({ role: "instance", source: "library" });
+  }
+  expect(look(b)).toEqual(look(a));
+  expect(stamps(b)).toEqual(stamps(a));
+
+  a.sent.length = 0;
+  let group: string | null = null;
+  act(() => {
+    group = materializeMaster(a.api, instGroup);
+  });
+  expect(group).not.toBeNull();
+  await settle(relay);
+  expect(sceneUpdates(b)).toBe(0);
+  expect(look(b)).toEqual(look(a));
+
+  // The materialized master syncs as usual from either peer.
+  b.sent.length = 0;
+  const m = a.api
+    .getSceneElements()
+    .find((e) => e.type === "rectangle" && tagOf(e)?.role === "master")!;
+  edit(a, m.id, { backgroundColor: "#a5d8ff" });
+  await settle(relay);
+  expect(b.api.getSceneElements().find((e) => e.id === instRect)).toMatchObject({
+    backgroundColor: "#a5d8ff",
+  });
+  expect(sceneUpdates(b)).toBe(0);
+  expect(stamps(b)).toEqual(stamps(a));
 });

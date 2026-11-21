@@ -33,6 +33,8 @@ import {
   type ComponentInfo,
   type ElementComponentInfo,
 } from "./model";
+import { createStyleRule } from "../styles/rule";
+import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 import { createComponentRule } from "./rule";
 import { createContainerRule, createHoldTracker } from "../../layout/containers/rule";
 
@@ -48,12 +50,13 @@ export function installComponents(
 ): Reactor {
   let reactor = engines.get(api);
   if (!reactor) {
-    // Smart containers (docs/containers.md) share this reactor; their rule runs first so a
-    // container re-flow inside a master is synced to instances in the same pass.
     const hold = createHoldTracker();
     reactor = createReactor({
       api,
-      rules: [createContainerRule({ held: hold.held }), createComponentRule()],
+      // Order matters (D-DX12, D-DX13; docs/styles.md § "Rule order", docs/containers.md §3):
+      // a style writes master children (and grows text), containers then re-flow around them,
+      // and components finally copy all of it to instances in the same flush.
+      rules: [createStyleRule(), createContainerRule({ held: hold.held }), createComponentRule()],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
@@ -154,6 +157,17 @@ export const resetInstanceOverrides = (
 ) => runComponentCommand(api, (d) => resetOverrides(d, instance, opts));
 export const detachComponentInstance = (api: Api, instance: string) =>
   runComponentCommand(api, (d) => detachInstance(d, instance));
+
+/**
+ * Library-backed masters (docs/components.md § Library). Each is one undo step and returns
+ * null in view mode or when it fails (the reason is shown as a toast), like the actions above.
+ */
+export const materializeMaster = (api: Api, instanceGroupId: string): string | null =>
+  runComponentCommand(api, (d) => materialize(d, instanceGroupId));
+export const dematerializeMaster = (api: Api, masterGroupId: string): ComponentDefinition | null =>
+  runComponentCommand(api, (d) => dematerialize(d, masterGroupId));
+export const adoptInstanceAsMaster = (api: Api, instanceGroupId: string): string | null =>
+  runComponentCommand(api, (d) => adoptAsMaster(d, instanceGroupId));
 
 export function sceneComponents(api: Api): ComponentInfo[] {
   return listComponents(api.getSceneElementsIncludingDeleted());

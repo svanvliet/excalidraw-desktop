@@ -124,12 +124,12 @@ export function commitDraft(
   }
   if (files?.length) tab.api.addFiles(files);
   if (turn) {
-    if (draft.reroute.size) commitRerouted(tab, draft, CaptureUpdateAction.NEVER);
+    if (draft.reroute.size) commitRerouted(tab.api, draft, CaptureUpdateAction.NEVER);
     else
       tab.api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
     recordWritten(turn, tab.api, touched);
   } else if (draft.reroute.size) {
-    commitRerouted(tab, draft, CaptureUpdateAction.IMMEDIATELY);
+    commitRerouted(tab.api, draft, CaptureUpdateAction.IMMEDIATELY);
   } else {
     commitUndoable(tab.api, draft);
   }
@@ -141,13 +141,19 @@ export function commitDraft(
  * history, let Excalidraw route the flagged arrows, then (outside a turn) rewind the snapshot to
  * the pre-draft state as endTurn does, so the routed result lands as a single undo step.
  */
+/** Commit a draft as one undo step outside any agent turn, routing its flagged elbow arrows. */
+export function commitDraftUndoable(api: SceneTab["api"], draft: Draft): void {
+  if (draft.reroute.size) commitRerouted(api, draft, CaptureUpdateAction.IMMEDIATELY);
+  else commitUndoable(api, draft);
+}
+
 function commitRerouted(
-  tab: SceneTab,
+  api: SceneTab["api"],
   draft: Draft,
   capture: (typeof CaptureUpdateAction)[keyof typeof CaptureUpdateAction],
 ): void {
-  tab.api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
-  const live = tab.api.getSceneElementsIncludingDeleted();
+  api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
+  const live = api.getSceneElementsIncludingDeleted();
   const routed = live.map((el) => {
     if (!draft.reroute.has(el.id) || el.isDeleted || !isElbowArrow(el)) return el;
     try {
@@ -166,9 +172,9 @@ function commitRerouted(
         if (orig) rewound.push(orig);
       }
     }
-    tab.api.updateScene({ elements: rewound, captureUpdate: CaptureUpdateAction.NEVER });
+    api.updateScene({ elements: rewound, captureUpdate: CaptureUpdateAction.NEVER });
   }
-  tab.api.updateScene({ elements: routed, captureUpdate: capture });
+  api.updateScene({ elements: routed, captureUpdate: capture });
 }
 
 /** Start grouping this tab's agent edits under `turnId`. Ends any other active turn first. */

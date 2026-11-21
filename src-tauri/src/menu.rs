@@ -45,6 +45,7 @@ pub mod ids {
     pub const EDIT_LAYOUT_DOWN: &str = "excalidraw:edit:layoutDown";
     pub const EDIT_LAYOUT_RIGHT: &str = "excalidraw:edit:layoutRight";
     pub const EDIT_LAYOUT_TREE: &str = "excalidraw:edit:layoutTree";
+    pub const EDIT_CREATE_COMPONENT: &str = "excalidraw:edit:createComponent";
 
     pub const VIEW_ZOOM_IN: &str = "excalidraw:view:zoomIn";
     pub const VIEW_ZOOM_OUT: &str = "excalidraw:view:zoomOut";
@@ -226,6 +227,14 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .select_all()
         .separator()
         .item(&auto_layout)
+        // No accelerator: the webview owns Alt/Option+Cmd/Ctrl+K (FR-55) so it works outside Tauri.
+        .item(&MenuItem::with_id(
+            app,
+            ids::EDIT_CREATE_COMPONENT,
+            "Create Component",
+            true,
+            None::<&str>,
+        )?)
         .build()?;
     menu = menu.item(&edit);
 
@@ -371,6 +380,10 @@ mod tests {
         assert_eq!(ids::EDIT_LAYOUT_DOWN, "excalidraw:edit:layoutDown");
         assert_eq!(ids::EDIT_LAYOUT_RIGHT, "excalidraw:edit:layoutRight");
         assert_eq!(ids::EDIT_LAYOUT_TREE, "excalidraw:edit:layoutTree");
+        assert_eq!(
+            ids::EDIT_CREATE_COMPONENT,
+            "excalidraw:edit:createComponent"
+        );
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");
         assert_eq!(ids::VIEW_ZOOM_OUT, "excalidraw:view:zoomOut");
         assert_eq!(ids::VIEW_ZOOM_RESET, "excalidraw:view:zoomReset");

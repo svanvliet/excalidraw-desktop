@@ -616,7 +616,7 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1080,6 +1080,43 @@
       }
     },
     {
+      "name": "list_my_components",
+      "readOnly": true,
+      "description": "List the user's personal component library (My components), which works across drawings: id, name, element count, number of embedded images, last update. saving is false when the library couldn't be loaded and won't be saved. Place one with insert_my_component.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "insert_my_component",
+      "readOnly": false,
+      "description": "Place a component from My components (see list_my_components) on a canvas, including its images. component: the saved component's id or exact name. x, y: top-left (default: right of the existing content). If the drawing already has that component's master, this adds an instance of it; otherwise the instance links back to My components (or, in older builds, the master is placed too and the instance beside it). Returns componentId, the instance groupId and child ids, masterGroupId (null when the master stays in My components) and placedMaster. Works in apply_ops. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": ["component"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "set_overrides",
       "readOnly": false,
       "description": "Override per-slot values on one instance so they stop following the master: text, backgroundColor, strokeColor, opacity, link, fileId (text for text elements; fileId for images; opacity 0-100). instance: the instance groupId or any of its element ids. overrides: [{elementId (instance child) or slot (master element id), values: {key: value or null to clear}}]. Direct update_elements edits to these keys on an instance child become overrides too; edits to other properties of an instance child are reverted to the master's. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
@@ -1492,6 +1529,248 @@
           }
         },
         "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_styles",
+      "readOnly": true,
+      "description": "List the named styles used on the canvas: id, name, rev, props and the ids of linked elements. A named style is a reusable set of style properties (strokeColor, backgroundColor, fillStyle, strokeWidth, strokeStyle, roughness, opacity, roundness, fontFamily, fontSize, textColor); editing it with update_style restyles every linked element live. get_scene_summary rows carry sty {id, ov} for linked elements (ov: locally overridden keys); get_elements returns a styles map.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_style",
+      "readOnly": false,
+      "description": "Create a named style and link elements to it. ids: the elements (bound text/labels come along). name: optional display name. props: the style's properties; omit to take them from the elements (shape keys from the first shape, font keys and textColor from the first text). Shape keys apply to shapes and lines, fontFamily/fontSize/textColor to text, opacity to both; roundness is \"round\" or \"sharp\"; fontFamily is a font id or name (Excalifont, Nunito, Lilita One, Comic Shanns, Liberation Sans, Cascadia, Virgil, Helvetica); opacity 0-100; roughness 0-2. Component instance children can't be styled (style the master; instances follow it). Returns styleId. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "props": {
+            "type": "object",
+            "properties": {
+              "strokeColor": {
+                "type": "string"
+              },
+              "backgroundColor": {
+                "type": "string"
+              },
+              "fillStyle": {
+                "enum": ["hachure", "cross-hatch", "solid", "zigzag"]
+              },
+              "strokeWidth": {
+                "type": "number"
+              },
+              "strokeStyle": {
+                "enum": ["solid", "dashed", "dotted"]
+              },
+              "roughness": {
+                "type": "number"
+              },
+              "opacity": {
+                "type": "number"
+              },
+              "roundness": {
+                "enum": ["round", "sharp"]
+              },
+              "fontFamily": {
+                "type": ["number", "string"]
+              },
+              "fontSize": {
+                "type": "number"
+              },
+              "textColor": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["ids"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "apply_style",
+      "readOnly": false,
+      "description": "Link elements to a named style (their local overrides are dropped and they take the style's look), or unlink them with style: null (they keep their current look). style: style id or exact name. ids: the elements (bound text comes along). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          },
+          "style": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["ids", "style"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_style",
+      "readOnly": false,
+      "description": "Edit a named style: every linked element (including component masters, whose instances follow) updates live; local overrides are kept. style: style id or exact name. name: rename. props: properties to set; null removes a property from the style. Direct update_elements edits to a linked element's style properties become local overrides of that element. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "style": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "props": {
+            "type": "object",
+            "properties": {
+              "strokeColor": {
+                "type": ["string", "null"]
+              },
+              "backgroundColor": {
+                "type": ["string", "null"]
+              },
+              "fillStyle": {
+                "enum": ["hachure", "cross-hatch", "solid", "zigzag", null]
+              },
+              "strokeWidth": {
+                "type": ["number", "null"]
+              },
+              "strokeStyle": {
+                "enum": ["solid", "dashed", "dotted", null]
+              },
+              "roughness": {
+                "type": ["number", "null"]
+              },
+              "opacity": {
+                "type": ["number", "null"]
+              },
+              "roundness": {
+                "enum": ["round", "sharp", null]
+              },
+              "fontFamily": {
+                "type": ["number", "string", "null"]
+              },
+              "fontSize": {
+                "type": ["number", "null"]
+              },
+              "textColor": {
+                "type": ["string", "null"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["style"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_style",
+      "readOnly": false,
+      "description": "Delete a named style: every linked element is unlinked and keeps its current look. style: style id or exact name. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "style": {
+            "type": "string"
+          }
+        },
+        "required": ["style"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reset_style_overrides",
+      "readOnly": false,
+      "description": "Clear local overrides on styled elements so they follow their style again. ids: the elements. keys: optional style properties to reset (default all). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "strokeColor",
+                "backgroundColor",
+                "fillStyle",
+                "strokeWidth",
+                "strokeStyle",
+                "roughness",
+                "opacity",
+                "roundness",
+                "fontFamily",
+                "fontSize",
+                "textColor"
+              ]
+            }
+          }
+        },
+        "required": ["ids"],
         "additionalProperties": false
       }
     }

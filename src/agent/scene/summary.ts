@@ -1,4 +1,5 @@
 /** Compact, model-friendly rows for scene summaries (one row per element). */
+import { elementStyleInfo } from "../../extensions/styles/model";
 import { extensionStateOf } from "../../extensions/stack";
 import { elementComponentInfo } from "../../extensions/components/model";
 import { isElbowArrow, sideOf } from "../../lib/elbowAnchors";
@@ -41,6 +42,8 @@ export interface SummaryRow {
     group: string | null;
     overrides?: string[];
   };
+  /** Named style link (docs/styles.md); ov: locally overridden style keys. */
+  sty?: { id: string; ov?: string[]; fromMaster?: true };
 }
 
 const r = (n: number) => Math.round(n);
@@ -96,6 +99,12 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
   if (cmp) {
     row.cmp = { id: cmp.componentId, role: cmp.role, slot: cmp.slot, group: cmp.groupId };
     if (cmp.overrides) row.cmp.overrides = Object.keys(cmp.overrides);
+  }
+  const sty = elementStyleInfo(el, (id) => draft.peek(id));
+  if (sty) {
+    row.sty = { id: sty.styleId };
+    if (sty.overrides) row.sty.ov = sty.overrides;
+    if (sty.fromMaster) row.sty.fromMaster = true;
   }
   return row;
 }
