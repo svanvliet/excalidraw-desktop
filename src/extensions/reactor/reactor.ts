@@ -300,7 +300,23 @@ export function createReactor(opts: ReactorOptions): Reactor {
     if (dirtyRec.size > 0) {
       const recDirty = new Map(dirtyRec);
       dirtyRec.clear();
-      for (const [rule, byKey] of recDirty) {
+      // Key-level rules run in declaration order. What an earlier rule wrote in this flush counts
+      // as a change for every later rule (never an earlier one, so rules can't cycle): e.g. a
+      // style rule restyling a master child must reach the components rule in the same flush.
+      for (const rule of recRules) {
+        let byKey = recDirty.get(rule);
+        for (const [id, el] of pending) {
+          const before = byId.get(id);
+          const ls = [...rule.links(el), ...(before ? rule.links(before) : [])];
+          for (const link of ls) {
+            byKey ??= new Map();
+            let entry = byKey.get(link.key);
+            if (!entry) byKey.set(link.key, (entry = { source: false, targets: new Set() }));
+            if (link.role === "source") entry.source = true;
+            else entry.targets.add(id);
+          }
+        }
+        if (!byKey) continue;
         const members = new Map<string, string[]>();
         const addMember = (el: El) => {
           for (const l of rule.links(el)) {
