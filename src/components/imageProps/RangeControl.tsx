@@ -53,12 +53,30 @@ export function RangeControl(props: RangeControlProps) {
   }, [shown, min, max]);
 
   const commit = () => {
-    if (draft !== null && draft !== value) onCommit(draft);
+    if (!disabled && draft !== null && draft !== value) onCommit(draft);
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     // Arrow keys adjust the slider, never nudge the selected elements.
-    if (KEYS.has(e.key)) e.stopPropagation();
+    if (KEYS.has(e.key)) return e.stopPropagation();
+    // The panel portals into Excalidraw's DOM but sits outside its React tree, so its container
+    // `onKeyDown` never sees our synthetic events: forward shortcuts (Ctrl/Cmd+Z after a slide)
+    // like Excalidraw's own sliders get them.
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const host = e.currentTarget.closest<HTMLElement>(".excalidraw-container");
+    if (!host) return;
+    const { key, code, ctrlKey, metaKey, shiftKey, altKey } = e;
+    const forwarded = new globalThis.KeyboardEvent("keydown", {
+      key,
+      code,
+      ctrlKey,
+      metaKey,
+      shiftKey,
+      altKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    if (!host.dispatchEvent(forwarded)) e.preventDefault();
   };
 
   return (
@@ -75,8 +93,10 @@ export function RangeControl(props: RangeControlProps) {
           className="range-input"
           data-testid={testId}
           aria-label={label}
-          disabled={disabled}
-          onChange={(e) => setDraft(+e.target.value)}
+          // Not `disabled`: that drops focus to <body>, outside Excalidraw's container-scoped
+          // keydown handler, so Ctrl+Z after a slide would stop working while the run finishes.
+          aria-disabled={disabled || undefined}
+          onChange={(e) => !disabled && setDraft(+e.target.value)}
           onPointerUp={commit}
           onKeyDown={onKeyDown}
           onKeyUp={(e) => KEYS.has(e.key) && commit()}

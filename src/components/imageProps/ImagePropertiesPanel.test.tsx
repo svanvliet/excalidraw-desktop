@@ -217,7 +217,7 @@ describe("effect sections", () => {
   }
   const slide = async (testId: string, value: number) => {
     const input = await screen.findByTestId(testId);
-    await waitFor(() => expect(input).toBeEnabled());
+    await waitFor(() => expect(input).not.toHaveAttribute("aria-disabled"));
     fireEvent.change(input, { target: { value: String(value) } });
     fireEvent.pointerUp(input);
   };
