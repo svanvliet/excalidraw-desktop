@@ -69,7 +69,7 @@ describe("componentLibraryStore", () => {
     expect(store.data.get("components")).toEqual([
       expect.objectContaining({ id: "b", name: "Button" }),
     ]);
-    expect(seen.at(-1)).toEqual(["b:Button"]);
+    expect(seen[seen.length - 1]).toEqual(["b:Button"]);
     expect(seen).toContainEqual(["a:a"]);
     expect(store.save).toHaveBeenCalledTimes(4);
   });
