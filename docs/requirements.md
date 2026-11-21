@@ -155,6 +155,10 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 
 - **FR-58** **Named styles**: elements link to a named style (stroke and fill colour, fill style, stroke width and style, sloppiness, opacity, edges, font family and size, text colour). Editing the style updates every linked element live, including component instances through their master, as **one undo step**. A direct edit to a linked element becomes a per-element **override** until reset, or can be pushed into the style. Definitions are versioned `customData` on the linked elements (D-DX2), so styles survive save, reload, paste and collab; a style exists while an element uses it. UI: a **Styles** sidebar tab (create from selection, apply, select, rename, edit, delete → unlink) and a **Style** picker in the properties panel. The agent gets `list_styles`, `create_style`, `apply_style`, `update_style`, `delete_style` and `reset_style_overrides`. See `docs/styles.md`.
 
+### 4.16 Smart containers (DX wave 2)
+
+- **FR-59** **Smart containers**: a selection can become a **container**, a group with a tagged background rectangle that stacks its children vertically or horizontally with a gap, padding (per side), cross-axis alignment, main-axis distribution and per-axis hug or fixed size. Children re-flow live, and the box resizes to fit, when a child moves (reorders), resizes, grows from a text edit, or is added or removed. Each user action is **one undo step**, collab peers don't echo, and bound arrows follow. A Container section in the properties panel makes, edits and removes containers and reorders or takes out children; Alt/Option+Shift+A makes one. Containers nest, can sit inside component masters, can hold component instances, and are one node for auto-layout. The agent gets `create_container`, `update_container`, `remove_container`, `add_to_container`, `remove_from_container` and `list_containers` (all `apply_ops`-capable). See `docs/containers.md`.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.
