@@ -1,11 +1,12 @@
 /**
- * Reactor rule for Components v1 (key = componentId). Master children (and untagged elements
- * drawn into a master group) are sources, instance children are targets; every change runs
- * `syncComponent` for that component.
+ * Reactor rule for Components (key = componentId). Master children (and elements drawn into a
+ * master group) are sources, instance children are targets; every change runs `syncComponent`
+ * for that component, then for the components nesting it (`syncCascade`). An element can be in
+ * several components at once (nested components), so it links to each.
  */
 import type { El, ReactorLink, ReactorRule } from "../reactor/reactor";
-import { groupOf, hasAnyTag, tagOf } from "./model";
-import { syncComponent } from "./sync";
+import { groupOf, readTags } from "./model";
+import { syncCascade } from "./sync";
 
 export interface ComponentRule extends ReactorRule {
   /** Component of a master group (index kept by `links`). */
@@ -19,20 +20,22 @@ export function createComponentRule(): ComponentRule {
   const memory = new Map<string, Record<string, unknown>>();
 
   const links = (el: El): readonly ReactorLink[] => {
-    const tag = tagOf(el);
-    if (tag) {
+    const tags = readTags(el);
+    if (!tags) return [];
+    const out: ReactorLink[] = [];
+    for (const tag of tags) {
       if (tag.role === "master" && !el.isDeleted) {
         const g = groupOf(el, tag);
         if (g) masterGroups.set(g, tag.componentId);
       }
-      return [{ role: tag.role === "master" ? "source" : "target", key: tag.componentId }];
+      out.push({ role: tag.role === "master" ? "source" : "target", key: tag.componentId });
     }
-    if (hasAnyTag(el) || el.isDeleted) return [];
+    if (el.isDeleted) return out;
     for (const g of el.groupIds) {
       const cid = masterGroups.get(g);
-      if (cid) return [{ role: "source", key: cid }];
+      if (cid && !out.some((l) => l.key === cid)) out.push({ role: "source", key: cid });
     }
-    return [];
+    return out;
   };
 
   return {
@@ -44,7 +47,7 @@ export function createComponentRule(): ComponentRule {
       memory.clear();
     },
     reconcile(key, change, ctx) {
-      syncComponent(key, ctx, { changed: change.targets, memory });
+      syncCascade([key], ctx, { changed: change.targets, memory });
     },
   };
 }

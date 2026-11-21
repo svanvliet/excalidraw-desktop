@@ -10,10 +10,14 @@
  *  - A copy made inside a master group (group editing) becomes a new master child; inside an
  *    instance group it is detached (instances only hold children mirrored from the master).
  *  - A pasted master whose component has no live master here stays a master.
+ *
+ * Each component tag of an element is handled on its own, so copies of nested instances follow
+ * the same rules per component (a copied master of B holding an A instance becomes a B instance
+ * holding a new A instance, owned by it).
  */
 import type { El } from "../reactor/reactor";
 import { baseOf, boxOf, originOf } from "./geometry";
-import { groupOf, tagOf, withTag, type ComponentTag } from "./model";
+import { groupOf, tagFor, tagsOf, withoutTag, withTag, type ComponentTag } from "./model";
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
@@ -22,63 +26,74 @@ export function componentsOnDuplicate(next: readonly El[], prev: readonly El[]):
   /** componentId → master group → live children */
   const masters = new Map<string, Map<string, El[]>>();
   const prevGroups = new Set<string>();
+  const prevById = new Map<string, El>();
   for (const el of prev) {
     prevIds.add(el.id);
-    const tag = tagOf(el);
-    const g = tag && groupOf(el, tag);
-    if (!tag || !g || el.isDeleted) continue;
-    prevGroups.add(g);
-    if (tag.role !== "master") continue;
-    let byGroup = masters.get(tag.componentId);
-    if (!byGroup) masters.set(tag.componentId, (byGroup = new Map()));
-    const list = byGroup.get(g);
-    if (list) list.push(el);
-    else byGroup.set(g, [el]);
+    prevById.set(el.id, el);
+    if (el.isDeleted) continue;
+    for (const tag of tagsOf(el)) {
+      const g = groupOf(el, tag);
+      if (!g) continue;
+      prevGroups.add(g);
+      if (tag.role !== "master") continue;
+      let byGroup = masters.get(tag.componentId);
+      if (!byGroup) masters.set(tag.componentId, (byGroup = new Map()));
+      const list = byGroup.get(g);
+      if (list) list.push(el);
+      else byGroup.set(g, [el]);
+    }
   }
+
+  const replace = new Map<string, El>();
+  const nextById = new Map(next.map((e) => [e.id, e]));
+  const cur = (id: string): El => replace.get(id) ?? nextById.get(id) ?? prevById.get(id)!;
+  const set = (el: El, customData: Record<string, unknown>) =>
+    replace.set(el.id, { ...el, customData } as El);
 
   /** New tagged elements per (componentId, new group). */
-  const copies = new Map<string, El[]>();
-  const replace = new Map<string, El>();
-  for (const el of next) {
-    if (prevIds.has(el.id)) continue;
-    const tag = tagOf(el);
-    if (!tag) continue;
-    const g = groupOf(el, tag);
-    if (!g) {
-      replace.set(el.id, { ...el, customData: withTag(el, null) } as El);
-      continue;
+  const copies = new Map<string, { cid: string; ids: string[] }>();
+  for (const el0 of next) {
+    if (prevIds.has(el0.id)) continue;
+    for (const tag of tagsOf(el0)) {
+      const el = cur(el0.id);
+      const g = groupOf(el, tag);
+      if (!g) {
+        set(el, withoutTag(el, tag.componentId));
+        continue;
+      }
+      if (prevGroups.has(g)) {
+        // Copied inside an existing component group.
+        if (tag.role === "master") set(el, withTag(el, { ...tag, slot: el.id }));
+        else set(el, withoutTag(el, tag.componentId));
+        continue;
+      }
+      const k = `${tag.componentId}\u0000${g}`;
+      const entry = copies.get(k);
+      if (entry) entry.ids.push(el.id);
+      else copies.set(k, { cid: tag.componentId, ids: [el.id] });
     }
-    if (prevGroups.has(g)) {
-      // Copied inside an existing component group.
-      const keep = tag.role === "master" ? { ...tag, slot: el.id } : null;
-      replace.set(el.id, { ...el, customData: withTag(el, keep) } as El);
-      continue;
-    }
-    const k = `${tag.componentId}\u0000${g}`;
-    const list = copies.get(k);
-    if (list) list.push(el);
-    else copies.set(k, [el]);
   }
 
-  for (const els of copies.values()) {
-    const tag0 = tagOf(els[0])!;
-    if (!els.some((e) => tagOf(e)!.role === "master")) continue; // instance copies stay as-is
-    const byGroup = masters.get(tag0.componentId);
+  for (const { cid, ids } of copies.values()) {
+    const els = ids.map(cur).filter((e) => tagFor(e, cid));
+    const T = (e: El) => tagFor(e, cid)!;
+    if (!els.some((e) => T(e).role === "master")) continue; // instance copies stay as-is
+    const byGroup = masters.get(cid);
     if (!byGroup?.size) continue; // orphan paste: stays a master
     // The master these were copied from: the live group sharing the most slots.
-    const slots = new Set(els.map((e) => tagOf(e)!.slot));
+    const slots = new Set(els.map((e) => T(e).slot));
     let srcGroup = "";
     let best = -1;
     for (const [g, list] of byGroup) {
-      const n = list.filter((m) => slots.has(tagOf(m)!.slot)).length;
+      const n = list.filter((m) => slots.has(T(m).slot)).length;
       if (n > best || (n === best && g < srcGroup)) [srcGroup, best] = [g, n];
     }
     const src = byGroup.get(srcGroup)!;
-    const srcBySlot = new Map(src.map((m) => [tagOf(m)!.slot, m]));
+    const srcBySlot = new Map(src.map((m) => [T(m).slot, m]));
     const origin = originOf(src);
 
     const altDrag = els.every((e) => {
-      const m = srcBySlot.get(tagOf(e)!.slot);
+      const m = srcBySlot.get(T(e).slot);
       if (!m) return false;
       const a = boxOf(e);
       const b = boxOf(m);
@@ -86,25 +101,24 @@ export function componentsOnDuplicate(next: readonly El[], prev: readonly El[]):
     });
     if (altDrag) {
       // Copies stay the master; the dragged originals become the instance.
-      for (const m of src) {
-        const t = tagOf(m)!;
+      for (const m0 of src) {
+        const m = cur(m0.id);
         const tag: ComponentTag = {
-          ...t,
+          ...T(m),
           role: "instance",
           promoted: undefined,
           base: baseOf(m, origin),
         };
-        replace.set(m.id, { ...m, customData: withTag(m, tag) } as El);
+        set(m, withTag(m, tag));
       }
       for (const e of els) {
-        const t = tagOf(e)!;
-        if (t.promoted)
-          replace.set(e.id, { ...e, customData: withTag(e, { ...t, promoted: undefined }) } as El);
+        const t = T(e);
+        if (t.promoted) set(e, withTag(e, { ...t, promoted: undefined }));
       }
       continue;
     }
     for (const e of els) {
-      const t = tagOf(e)!;
+      const t = T(e);
       const m = srcBySlot.get(t.slot);
       const tag: ComponentTag = {
         ...t,
@@ -112,7 +126,7 @@ export function componentsOnDuplicate(next: readonly El[], prev: readonly El[]):
         promoted: undefined,
         base: baseOf(m ?? e, m ? origin : originOf(els)),
       };
-      replace.set(e.id, { ...e, customData: withTag(e, tag) } as El);
+      set(e, withTag(e, tag));
     }
   }
 
