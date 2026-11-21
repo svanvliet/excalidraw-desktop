@@ -119,6 +119,11 @@ export interface Reactor {
   wrapRemoteApi<T extends Pick<ExcalidrawImperativeAPI, "updateScene">>(api: T): T;
   /** Forget everything and re-seed from the current scene without deriving (e.g. file open). */
   reseed(): void;
+  /**
+   * Treat these elements as locally changed (without a new stamp) and schedule a flush, e.g. so
+   * a rule that held off while a gesture was in progress can settle when it ends.
+   */
+  invalidate(ids: Iterable<string>): void;
   readonly stats: ReactorStats;
   dispose(): void;
 }
@@ -170,7 +175,10 @@ export function createReactor(opts: ReactorOptions): Reactor {
   const dirtyKeys = new Set<string>();
   const dirtyTargets = new Set<string>();
   /** Key-level rules: per rule, per key, what changed. */
-  const dirtyRec = new Map<ReactorRule, Map<string, { source: boolean; targets: Set<string> }>>();
+  const dirtyRec: Map<
+    ReactorRule,
+    Map<string, { source: boolean; targets: Set<string> }>
+  > = new Map();
   const recRules = rules.filter((r) => r.reconcile);
   const deriveRules = rules.filter((r) => r.derive);
   let cancel: (() => void) | null = null;
@@ -192,9 +200,10 @@ export function createReactor(opts: ReactorOptions): Reactor {
     return out;
   };
 
-  const markRec = (rule: ReactorRule, link: ReactorLink, id: string) => {
-    let byKey = dirtyRec.get(rule);
-    if (!byKey) dirtyRec.set(rule, (byKey = new Map()));
+  type RecDirty = Map<ReactorRule, Map<string, { source: boolean; targets: Set<string> }>>;
+  const markRec = (rule: ReactorRule, link: ReactorLink, id: string, into: RecDirty = dirtyRec) => {
+    let byKey = into.get(rule);
+    if (!byKey) into.set(rule, (byKey = new Map()));
     let entry = byKey.get(link.key);
     if (!entry) byKey.set(link.key, (entry = { source: false, targets: new Set() }));
     if (link.role === "source") entry.source = true;
@@ -231,31 +240,50 @@ export function createReactor(opts: ReactorOptions): Reactor {
           continue;
         }
       }
-      for (const r of recRules) {
-        for (const link of r.links(el)) {
-          markRec(r, link, el.id);
-          dirty = true;
-        }
-      }
-      for (const link of linksOf(el)) {
-        if (link.role === "source") {
-          dirtyKeys.add(link.key);
-          dirty = true;
-        } else if (!el.isDeleted) {
-          // A local change to a target (new, pasted, undeleted by undo/redo, or edited directly):
-          // re-derive it so it can't drift from its source.
-          dirtyTargets.add(el.id);
-          dirty = true;
-        }
-      }
+      if (markChanged(el)) dirty = true;
     }
     stats.observeMs += performance.now() - t0;
-    if (dirty && !cancel) {
-      cancel = schedule(() => {
-        cancel = null;
-        flush();
-      });
+    if (dirty) scheduleFlush();
+  };
+
+  const scheduleFlush = () => {
+    if (cancel || disposed) return;
+    cancel = schedule(() => {
+      cancel = null;
+      flush();
+    });
+  };
+
+  /** Mark everything `el` links to as dirty; true if anything was. */
+  const markChanged = (el: El): boolean => {
+    let dirty = false;
+    for (const r of recRules) {
+      for (const link of r.links(el)) {
+        markRec(r, link, el.id);
+        dirty = true;
+      }
     }
+    for (const link of linksOf(el)) {
+      if (link.role === "source") {
+        dirtyKeys.add(link.key);
+        dirty = true;
+      } else if (!el.isDeleted) {
+        // A local change to a target (new, pasted, undeleted by undo/redo, or edited directly):
+        // re-derive it so it can't drift from its source.
+        dirtyTargets.add(el.id);
+        dirty = true;
+      }
+    }
+    return dirty;
+  };
+
+  const invalidate = (ids: Iterable<string>) => {
+    if (disposed) return;
+    const want = new Set(ids);
+    let dirty = false;
+    for (const el of api.getSceneElementsIncludingDeleted())
+      if (want.has(el.id) && markChanged(el)) dirty = true;
+    if (dirty) scheduleFlush();
   };
 
   const flush = () => {
@@ -298,10 +326,15 @@ export function createReactor(opts: ReactorOptions): Reactor {
     dirtyTargets.clear();
 
     if (dirtyRec.size > 0) {
-      const recDirty = new Map(dirtyRec);
-      dirtyRec.clear();
-      for (const [rule, byKey] of recDirty) {
+      // Key-level rules run in declared order. What one writes marks the keys it links to in the
+      // *other* key-level rules dirty (e.g. a container re-flow moving a component master's
+      // children re-syncs its instances, and vice versa), bounded by `maxPasses`.
+      const contexts = new Map<ReactorRule, { rctx: ReconcileContext; wrote: Set<string> }>();
+      const contextFor = (rule: ReactorRule) => {
+        const known = contexts.get(rule);
+        if (known) return known;
         const members = new Map<string, string[]>();
+        const wrote = new Set<string>();
         const addMember = (el: El) => {
           for (const l of rule.links(el)) {
             let list = members.get(l.key);
@@ -317,22 +350,54 @@ export function createReactor(opts: ReactorOptions): Reactor {
             const current = ctx.get(id);
             if (!current) return;
             const eff = effectivePatch(current, p);
-            if (eff) pending.set(id, newElementWith(current, eff as never));
+            if (!eff) return;
+            pending.set(id, newElementWith(current, eff as never));
+            wrote.add(id);
           },
           add: (el, afterId) => {
             if (ctx.get(el.id)) return;
             pending.set(el.id, el);
             added.push({ el, after: afterId ?? null });
             addMember(el);
+            wrote.add(el.id);
           },
         };
-        for (const [key, change] of byKey) {
-          try {
-            rule.reconcile!(key, { sourceChanged: change.source, targets: change.targets }, rctx);
-          } catch (err) {
-            log.error(`reactor: ${rule.name} failed to reconcile ${key}`, err);
-          }
+        const made = { rctx, wrote };
+        contexts.set(rule, made);
+        return made;
+      };
+      let round: RecDirty = new Map(dirtyRec);
+      dirtyRec.clear();
+      for (let pass = 0; round.size > 0; pass++) {
+        if (pass >= maxPasses) {
+          stats.loopGuardHits++;
+          log.warn(`reactor: chained reconcile stopped after ${maxPasses} passes`);
+          break;
         }
+        const next: RecDirty = new Map();
+        recRules.forEach((rule, ri) => {
+          const byKey = round.get(rule);
+          if (!byKey) return;
+          const { rctx, wrote } = contextFor(rule);
+          wrote.clear();
+          for (const [key, change] of byKey) {
+            try {
+              rule.reconcile!(key, { sourceChanged: change.source, targets: change.targets }, rctx);
+            } catch (err) {
+              log.error(`reactor: ${rule.name} failed to reconcile ${key}`, err);
+            }
+          }
+          // Later rules see this rule's writes in the same pass; earlier ones in the next.
+          recRules.forEach((other, oi) => {
+            if (other === rule) return;
+            for (const id of wrote) {
+              const el = ctx.get(id);
+              if (!el) continue;
+              for (const link of other.links(el)) markRec(other, link, id, oi > ri ? round : next);
+            }
+          });
+        });
+        round = next;
       }
       // Element-level rules may chain off what the key-level rules wrote.
       for (const id of pending.keys())
@@ -482,6 +547,7 @@ export function createReactor(opts: ReactorOptions): Reactor {
     flush,
     wrapRemoteApi,
     reseed: seed,
+    invalidate,
     stats,
     dispose() {
       disposed = true;
