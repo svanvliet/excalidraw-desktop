@@ -14,7 +14,7 @@
     {
       "name": "get_scene_summary",
       "readOnly": true,
-      "description": "Compact one-row-per-element summary (id, type, x, y, w, h, text, colors, bindings) plus scene bounds and revision. Paginate with cursor, or filter by bbox or ids. Call this before editing.",
+      "description": "Compact one-row-per-element summary (id, type, x, y, w, h, text, colors, bindings, shape data) plus scene bounds and revision. Paginate with cursor, or filter by bbox or ids. Call this before editing.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -74,7 +74,7 @@
     {
       "name": "get_elements",
       "readOnly": true,
-      "description": "Return full Excalidraw element JSON for the given ids, plus revision.",
+      "description": "Return full Excalidraw element JSON for the given ids, plus revision, and a data map of each element's shape data (key → value) when any has some.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -205,7 +205,7 @@
     {
       "name": "connect",
       "readOnly": false,
-      "description": "Draw an arrow bound to two existing elements (it follows them when they move), optionally labeled. style may set strokeColor, strokeWidth, strokeStyle, roughness, opacity, startArrowhead, endArrowhead. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Draw an arrow bound to two existing elements (it follows them when they move), optionally labeled. elbow: true draws an orthogonal (elbow) arrow. startAnchor / endAnchor pin an end to the n, e, s or w side of its shape (center = the side facing the other shape, chosen now) and imply elbow; unpinned elbow ends also face the other shape. style may set strokeColor, strokeWidth, strokeStyle, roughness, opacity, startArrowhead, endArrowhead. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -226,6 +226,17 @@
           },
           "style": {
             "type": "object"
+          },
+          "elbow": {
+            "type": "boolean"
+          },
+          "startAnchor": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
+          },
+          "endAnchor": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
           }
         },
         "required": ["from", "to"],
@@ -379,7 +390,7 @@
     {
       "name": "find_elements",
       "readOnly": true,
-      "description": "Search the canvas. All filters are optional and combined with AND: text (case-insensitive substring of an element's text, its shape label or a frame name; set regex: true to treat it as a regular expression), types, strokeColor, backgroundColor, groupId, frameId, bbox. Returns compact rows like get_scene_summary (up to limit, default 100) plus the total match count.",
+      "description": "Search the canvas. All filters are optional and combined with AND: text (case-insensitive substring of an element's text, its shape label or a frame name; set regex: true to treat it as a regular expression), types, strokeColor, backgroundColor, groupId, frameId, bbox, dataKey (elements with that shape-data key; add dataValue to match its value exactly). Returns compact rows like get_scene_summary (up to limit, default 100) plus the total match count.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -432,6 +443,12 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 500
+          },
+          "dataKey": {
+            "type": "string"
+          },
+          "dataValue": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -599,7 +616,7 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -885,6 +902,102 @@
           }
         },
         "required": ["id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_shape_data",
+      "readOnly": false,
+      "description": "Set key/value shape data on elements (any type) as one undoable change. Data is plain strings stored in the element's customData, so it survives save, reload and collaboration, and shows in get_scene_summary rows as data. set maps key → value (strings, numbers and booleans are stored as strings; null removes the key); existing keys keep their order and new keys are appended. replace: true drops every key not in set. Keys are trimmed, 1-100 characters; values up to 10,000 characters; at most 200 keys per element. Data written by a newer app version is read-only and fails. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          },
+          "set": {
+            "type": "object",
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "null"]
+            }
+          },
+          "replace": {
+            "type": "boolean"
+          }
+        },
+        "required": ["ids", "set"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_arrow_anchors",
+      "readOnly": false,
+      "description": "Pin the bound ends of elbow arrows to a side of the shape they're bound to: n (top), e (right), s (bottom), w (left), or center (the side facing the other end, chosen now; it doesn't follow later moves). The arrow is re-routed; one undoable change. Only elbow arrows whose end is bound to a shape can be anchored (draw one with connect elbow: true). get_scene_summary rows show elbow arrows' startAnchor / endAnchor. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          },
+          "start": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
+          },
+          "end": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_shape_data",
+      "readOnly": true,
+      "description": "Read shape data (key/value pairs) for the given ids, or for every element that has any when ids is omitted. Each element comes with its type and label (its text, or a shape's label). format: \"csv\" returns one CSV table instead (columns id, type, label, then every key), the same as the app's \"Copy data as CSV\".",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500
+          },
+          "format": {
+            "type": "string",
+            "enum": ["json", "csv"]
+          }
+        },
         "additionalProperties": false
       }
     }

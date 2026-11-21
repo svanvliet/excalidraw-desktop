@@ -17,7 +17,24 @@ import {
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
+import {
+  ANCHORS,
+  anchorBindings,
+  isElbowArrow,
+  sideOf,
+  type Anchor,
+  type AnchorChange,
+} from "../lib/elbowAnchors";
 import { bytesToBase64 } from "../lib/fileFormat";
+import {
+  customDataWith,
+  dataRecord,
+  normaliseKey,
+  normaliseValue,
+  patchEntries,
+  readData,
+  toCsv,
+} from "../lib/shapeData";
 import {
   type Box,
   boundsOf,
@@ -73,6 +90,8 @@ const EDIT_TOOLS = new Set([
   "update_layer",
   "apply_extension",
   "remove_extension",
+  "set_shape_data",
+  "set_arrow_anchors",
 ]);
 
 /** Retries of an edit whose async op (auto_layout) raced a concurrent canvas change. */
@@ -313,15 +332,19 @@ function getElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
     else missing.push(id);
   }
   const extensions: Record<string, unknown> = {};
+  const data: Record<string, Record<string, string>> = {};
   for (const el of found) {
     const state = extensionStateOf(el);
     if (state) extensions[el.id] = state;
+    const d = dataRecord(el);
+    if (d) data[el.id] = d;
   }
   return json({
     tabId,
     revision: revisionOf(draft.toArray()),
     elements: found,
     ...(Object.keys(extensions).length ? { extensions } : {}),
+    ...(Object.keys(data).length ? { data } : {}),
     ...(missing.length ? { missing } : {}),
   });
 }
@@ -447,6 +470,11 @@ function findElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
   const bg = optStr(args, "backgroundColor")?.toLowerCase();
   const groupId = optStr(args, "groupId");
   const frameId = optStr(args, "frameId");
+  const dataKey = optStr(args, "dataKey");
+  const dataValue = optStr(args, "dataValue");
+  if (dataValue !== undefined && dataKey === undefined) {
+    throw new ToolError(`"dataValue" needs "dataKey"`);
+  }
   const limit = Math.min(Math.max(Math.trunc(optNum(args, "limit") ?? 100), 1), 500);
   let box: Box | undefined;
   if (args.bbox !== undefined) {
@@ -470,6 +498,10 @@ function findElements(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
     if (groupId && !el.groupIds.includes(groupId)) return false;
     if (frameId && el.frameId !== frameId) return false;
     if (box && !intersects(boundsOf(el), box)) return false;
+    if (dataKey !== undefined) {
+      const v = dataRecord(el)?.[dataKey];
+      if (v === undefined || (dataValue !== undefined && v !== dataValue)) return false;
+    }
     if (text !== undefined) {
       const t = textOf(el);
       if (pattern ? !pattern.test(t) : !t.toLowerCase().includes(needle!)) return false;
@@ -874,6 +906,14 @@ function connect(draft: Draft, args: Args): unknown {
       oneOf(style.strokeStyle, STYLE_ENUMS.strokeStyle, "strokeStyle");
   }
   const label = optStr(args, "label");
+  const anchors = anchorArgs(args, "startAnchor", "endAnchor");
+  if (args.elbow !== undefined && typeof args.elbow !== "boolean") {
+    throw new ToolError(`"elbow" must be a boolean`);
+  }
+  if (args.elbow === false && (anchors.start || anchors.end)) {
+    throw new ToolError(`Anchors need an elbow arrow; drop "elbow": false`);
+  }
+  const elbow = args.elbow === true || Boolean(anchors.start || anchors.end);
   const id = newId();
   const skeleton = {
     type: "arrow",
@@ -883,15 +923,71 @@ function connect(draft: Draft, args: Args): unknown {
     width: 100,
     height: 0,
     ...style,
+    ...(elbow ? { elbowed: true, roundness: null } : {}),
     ...(label ? { label: { text: label } } : {}),
   } as unknown as ExcalidrawElementSkeleton;
   for (const el of convertToExcalidrawElements([skeleton], { regenerateIds: false })) draft.add(el);
   draft.bindArrow(id, "start", from.id);
   draft.bindArrow(id, "end", to.id);
+  // Elbow bindings need a fixedPoint; unpinned ends get the side facing the other shape.
+  if (elbow)
+    pinArrow(draft, id, { start: anchors.start ?? "center", end: anchors.end ?? "center" });
   routeArrow(draft, id);
-  const labelEl = draft.boundTextOf(draft.get(id)!);
+  const arrow = draft.get(id)!;
+  const labelEl = draft.boundTextOf(arrow);
   if (labelEl) refreshText(draft, labelEl.id);
-  return { id, ...(labelEl ? { labelId: labelEl.id } : {}) };
+  return {
+    id,
+    ...(labelEl ? { labelId: labelEl.id } : {}),
+    ...(elbow ? anchorsOf(arrow) : {}),
+  };
+}
+
+function anchorArgs(args: Args, startKey: string, endKey: string): AnchorChange {
+  const read = (key: string): Anchor | undefined =>
+    args[key] === undefined || args[key] === null
+      ? undefined
+      : oneOf(args[key], ANCHORS, `"${key}"`);
+  return { start: read(startKey), end: read(endKey) };
+}
+
+function anchorsOf(arrow: El) {
+  if (!isElbowArrow(arrow)) return {};
+  return {
+    elbow: true,
+    startAnchor: sideOf(arrow.startBinding?.fixedPoint),
+    endAnchor: sideOf(arrow.endBinding?.fixedPoint),
+  };
+}
+
+function pinArrow(draft: Draft, id: string, change: AnchorChange): void {
+  const arrow = draft.get(id);
+  if (!arrow || !isElbowArrow(arrow)) {
+    throw new ToolError(`Element "${id}" is not an elbow arrow (anchors need one)`);
+  }
+  let bindings;
+  try {
+    bindings = anchorBindings(arrow, change, (eid) => draft.get(eid));
+  } catch (err) {
+    throw new ToolError(`Arrow "${id}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+  draft.update(id, bindings);
+}
+
+function setArrowAnchors(draft: Draft, args: Args) {
+  const ids = strArray(args, "ids") ?? [];
+  const one = optStr(args, "id");
+  if (one) ids.push(one);
+  if (!ids.length) throw new ToolError(`"id" or "ids" is required`);
+  if (ids.length > 200) throw new ToolError(`At most 200 arrows per call`);
+  const change = anchorArgs(args, "start", "end");
+  if (!change.start && !change.end) throw new ToolError(`Give "start" and/or "end"`);
+  const arrows = [...new Set(ids)].map((id) => {
+    pinArrow(draft, id, change);
+    routeArrow(draft, id);
+    return { id, ...anchorsOf(draft.get(id)!) };
+  });
+  return { updated: arrows.length, arrows };
 }
 
 interface MermaidPrepared {
@@ -1292,6 +1388,91 @@ function updateLayer(draft: Draft, args: Args): unknown {
   return { updated: id, kind };
 }
 
+// --- shape data (docs/plan.md D-DX2) ------------------------------------------
+
+function shapeDataError(err: unknown, id?: string): ToolError {
+  const msg = err instanceof Error ? err.message : String(err);
+  return new ToolError(id ? `Element "${id}": ${msg}` : msg);
+}
+
+function setShapeData(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 200) throw new ToolError(`At most 200 ids per call`);
+  if (!isObj(args.set))
+    throw new ToolError(`"set" must be an object of key → value (null removes)`);
+  if (args.replace !== undefined && typeof args.replace !== "boolean") {
+    throw new ToolError(`"replace" must be a boolean`);
+  }
+  const replace = args.replace === true;
+  const patch: Record<string, string | null> = {};
+  try {
+    for (const [k, v] of Object.entries(args.set)) {
+      patch[normaliseKey(k)] = v === null ? null : normaliseValue(v);
+    }
+  } catch (err) {
+    throw shapeDataError(err);
+  }
+  if (!Object.keys(patch).length && !replace) throw new ToolError(`"set" must not be empty`);
+  const updated: string[] = [];
+  const data: Record<string, Record<string, string>> = {};
+  for (const id of ids) {
+    const el = draft.mustGet(id);
+    let customData: El["customData"];
+    try {
+      customData = customDataWith(el, patchEntries(readData(el).entries, patch, replace));
+    } catch (err) {
+      throw shapeDataError(err, id);
+    }
+    if (customData !== el.customData) {
+      draft.update(id, { customData });
+      updated.push(id);
+    }
+    data[id] = dataRecord(draft.get(id)!) ?? {};
+  }
+  return { updated, data };
+}
+
+function getShapeData(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
+  const ids = strArray(args, "ids");
+  if (ids && ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const format =
+    args.format === undefined ? "json" : oneOf(args.format, ["json", "csv"] as const, "format");
+  const draft = new Draft(tab.api.getSceneElementsIncludingDeleted());
+  const missing: string[] = [];
+  let picked: El[];
+  if (ids) {
+    picked = [];
+    for (const id of ids) {
+      const el = draft.get(id);
+      if (el) picked.push(el);
+      else missing.push(id);
+    }
+  } else {
+    picked = draft.live().filter((el) => readData(el).entries.length);
+  }
+  const rows = picked.map((el) => {
+    const label = isText(el) ? el.text : draft.boundTextOf(el)?.text;
+    const { entries, readOnly } = readData(el);
+    return { id: el.id, type: el.type, label, entries, readOnly };
+  });
+  const base = { tabId, revision: revisionOf(draft.toArray()) };
+  const extra = missing.length ? { missing } : {};
+  if (format === "csv") {
+    return json({ ...base, csv: toCsv(rows.map((r) => ({ ...r, data: r.entries }))), ...extra });
+  }
+  return json({
+    ...base,
+    elements: rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      ...(r.label !== undefined ? { label: r.label } : {}),
+      data: Object.fromEntries(r.entries),
+      ...(r.readOnly ? { readOnly: true } : {}),
+    })),
+    ...extra,
+  });
+}
+
 function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknown {
   switch (tool) {
     case "add_elements":
@@ -1316,6 +1497,10 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return autoLayout(draft, args);
     case "update_layer":
       return updateLayer(draft, args);
+    case "set_shape_data":
+      return setShapeData(draft, args);
+    case "set_arrow_anchors":
+      return setArrowAnchors(draft, args);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);
@@ -1457,6 +1642,8 @@ export async function runSceneTool(
       return setCanvas(tab, tabId, args);
     case "list_layers":
       return listLayers(tab, tabId);
+    case "get_shape_data":
+      return getShapeData(tab, tabId, args);
     default:
       return runEdit(tool, tab, tabId, args);
   }

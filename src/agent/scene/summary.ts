@@ -1,5 +1,7 @@
 /** Compact, model-friendly rows for scene summaries (one row per element). */
 import { extensionStateOf } from "../../extensions/stack";
+import { isElbowArrow, sideOf } from "../../lib/elbowAnchors";
+import { dataRecord } from "../../lib/shapeData";
 import { type Draft, type El, isLinear, isText } from "./draft";
 
 export interface SummaryRow {
@@ -25,6 +27,11 @@ export interface SummaryRow {
   ext?: Record<string, Record<string, unknown>>;
   /** Extensions whose stored intent no longer matches the element (edited elsewhere). */
   extStale?: string[];
+  /** Shape data (docs/plan.md D-DX2). */
+  data?: Record<string, string>;
+  elbow?: true;
+  startAnchor?: string;
+  endAnchor?: string;
 }
 
 const r = (n: number) => Math.round(n);
@@ -59,6 +66,13 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
     if (el.startBinding) row.from = el.startBinding.elementId;
     if (el.endBinding) row.to = el.endBinding.elementId;
   }
+  if (isElbowArrow(el)) {
+    row.elbow = true;
+    const start = sideOf(el.startBinding?.fixedPoint);
+    const end = sideOf(el.endBinding?.fixedPoint);
+    if (start) row.startAnchor = start;
+    if (end) row.endAnchor = end;
+  }
   if (el.groupIds.length) row.groups = el.groupIds;
   if (el.frameId) row.frame = el.frameId;
   if (el.locked) row.locked = true;
@@ -67,5 +81,7 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
   const ext = extensionStateOf(el);
   if (ext && Object.keys(ext.applied).length) row.ext = ext.applied;
   if (ext?.stale.length) row.extStale = ext.stale;
+  const data = dataRecord(el);
+  if (data) row.data = data;
   return row;
 }
