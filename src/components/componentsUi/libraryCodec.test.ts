@@ -1,6 +1,7 @@
 import "../../agent/scene/testHarness";
 import { describe, expect, it } from "vitest";
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import type { BinaryFileData } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import { Draft, ToolError, type El } from "../../agent/scene/draft";
 import { createComponent, insertInstance } from "../../extensions/components/actions";
@@ -83,7 +84,7 @@ describe("libraryCodec", () => {
     expect(entry.elements.every((e) => tagOf(e)?.componentId === entry.id)).toBe(true);
     expect(topLeft(entry.elements)).toEqual({ x: 0, y: 0 });
 
-    const lib = JSON.parse(entriesToExcalidrawLib([entry]));
+    const lib = JSON.parse(entriesToExcalidrawLib([entry]).json);
     expect(lib).toMatchObject({ type: "excalidrawlib", version: 2 });
     const back = libraryItemToEntry(lib.libraryItems[0]);
     expect(back.id).toBe(entry.id);
@@ -97,6 +98,41 @@ describe("libraryCodec", () => {
     const entry = libraryItemToEntry({ elements: els, name: "Copy" });
     expect(entry.id).not.toBe(made.componentId);
     expect(entry.elements.every((e) => tagOf(e)?.role === "master")).toBe(true);
+  });
+
+  it("keeps a component's images with it and drops them (counted) from .excalidrawlib", () => {
+    const file = {
+      id: "photo1",
+      mimeType: "image/png",
+      dataURL: "data:image/png;base64,iVBORw0KGgo=",
+      created: 1,
+    } as BinaryFileData;
+    const els = convertToExcalidrawElements(
+      [
+        { type: "rectangle", id: "card", x: 0, y: 0, width: 200, height: 120 },
+        { type: "image", id: "pic", x: 10, y: 10, width: 60, height: 60, fileId: "photo1" },
+        { type: "text", id: "who", x: 80, y: 30, text: "Ada" },
+      ] as ExcalidrawElementSkeleton[],
+      { regenerateIds: false },
+    );
+    const draft = new Draft(els);
+    const made = createComponent(draft, ["card", "pic", "who"], "Person");
+    const entry = masterToEntry(draft.toArray(), { photo1: file, unused: file }, made.componentId);
+    expect(Object.keys(entry.files ?? {})).toEqual(["photo1"]);
+
+    const other = new Draft([]);
+    const res = insertMyComponent(other, entry, { x: 0, y: 0 });
+    expect(res.files).toEqual([file]);
+    const images = other.toArray().filter((e) => e.type === "image");
+    // Master and instance both show the photo.
+    expect(images).toHaveLength(2);
+    for (const img of images) expect((img as { fileId: string }).fileId).toBe("photo1");
+
+    const out = entriesToExcalidrawLib([entry]);
+    expect(out.droppedImages).toBe(1);
+    const lib = JSON.parse(out.json);
+    expect(lib.libraryItems[0].elements.some((e: El) => e.type === "image")).toBe(false);
+    expect(lib.libraryItems[0].elements).toHaveLength(2);
   });
 
   it("renames every member", () => {

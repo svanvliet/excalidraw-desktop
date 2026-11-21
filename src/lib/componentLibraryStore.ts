@@ -77,7 +77,13 @@ export function isMyComponent(v: unknown): v is MyComponent {
     typeof c.name === "string" &&
     Array.isArray(c.elements) &&
     c.elements.length > 0 &&
-    c.elements.every((e) => typeof e === "object" && e !== null && typeof e.id === "string")
+    c.elements.every((e) => typeof e === "object" && e !== null && typeof e.id === "string") &&
+    (c.files === undefined ||
+      (typeof c.files === "object" &&
+        c.files !== null &&
+        Object.values(c.files).every(
+          (f) => typeof f?.id === "string" && typeof f.dataURL === "string",
+        )))
   );
 }
 

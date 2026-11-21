@@ -241,24 +241,43 @@ export function libraryItemToEntry(
   return masterToEntry(draft.toArray(), files, res.componentId, now);
 }
 
-/** `.excalidrawlib` (v2) JSON for saved components. Images aren't carried (Excalidraw's format). */
-export function entriesToExcalidrawLib(entries: readonly MyComponent[]): string {
-  return JSON.stringify(
-    {
-      type: "excalidrawlib",
-      version: 2,
-      source: "excalidraw-desktop",
-      libraryItems: entries.map((e) => ({
+export interface ExcalidrawLibExport {
+  json: string;
+  /** Image elements left out: `.excalidrawlib` has no place for image files. */
+  droppedImages: number;
+}
+
+/**
+ * `.excalidrawlib` (v2) JSON for saved components. The format carries no image files (and
+ * Excalidraw 0.18 refuses images in its library), so image elements are left out and counted
+ * for the caller to warn about; the images stay in "My components".
+ */
+export function entriesToExcalidrawLib(entries: readonly MyComponent[]): ExcalidrawLibExport {
+  let droppedImages = 0;
+  const libraryItems = entries.flatMap((e) => {
+    const elements = e.elements.filter((el) => {
+      if (el.type !== "image") return true;
+      droppedImages++;
+      return false;
+    });
+    if (!elements.length) return [];
+    return [
+      {
         id: e.id,
         status: "unpublished",
         created: e.created,
         name: e.name,
-        elements: e.elements,
-      })),
-    },
+        // Self-contained again once the images are gone.
+        elements: snapshot(elements, 0, 0),
+      },
+    ];
+  });
+  const json = JSON.stringify(
+    { type: "excalidrawlib", version: 2, source: "excalidraw-desktop", libraryItems },
     null,
     2,
   );
+  return { json, droppedImages };
 }
 
 /** Set a component's display name on its master and instance children (a Draft action). */

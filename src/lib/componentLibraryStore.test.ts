@@ -35,8 +35,18 @@ describe("componentLibraryStore", () => {
   beforeEach(() => __resetMyComponentsForTest());
 
   it("loads stored components and drops malformed ones", async () => {
-    __resetMyComponentsForTest(fakeStore([entry("a"), { id: "b" }, entry("c")]));
-    expect((await loadMyComponents()).map((c) => c.id)).toEqual(["a", "c"]);
+    const photo = { id: "f", mimeType: "image/png", dataURL: "data:image/png;base64,x", created: 1 };
+    __resetMyComponentsForTest(
+      fakeStore([
+        entry("a"),
+        { id: "b" },
+        { ...entry("c"), files: { f: photo } },
+        { ...entry("d"), files: { f: { id: "f" } } },
+      ]),
+    );
+    const loaded = await loadMyComponents();
+    expect(loaded.map((c) => c.id)).toEqual(["a", "c"]);
+    expect(loaded[1].files?.f).toEqual(photo);
   });
 
   it("never writes when loading failed (a damaged file isn't replaced)", async () => {
