@@ -1,0 +1,8 @@
+[
+  { "id": "excalidraw:layout:down", "label": "Top to Bottom", "shortcut": "Alt+Shift+L" },
+  { "id": "excalidraw:layout:right", "label": "Left to Right" },
+  { "id": "excalidraw:layout:tree", "label": "Tree" },
+  { "separator": true },
+  { "id": "excalidraw:layout:tidyArrows", "label": "Tidy Arrows" },
+  { "id": "excalidraw:layout:tidyArrowsConvert", "label": "Tidy Arrows (Convert Straight Arrows)" }
+]

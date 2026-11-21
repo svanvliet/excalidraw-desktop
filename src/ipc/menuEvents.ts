@@ -10,6 +10,11 @@
  * Rust side; the `MENU_ITEM_IDS` array below is the drift detector here.
  */
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import layoutSpec from "../layout/commands.json";
+
+/** The Layout menu's ids, from the list it's built from (src/layout/commands.json). */
+export type LayoutMenuId = `excalidraw:layout:${string}`;
+const LAYOUT_IDS = layoutSpec.flatMap((e) => ("id" in e ? [e.id as LayoutMenuId] : []));
 
 export const MENU_EVENT = "excalidraw://menu";
 
@@ -24,9 +29,7 @@ export type MenuItemId =
   | "excalidraw:file:clearRecent"
   | "excalidraw:edit:undo"
   | "excalidraw:edit:redo"
-  | "excalidraw:edit:layoutDown"
-  | "excalidraw:edit:layoutRight"
-  | "excalidraw:edit:layoutTree"
+  | LayoutMenuId
   | "excalidraw:view:zoomIn"
   | "excalidraw:view:zoomOut"
   | "excalidraw:view:zoomReset"
@@ -46,9 +49,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:file:clearRecent",
   "excalidraw:edit:undo",
   "excalidraw:edit:redo",
-  "excalidraw:edit:layoutDown",
-  "excalidraw:edit:layoutRight",
-  "excalidraw:edit:layoutTree",
+  ...LAYOUT_IDS,
   "excalidraw:view:zoomIn",
   "excalidraw:view:zoomOut",
   "excalidraw:view:zoomReset",
@@ -56,7 +57,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:help:about",
   "excalidraw:help:docs",
   "excalidraw:help:checkUpdates",
-] as const;
+];
 
 const VALID = new Set<string>(MENU_ITEM_IDS);
 

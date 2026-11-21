@@ -42,9 +42,7 @@ pub mod ids {
 
     pub const EDIT_UNDO: &str = "excalidraw:edit:undo";
     pub const EDIT_REDO: &str = "excalidraw:edit:redo";
-    pub const EDIT_LAYOUT_DOWN: &str = "excalidraw:edit:layoutDown";
-    pub const EDIT_LAYOUT_RIGHT: &str = "excalidraw:edit:layoutRight";
-    pub const EDIT_LAYOUT_TREE: &str = "excalidraw:edit:layoutTree";
+    // Layout ▸ … items come from `LAYOUT_COMMANDS_JSON` (ids `excalidraw:layout:*`).
 
     pub const VIEW_ZOOM_IN: &str = "excalidraw:view:zoomIn";
     pub const VIEW_ZOOM_OUT: &str = "excalidraw:view:zoomOut";
@@ -54,6 +52,26 @@ pub mod ids {
     pub const HELP_ABOUT: &str = "excalidraw:help:about";
     pub const HELP_DOCS: &str = "excalidraw:help:docs";
     pub const HELP_CHECK_UPDATES: &str = "excalidraw:help:checkUpdates";
+}
+
+/// The Layout menu's entries, shared with the toolbar's Layout dropdown so the two can't drift:
+/// `[{ "id", "label", "shortcut"? } | { "separator": true }]`. See src/layout/commands.ts.
+const LAYOUT_COMMANDS_JSON: &str = include_str!("../../src/layout/commands.json");
+
+/// One Layout menu entry: `None` is a separator.
+fn layout_entries() -> Vec<Option<(String, String)>> {
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(LAYOUT_COMMANDS_JSON).expect("src/layout/commands.json is valid");
+    entries
+        .iter()
+        .map(|e| {
+            if e.get("separator").and_then(|v| v.as_bool()) == Some(true) {
+                return None;
+            }
+            let field = |k: &str| e.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+            Some((field("id").to_string(), field("label").to_string()))
+        })
+        .collect()
 }
 
 /// Platform-aware accelerator string.
@@ -179,31 +197,6 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // Cut/Copy/Paste/Select All are predefined so they delegate to the OS
     // (and for inputs, do the right thing). Undo/Redo are custom because
     // Excalidraw owns its own history stack.
-    // Auto-layout has no accelerator: the webview owns Alt/Option+Shift+L (top to bottom) so
-    // the shortcut also works outside Tauri.
-    let auto_layout = SubmenuBuilder::new(app, "Auto-layout")
-        .item(&MenuItem::with_id(
-            app,
-            ids::EDIT_LAYOUT_DOWN,
-            "Top to Bottom",
-            true,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            ids::EDIT_LAYOUT_RIGHT,
-            "Left to Right",
-            true,
-            None::<&str>,
-        )?)
-        .item(&MenuItem::with_id(
-            app,
-            ids::EDIT_LAYOUT_TREE,
-            "Tree",
-            true,
-            None::<&str>,
-        )?)
-        .build()?;
     let edit = SubmenuBuilder::new(app, "&Edit")
         .item(&MenuItem::with_id(
             app,
@@ -224,10 +217,22 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .copy()
         .paste()
         .select_all()
-        .separator()
-        .item(&auto_layout)
         .build()?;
     menu = menu.item(&edit);
+
+    // ---- Layout ----
+    // No accelerators: the webview owns Alt/Option+Shift+L (top to bottom) so the shortcut also
+    // works outside Tauri.
+    let mut layout = SubmenuBuilder::new(app, "&Layout");
+    for entry in layout_entries() {
+        layout = match entry {
+            None => layout.separator(),
+            Some((id, label)) => {
+                layout.item(&MenuItem::with_id(app, id, label, true, None::<&str>)?)
+            }
+        };
+    }
+    menu = menu.item(&layout.build()?);
 
     // ---- View ----
     let view = SubmenuBuilder::new(app, "&View")
@@ -368,9 +373,6 @@ mod tests {
         assert_eq!(ids::FILE_CLEAR_RECENT, "excalidraw:file:clearRecent");
         assert_eq!(ids::EDIT_UNDO, "excalidraw:edit:undo");
         assert_eq!(ids::EDIT_REDO, "excalidraw:edit:redo");
-        assert_eq!(ids::EDIT_LAYOUT_DOWN, "excalidraw:edit:layoutDown");
-        assert_eq!(ids::EDIT_LAYOUT_RIGHT, "excalidraw:edit:layoutRight");
-        assert_eq!(ids::EDIT_LAYOUT_TREE, "excalidraw:edit:layoutTree");
         assert_eq!(ids::VIEW_ZOOM_IN, "excalidraw:view:zoomIn");
         assert_eq!(ids::VIEW_ZOOM_OUT, "excalidraw:view:zoomOut");
         assert_eq!(ids::VIEW_ZOOM_RESET, "excalidraw:view:zoomReset");
@@ -378,5 +380,30 @@ mod tests {
         assert_eq!(ids::HELP_ABOUT, "excalidraw:help:about");
         assert_eq!(ids::HELP_DOCS, "excalidraw:help:docs");
         assert_eq!(ids::HELP_CHECK_UPDATES, "excalidraw:help:checkUpdates");
+    }
+
+    #[test]
+    fn layout_menu_comes_from_the_shared_command_list() {
+        let entries = layout_entries();
+        let ids: Vec<&str> = entries
+            .iter()
+            .flatten()
+            .map(|(id, _)| id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "excalidraw:layout:down",
+                "excalidraw:layout:right",
+                "excalidraw:layout:tree",
+                "excalidraw:layout:tidyArrows",
+                "excalidraw:layout:tidyArrowsConvert",
+            ]
+        );
+        assert!(entries.iter().any(Option::is_none), "has a separator");
+        for (id, label) in entries.iter().flatten() {
+            assert!(id.starts_with("excalidraw:layout:"), "{id}");
+            assert!(!label.is_empty(), "{id} has a label");
+        }
     }
 }

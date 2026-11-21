@@ -55,7 +55,7 @@ import { createAutosaver } from "./lib/autosave";
 import { restoreInitialData } from "./lib/excalidrawRestore";
 import { onFileOpenRequest, onWindowFileDrop } from "./ipc/openEvents";
 import { onMenuEvent, dispatchShortcut, type MenuItemId } from "./ipc/menuEvents";
-import { autoLayoutCanvas, type CanvasLayoutPreset } from "./layout/canvasAction";
+import { runLayoutCommand } from "./layout/commands";
 import { log } from "./lib/logger";
 import { remoteApi } from "./extensions/components/host";
 import {
@@ -73,15 +73,6 @@ const OPEN_FILTERS = [
 ];
 const EXCALIDRAW_FILTERS = [{ name: "Excalidraw", extensions: ["excalidraw"] }];
 const PNG_FILTERS = [{ name: "PNG", extensions: ["png"] }];
-
-const MENU_LAYOUT_PRESET: Record<
-  "excalidraw:edit:layoutDown" | "excalidraw:edit:layoutRight" | "excalidraw:edit:layoutTree",
-  CanvasLayoutPreset
-> = {
-  "excalidraw:edit:layoutDown": "down",
-  "excalidraw:edit:layoutRight": "right",
-  "excalidraw:edit:layoutTree": "tree",
-};
 
 export function App() {
   const tabs = useTabsStore((s) => s.tabs);
@@ -673,13 +664,6 @@ export function App() {
         case "excalidraw:edit:redo":
           dispatchShortcut({ key: "z", shift: true });
           return;
-        case "excalidraw:edit:layoutDown":
-        case "excalidraw:edit:layoutRight":
-        case "excalidraw:edit:layoutTree": {
-          const api = activeTabId ? apisRef.current.get(activeTabId) : undefined;
-          if (api) void autoLayoutCanvas(api, MENU_LAYOUT_PRESET[id]);
-          return;
-        }
         case "excalidraw:view:zoomIn":
           dispatchShortcut({ key: "=" });
           return;
@@ -706,6 +690,12 @@ export function App() {
             .then(({ openUrl }) => openUrl("https://docs.excalidraw.com/"))
             .catch(() => {});
           return;
+        default: {
+          // Layout ▸ … (src/layout/commands.json)
+          const api = activeTabId ? apisRef.current.get(activeTabId) : undefined;
+          if (api) runLayoutCommand(id, api);
+          return;
+        }
       }
     },
     [
