@@ -287,12 +287,20 @@ export interface ElementStyleInfo {
   fromMaster?: boolean;
 }
 
-export function elementStyleInfo(el: El): ElementStyleInfo | null {
+export function elementStyleInfo(
+  el: El,
+  get?: (id: string) => El | undefined,
+): ElementStyleInfo | null {
+  if (isInstanceChild(el)) {
+    // Instance children follow their master slot's style through the components rule.
+    const master = get?.(componentTagOf(el)!.slot);
+    const t = master && !master.isDeleted && !isInstanceChild(master) ? styleTagOf(master) : null;
+    return t ? { styleId: t.id, name: t.name, fromMaster: true } : null;
+  }
   const t = styleTagOf(el);
   if (!t) return null;
   const info: ElementStyleInfo = { styleId: t.id, name: t.name };
-  if (isInstanceChild(el)) info.fromMaster = true;
-  else if (t.overrides && Object.keys(t.overrides).length)
+  if (t.overrides && Object.keys(t.overrides).length)
     info.overrides = Object.keys(t.overrides) as StyleKey[];
   return info;
 }

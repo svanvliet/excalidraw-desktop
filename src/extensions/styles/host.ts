@@ -95,10 +95,12 @@ function readSelection(api: Api): StyleSelection {
   const sel = new Set(selectedIds(api));
   const elements: StyleSelection["elements"] = [];
   let count = 0;
-  for (const el of api.getSceneElements()) {
+  const all = api.getSceneElements();
+  const byId = new Map(all.map((e) => [e.id, e]));
+  for (const el of all) {
     if (!sel.has(el.id)) continue;
     count++;
-    const info = elementStyleInfo(el);
+    const info = elementStyleInfo(el, (id) => byId.get(id));
     if (info) elements.push({ id: el.id, ...info });
   }
   return { elements, count };
