@@ -24,17 +24,6 @@ describe("RangeControl", () => {
     return { slider: screen.getByTestId("amount"), onCommit };
   };
 
-  it("forwards Ctrl/Cmd shortcuts to Excalidraw's container, but keeps arrow keys", () => {
-    const seen: string[] = [];
-    const { slider } = renderIn((e) => {
-      if (e.target === e.currentTarget) seen.push(`${e.ctrlKey ? "ctrl+" : ""}${e.key}`);
-    });
-    fireEvent.keyDown(slider, { key: "z", code: "KeyZ", ctrlKey: true });
-    fireEvent.keyDown(slider, { key: "ArrowRight" });
-    fireEvent.keyDown(slider, { key: "a" });
-    expect(seen).toEqual(["ctrl+z"]);
-  });
-
   it("commits the drafted value once on release", () => {
     const { slider, onCommit } = renderIn(() => {});
     fireEvent.change(slider, { target: { value: "40" } });

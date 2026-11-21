@@ -130,7 +130,7 @@ describe("ImagePropertiesPanel", () => {
     renderPanel();
     api.select("i1");
     const dock = await screen.findByTestId("image-props-dock");
-    expect(dock).toHaveClass("Island");
+    expect(dock.closest(".Island")).not.toBeNull();
     expect(within(dock).getByRole("button", { name: "Circle" })).toBeInTheDocument();
 
     act(() => menu.append(nativePanel()));

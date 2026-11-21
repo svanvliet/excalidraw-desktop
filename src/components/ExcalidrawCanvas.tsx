@@ -1,4 +1,8 @@
-import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
+import {
+  CaptureUpdateAction,
+  convertToExcalidrawElements,
+  Excalidraw,
+} from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
@@ -7,8 +11,9 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
-import { ImagePropertiesPanel } from "./imageProps/ImagePropertiesPanel";
 import { LayersIcon } from "./icons";
+import { PropertiesPanelHost } from "./propertiesPanel/PropertiesPanelHost";
+import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
 import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
@@ -77,6 +82,33 @@ export interface ExcalidrawCanvasProps {
   onPointerUpdate?: ExcalidrawProps["onPointerUpdate"];
 }
 
+declare global {
+  interface Window {
+    /** The last mounted editor's API, only when the e2e flag is set (see GuestApp's `__guest`). */
+    __canvas?: ExcalidrawImperativeAPI;
+    /** Scene helpers for e2e specs, same flag: build elements and run agent canvas tools. */
+    __e2e?: {
+      convertToExcalidrawElements: typeof convertToExcalidrawElements;
+      runSceneTool: typeof import("../agent/sceneTools").runSceneTool;
+    };
+  }
+}
+
+/** Same flag as GuestApp's E2E_FLAG_KEY. */
+const E2E_FLAG_KEY = "excalidraw-desktop:e2e";
+
+function exposeForE2e(api: ExcalidrawImperativeAPI): void {
+  try {
+    if (localStorage.getItem(E2E_FLAG_KEY) !== "1") return;
+    window.__canvas = api;
+    void import("../agent/sceneTools").then(({ runSceneTool }) => {
+      window.__e2e = { convertToExcalidrawElements, runSceneTool };
+    });
+  } catch {
+    // storage unavailable
+  }
+}
+
 /**
  * Thin wrapper around the official `@excalidraw/excalidraw` component.
  * Intentionally minimal — we let the component manage its own state and only
@@ -108,6 +140,7 @@ export function ExcalidrawCanvas({
       apiRef.current = api;
       setApi(api);
       onApi(api);
+      exposeForE2e(api);
     },
     [onApi],
   );
@@ -226,7 +259,9 @@ export function ExcalidrawCanvas({
       >
         <SidebarTabs tabs={sidebarTabs} />
       </Excalidraw>
-      {api && !viewOnly && <ImagePropertiesPanel api={api} container={canvasRef} />}
+      {api && !viewOnly && (
+        <PropertiesPanelHost api={api} container={canvasRef} sections={PANEL_SECTIONS} />
+      )}
     </div>
   );
 }

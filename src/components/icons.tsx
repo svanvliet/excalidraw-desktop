@@ -335,3 +335,17 @@ export const ChevronRightIcon = () => (
     <path d="m9 6 6 6-6 6" />
   </NativeIcon>
 );
+
+/** Elbow-arrow anchors: a box with the pinned point marked. */
+const AnchorIcon = ({ cx, cy }: { cx: number; cy: number }) => (
+  <NativeIcon>
+    <rect x="4.5" y="4.5" width="11" height="11" rx="1.5" strokeWidth="1.25" />
+    <circle cx={cx} cy={cy} r="2" fill="currentColor" strokeWidth="0" />
+  </NativeIcon>
+);
+
+export const AnchorNorthIcon = () => <AnchorIcon cx={10} cy={4.5} />;
+export const AnchorEastIcon = () => <AnchorIcon cx={15.5} cy={10} />;
+export const AnchorSouthIcon = () => <AnchorIcon cx={10} cy={15.5} />;
+export const AnchorWestIcon = () => <AnchorIcon cx={4.5} cy={10} />;
+export const AnchorCenterIcon = () => <AnchorIcon cx={10} cy={10} />;

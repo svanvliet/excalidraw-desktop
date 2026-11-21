@@ -129,10 +129,16 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-LAYOUT-4** The layout engine (ELK) MUST be bundled and run in a **web worker** loaded from the app's own origin, offline, under the shipped CSP (no `unsafe-eval`; `worker-src 'self' blob:`). It is loaded lazily on first use.
 - **FR-LAYOUT-5** The agent gets the same capability as an `auto_layout` canvas tool (algorithm, direction, spacing, optional ids) that also works inside `apply_ops`.
 
-### 4.11 Library & layers
+### 4.12 Library & layers
 
 - **FR-49** The personal Excalidraw library ("My library") MUST persist across launches in app data (`library.json`, or `library-<profile>.json` under `--profile`) and load as each editor's initial library. Adds, removes and `.excalidrawlib` imports save immediately and appear in every open tab. Nothing is saved before the stored library has loaded, so a failed or slow load can never wipe it. Live-collab guest tabs and the browser guest app never write to it.
 - **FR-50** Excalidraw's own sidebar MUST gain a **Layers** tab, next to Search and Library, that lists the scene as a tree: frames, then groups (outer groups containing inner ones), then elements, topmost first. Clicking a row selects it and scrolls it into view. Each row has a lock toggle (a group locks all its members). Double-click renames: groups and elements store the name in `customData["excalidrawDesktop.layer"]`; frames use their native `name`. Every rename or lock is one undo step and syncs to collab peers. It follows the light/dark theme with Excalidraw's own styling. The agent gets `list_layers` and `update_layer`. Hiding layers is deferred.
+
+### 4.13 Panel host, shape data and anchors (DX wave 1)
+
+- **FR-51** Any selection type MAY add sections to Excalidraw's own properties panel through one shared host (same DOM contract and docked fallback as FR-40). Ctrl/Cmd shortcuts (undo, redo, …) MUST keep reaching the canvas after any panel control is used; a focused text input keeps its own typing and text undo.
+- **FR-52** **Shape data**: any element can carry ordered key/value string pairs, edited in a **Data** panel section (add, edit, rename, remove; a mixed selection shows the keys every element shares). Each change is one undo step. Data MUST survive save, reload, PNG round-trip and collab, be readable by the agent (`get_scene_summary`, `get_elements`, `get_shape_data`) and writable by it (`set_shape_data`), and be copyable as CSV. Data written by a newer version is shown read-only. External data sources are out of scope.
+- **FR-53** **Elbow-arrow anchors**: each bound end of an elbow arrow can be pinned to the top, right, bottom or left of its shape, or to the side facing the other end, from an **Anchors** panel section or the agent (`connect` with `startAnchor` / `endAnchor`, `set_arrow_anchors`). Excalidraw's router re-routes the arrow; each change is one undo step. Lines (which can't bind) are out of scope.
 
 ## 5. Non-Functional Requirements
 

@@ -180,7 +180,7 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `add_elements`       | Adds skeleton-format elements; agent-chosen ids are checked for collisions                       |
 | `update_elements`    | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                |
 | `delete_elements`    | Tombstones elements and cascades to bound text and arrows                                        |
-| `connect`            | Draws an arrow between existing shapes using manual bindings                                     |
+| `connect`            | Draws an arrow between shapes with manual bindings; `startAnchor`/`endAnchor` pin elbow ends     |
 | `add_mermaid`        | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image        |
 | `add_image`          | Places a png/jpeg/gif/webp/svg (≤10 MB) from a conversation-folder `path` or inline `data`       |
 | `arrange`            | align / distribute / grid / group / z-order / frame (put into or take out of a frame)            |
@@ -196,6 +196,9 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `auto_layout`        | Lays out the canvas or `ids` (layered/tree, direction, spacing) with ELK; re-routes bound arrows |
 | `list_layers`        | Layers tree as flat rows (frames → groups → elements) with names, lock state and depth           |
 | `update_layer`       | Renames and/or locks an element, frame or group by id (works in `apply_ops`)                     |
+| `set_shape_data`     | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)            |
+| `get_shape_data`     | Returns elements' key/value data as JSON or CSV                                                  |
+| `set_arrow_anchors`  | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX8)                 |
 | `apply_ops`          | Batches several edits into one undo step                                                         |
 | `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 

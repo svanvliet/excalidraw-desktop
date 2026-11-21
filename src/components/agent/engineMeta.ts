@@ -117,6 +117,9 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   apply_ops: "Edited the canvas",
   list_layers: "Read the layers",
   update_layer: "Updated a layer",
+  set_shape_data: "Set shape data",
+  set_arrow_anchors: "Pin arrow anchors",
+  get_shape_data: "Read shape data",
 };
 
 export function toolLabel(name: string, title: string | null): string {

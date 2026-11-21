@@ -200,14 +200,23 @@ previews nothing; the release (pointer-up or key-up) commits one `runExtension` 
 step. The effect sections are one self-contained component, `EffectsSection.tsx`, taking the panel
 host's image-section props (`groups`, `onlyImages`, `label`, `busy`, `run`).
 
+**Panel host.** The portal is generic: `src/components/propertiesPanel/PropertiesPanelHost.tsx`
+hosts any registered `PanelSection` (`panel.ts`: `id`, `slot` top/bottom, `testId`, a cheap
+`view(ctx)` that returns JSON-serialisable view data or `null` to hide, and a `Component`).
+`sections.ts` lists them in order: image controls (top), **Anchors** for a single bound elbow
+arrow, then **Data** for any selection (key/value rows, shared keys for a mixed selection, Copy data
+as CSV). Image sections are registered by appending `{ id, extensions, Component }` to
+`IMAGE_SECTIONS` in `src/components/imageProps/registry.ts`; components get `ImageSectionProps`
+(`groups`, `onlyImages`, `label`, `busy`, `run`).
+
 With a mixed selection the legends read "Image stroke" / "Image mask" because they only affect the
 images. The sections are hidden in view and zen mode, for collab viewers, and while drawing, typing,
 dragging, resizing or rotating. Every click is one `runExtension` call (one undo step); buttons use
-`mousedown` `preventDefault`, so Excalidraw keeps focus and Ctrl/Cmd+Z still works. A focused
-slider can't hand focus back, and the panel is a React sibling of `<Excalidraw>` that is portaled
-into its DOM, so React never routes the slider's keydown to Excalidraw's container handler. The
-slider therefore re-dispatches Ctrl/Cmd keydowns on `.excalidraw-container` (undo, redo, etc.), and
-marks itself busy with `aria-disabled` rather than `disabled`, which would drop focus to `<body>`.
+`mousedown` `preventDefault`, so Excalidraw keeps focus and Ctrl/Cmd+Z still works. Because the
+sections are portals outside Excalidraw's React tree, its container `onKeyDown` never sees their key
+events: `propertiesPanel/keyboard.ts` re-dispatches Ctrl/Cmd keydowns from non-text controls onto
+`.excalidraw-container`, and moves focus back there when it drops to `<body>` (an input committed on
+Enter, a disabled or removed control). Text inputs keep typing and their own text undo.
 
 **DOM dependency.** 0.18.1 has no API for adding panel sections and doesn't export its colour or
 stroke pickers, so the host attaches to `PANEL_SELECTOR` — `.App-menu__left .panelColumn` on
@@ -216,8 +225,10 @@ panel's first child (the stroke slot that is empty for images), and reuses Excal
 names (`buttonList`, `color-picker__*`, `Island`) so it matches both themes. A `MutationObserver`
 re-attaches it when Excalidraw remounts the panel. When no panel is in the DOM (the mobile layout
 with its sheet closed, or a future upstream change), the same sections render in a small docked
-`Island` (`data-testid=image-props-dock`) at the top left instead. `e2e/extensions.spec.ts` pins
-this contract: re-run it on every `@excalidraw/excalidraw` bump.
+`Island` (`data-testid=props-dock`, sections `<testId>-dock`, e.g. `image-props-dock`) at the top
+left instead. `e2e/extensions.spec.ts` and
+`e2e/shape-data-anchors.spec.ts` pin this contract: re-run them on every `@excalidraw/excalidraw`
+bump.
 
 ## 7. MCP tools (agent)
 

@@ -7,6 +7,7 @@
  * simply dropped.
  */
 import { newElementWith, hashElementsVersion } from "@excalidraw/excalidraw";
+import { anchorPoint, isElbowArrow, sideOf } from "../../lib/elbowAnchors";
 import type {
   BoundElement,
   ExcalidrawElement,
@@ -65,6 +66,11 @@ export class Draft {
   private map: Map<string, El>;
   readonly original: ReadonlyMap<string, El>;
   readonly changed = new Set<string>();
+  /**
+   * Elbow arrows whose route must be recomputed by Excalidraw once they are live (see
+   * commitDraft): the router only works on elements mapped into a Scene.
+   */
+  readonly reroute = new Set<string>();
 
   constructor(elements: readonly El[]) {
     this.order = elements.map((e) => e.id);
@@ -304,10 +310,30 @@ export function routeArrow(draft: Draft, arrowId: string): void {
   const endEl = arrow.endBinding ? draft.get(arrow.endBinding.elementId) : undefined;
   if (!startEl && !endEl) return;
   const n = abs.length;
+  if (isElbowArrow(arrow)) {
+    // Placeholder straight route between the pinned points; commitDraft re-routes it for real.
+    draft.reroute.add(arrowId);
+    const pinned = (b: typeof arrow.startBinding, el: El | undefined) => {
+      const side = sideOf(b?.fixedPoint);
+      return el && side ? anchorPoint(side, el) : undefined;
+    };
+    const s = pinned(arrow.startBinding, startEl);
+    const e = pinned(arrow.endBinding, endEl);
+    if (s) abs[0] = s;
+    if (e) abs[n - 1] = e;
+    if (s || e) {
+      abs.splice(1, n - 2);
+      return setArrowPoints(draft, arrowId, abs);
+    }
+  }
   const startAim = n > 2 ? abs[1] : endEl ? centerOf(endEl) : abs[n - 1];
   const endAim = n > 2 ? abs[n - 2] : startEl ? centerOf(startEl) : abs[0];
   if (startEl) abs[0] = edgePoint(startEl, startAim, arrow.startBinding!.gap);
   if (endEl) abs[n - 1] = edgePoint(endEl, endAim, arrow.endBinding!.gap);
+  setArrowPoints(draft, arrowId, abs);
+}
+
+function setArrowPoints(draft: Draft, arrowId: string, abs: [number, number][]): void {
   const [ox, oy] = abs[0];
   const points = abs.map(([px, py]) => [px - ox, py - oy]);
   const xs = points.map((p) => p[0]);
