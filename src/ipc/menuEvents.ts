@@ -27,6 +27,7 @@ export type MenuItemId =
   | "excalidraw:edit:layoutDown"
   | "excalidraw:edit:layoutRight"
   | "excalidraw:edit:layoutTree"
+  | "excalidraw:edit:createComponent"
   | "excalidraw:view:zoomIn"
   | "excalidraw:view:zoomOut"
   | "excalidraw:view:zoomReset"
@@ -49,6 +50,7 @@ export const MENU_ITEM_IDS: readonly MenuItemId[] = [
   "excalidraw:edit:layoutDown",
   "excalidraw:edit:layoutRight",
   "excalidraw:edit:layoutTree",
+  "excalidraw:edit:createComponent",
   "excalidraw:view:zoomIn",
   "excalidraw:view:zoomOut",
   "excalidraw:view:zoomReset",

@@ -30,6 +30,9 @@ untouched.
 | `base`        | Instances only: the master child's centre, size and angle relative to the master origin at the last sync. Comparing it with the child's own geometry gives the instance transform.          |
 | `overrides`   | Instances only: per-slot values that win over the master. The keys are `text`, `backgroundColor`, `strokeColor`, `opacity`, `link` and `fileId` (image).                                    |
 | `promoted`    | Masters only: set when this master was an instance promoted after the master was deleted. It keeps the old overrides and base so the master can be demoted again (see §4).                  |
+| `source`      | Optional, `"library"`: the master lives in the app's library and is usually off-canvas. Library orphans are never promoted (§4a). Older readers ignore it.                                  |
+| `libraryId`   | Optional: the library key of the master (the `componentId`, since "My components" is keyed by it)                                                                                           |
+| `mv`          | Instances of library components only: the master's overridable values at the last sync. They let edits become overrides, and let the master be rebuilt, while it's off-canvas.              |
 
 Element ids never change during sync, so arrows bound to instance children stay bound.
 
@@ -118,6 +121,30 @@ masters exist, the non-promoted one with the smallest group id wins.
 We chose promote over detach-all because a deleted master shouldn't silently break every
 instance, and undo restores the exact previous state.
 
+## 4a. Library-backed masters
+
+A master can live in the library instead of on the canvas. Its tag then carries
+`source: "library"` and `libraryId`. When such a component has no live master, its instances
+**stay instances**: no promotion. They are self-contained copies, keeping their base geometry,
+overrides and recorded master values (`mv`). Direct edits to them still become overrides
+against `mv`. The check looks at every member tag, deleted ones included, so the UI's
+insert-from-library draft (place master → insert instance → delete master → tag
+`source`/`libraryId`) never promotes, as long as no sync runs between the delete and the tag.
+
+Helpers in `host.ts` each run as one undo step through `runComponentCommand`. They return
+`null` in view mode or on error, and the reason is shown as a toast.
+
+| Function                                      | Does                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dematerializeMaster(api, masterGroupId)`     | Tags every element of the component (`source:"library"`, `libraryId` = existing or `componentId`), syncs so instances record `mv`, then removes the master (and unbinds arrows from it). Returns a `ComponentDefinition` `{ componentId, libraryId, name?, elements, files }` to save. |
+| `materializeMaster(api, instanceGroupId)`     | Rebuilds the master next to that instance (40 px to its right) from the instance's own elements, with the instance transform undone and its overrides replaced by `mv`. Fails if a master is already on the canvas. Returns the new master group id.                                   |
+| `adoptInstanceAsMaster(api, instanceGroupId)` | Turns the instance into the master in place, restoring master values from `mv` (for a machine whose library lacks the component). Returns its group id.                                                                                                                                |
+
+The definition's `elements` are clones of the master after tagging, so instances inserted
+from it already carry `source: "library"`. `files` lists the image `fileId`s they use. While a
+master is materialized, the usual rule syncs it, and collab peers receive the result without
+echoing it.
+
 ## 5. Duplicate, paste and Alt-drag (`onDuplicate`)
 
 `componentsOnDuplicate` runs inside Excalidraw's duplicate, paste and Alt-drag action, so its
@@ -167,11 +194,43 @@ reseeds whenever `initialData` changes.
 The shortcut isn't a registered Excalidraw action. Excalidraw cancels any shortcut that two
 actions match, and its hyperlink action matches every Ctrl/Cmd+K, with or without Alt.
 
+## 7a. UI: Components tab, panel section, My components (FR-55)
+
+Code lives in `src/components/componentsUi/`, and the personal store in `src/lib/componentLibraryStore.ts`.
+
+- **Components tab** (`ComponentsPanel.tsx`) is a `SidebarTabs` tab next to Layers. It has three lists, each with `exportToSvg` thumbnails:
+  - **In this drawing**: the masters on this canvas.
+  - **My components**: the personal cross-document library.
+  - **From your library**: Excalidraw library items, each with a **Make component** action.
+  - Click a row to place an instance at the viewport centre, or drag it onto the canvas. Either way it's one undo step.
+  - My components rows can also be renamed, removed, or exported as `.excalidrawlib`.
+- **My components** is stored in app data per profile (`my-components.json`), following the pattern of `libraryStore.ts`:
+  - Changes fan out to every tab.
+  - A failed load never wipes the file.
+  - Collab guests can't save to it.
+  - Outside Tauri it lives in memory.
+  - Each entry is a snapshot of the master's elements plus the `BinaryFiles` they reference, so image components work. Excalidraw's own library rejects images. On insert the files go through `api.addFiles` first.
+  - `.excalidrawlib` can't carry files, so export drops images, with a warning.
+- **Inserting** a My components entry:
+  - If the drawing already has the master, it places an instance.
+  - Otherwise it places only an instance tagged `source:"library"` (§4a): the master stays in My components.
+  - When the library-master engine is missing, the master is placed beside the instance instead.
+- **Panel section** (`ComponentSection.tsx`, in `PANEL_SECTIONS`) appears when the selection is a component.
+  - Plain shapes: **Create component**.
+  - Master: **Save to / Update in My components**, and **Move to My components**, which saves it and dematerializes the master.
+  - Instance: **Go to master**, **Reset overrides**, **Detach**, and a per-slot override list with a reset for each slot.
+  - Library-backed instance: **Edit master…**, or **Add to my components** if this machine's library lacks the `libraryId` (`adoptInstanceAsMaster` plus a save).
+- **Edit master…** materializes the master and shows a banner (`MasterEditBanner.tsx`) with **Done** and **Cancel**.
+  - **Done** saves the master, with its images, to My components, then dematerializes it.
+  - **Cancel** removes the master and restores the instances as one undo step.
+- **Create** is available from Alt/Option+Cmd/Ctrl+K, the panel, and **Edit → Create Component** in the native menu (`excalidraw:edit:createComponent`, no accelerator because the shortcut is handled in the webview).
+
 ## 8. Agent tools
 
 `create_component`, `insert_instance`, `list_components`, `set_overrides`,
-`reset_overrides` and `detach_instance` are described in `docs/ai-integration.md`. All of the
-edit tools work inside `apply_ops`.
+`reset_overrides` and `detach_instance` are described in `docs/ai-integration.md`, along with
+`list_my_components` and `insert_my_component` for My components (§7a). All of the edit tools
+work inside `apply_ops`.
 
 `get_scene_summary` rows carry
 `cmp: { id, role, slot, group, overrides? }`, and `get_elements` returns a `components` map.
@@ -186,7 +245,10 @@ reverted.
 - Nested components and component properties (Wave 3). Nesting is rejected.
 - Named styles are a separate rule that runs before this one (`docs/styles.md`, D-DX12). A
   styled master child carries its style to instances as a master change, not an override.
-- The UI (sidebar tab, panel section and personal component library) is a follow-up lane.
+- My components entries are snapshots. Updating one doesn't re-sync other drawings that already
+  hold instances of it: their library-backed instances update the next time their master is edited
+  there with Edit master… → Done.
+- `.excalidrawlib` export drops images (the format has no files); the UI warns.
 - Bound text in rotated instances, and arrow labels, have only light test coverage.
 - Alt-drag role swap is covered by a unit test of `componentsOnDuplicate`, not by a real
   browser drag.

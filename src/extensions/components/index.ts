@@ -13,4 +13,5 @@ export {
   type OverrideEntry,
 } from "./actions";
 export { componentsOnDuplicate } from "./duplicate";
+export { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 export * from "./host";

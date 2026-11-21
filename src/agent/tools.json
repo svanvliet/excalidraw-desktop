@@ -616,7 +616,7 @@
     {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_style, apply_style, update_style, delete_style, reset_style_overrides, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1076,6 +1076,43 @@
             "type": "string"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_my_components",
+      "readOnly": true,
+      "description": "List the user's personal component library (My components), which works across drawings: id, name, element count, number of embedded images, last update. saving is false when the library couldn't be loaded and won't be saved. Place one with insert_my_component.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "insert_my_component",
+      "readOnly": false,
+      "description": "Place a component from My components (see list_my_components) on a canvas, including its images. component: the saved component's id or exact name. x, y: top-left (default: right of the existing content). If the drawing already has that component's master, this adds an instance of it; otherwise the instance links back to My components (or, in older builds, the master is placed too and the instance beside it). Returns componentId, the instance groupId and child ids, masterGroupId (null when the master stays in My components) and placedMaster. Works in apply_ops. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": ["component"],
         "additionalProperties": false
       }
     },

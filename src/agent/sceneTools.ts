@@ -86,6 +86,13 @@ import {
   updateStyle,
 } from "../extensions/styles/actions";
 import { elementStyleInfo, listStyles } from "../extensions/styles/model";
+import {
+  canSaveMyComponents,
+  loadMyComponents,
+  type MyComponent,
+} from "../lib/componentLibraryStore";
+import { insertMyComponent } from "../components/componentsUi/libraryCodec";
+import { libraryMasterEngine } from "../components/componentsUi/libraryMasters";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
 
@@ -127,6 +134,7 @@ const EDIT_TOOLS = new Set([
   "update_style",
   "delete_style",
   "reset_style_overrides",
+  "insert_my_component",
 ]);
 
 /** Retries of an edit whose async op (auto_layout) raced a concurrent canvas change. */
@@ -633,6 +641,8 @@ interface EditCtx {
   images: Map<Args, PreparedImage>;
   /** Pre-computed extension results keyed by the args object (extensions are async). */
   extensions: Map<Args, Prepared>;
+  /** The personal component library, loaded when an op needs it (loading is async). */
+  myComponents?: readonly MyComponent[];
 }
 
 const SKELETON_TYPES = [
@@ -1494,6 +1504,53 @@ function resetOverridesTool(draft: Draft, args: Args) {
   return { instance: args.instance, reset: true };
 }
 
+// --- My components (personal cross-document library, FR-55) ------------------
+
+async function listMyComponentsTool(): Promise<ToolContent[]> {
+  const items = await loadMyComponents();
+  return json({
+    saving: canSaveMyComponents(),
+    components: items.map((c) => ({
+      id: c.id,
+      name: c.name,
+      elements: c.elements.filter((e) => !e.isDeleted).length,
+      images: Object.keys(c.files ?? {}).length,
+      updated: new Date(c.updated).toISOString(),
+    })),
+  });
+}
+
+function insertMyComponentTool(draft: Draft, args: Args, ctx: EditCtx) {
+  const ref = optStr(args, "component");
+  if (!ref) throw new ToolError(`"component" is required`);
+  const items = ctx.myComponents ?? [];
+  const entry =
+    items.find((c) => c.id === ref) ??
+    items.find((c) => c.name.toLowerCase() === ref.toLowerCase());
+  if (!entry) throw new ToolError(`"${ref}" is not in My components; see list_my_components`);
+  let x = optNum(args, "x");
+  let y = optNum(args, "y");
+  if (x === undefined || y === undefined) {
+    // Default: to the right of everything on the canvas.
+    const live = draft.live();
+    const right = live.length ? Math.max(...live.map((e) => e.x + Math.abs(e.width))) + 80 : 0;
+    const top = live.length ? Math.min(...live.map((e) => e.y)) : 0;
+    x ??= right;
+    y ??= top;
+  }
+  const out = insertMyComponent(draft, entry, { x, y }, { libraryBacked: !!libraryMasterEngine() });
+  ctx.files.push(...out.files);
+  return {
+    componentId: out.componentId,
+    name: entry.name,
+    groupId: out.instance.groupId,
+    ids: out.instance.ids,
+    masterGroupId: out.masterGroupId,
+    placedMaster: out.placedMaster,
+    images: out.files.length,
+  };
+}
+
 function detachInstanceTool(draft: Draft, args: Args) {
   return { detached: detachInstance(draft, args.instance) };
 }
@@ -1665,6 +1722,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return deleteStyle(draft, args.style);
     case "reset_style_overrides":
       return resetStyleOverridesTool(draft, args);
+    case "insert_my_component":
+      return insertMyComponentTool(draft, args, ctx);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);
@@ -1702,6 +1761,9 @@ async function runEdit(
   const ops = tool === "apply_ops" ? opsOf(args) : [{ tool, args }];
   // Async preparation first, so applying the draft below is one synchronous step.
   // Extensions run against the scene as it is now; applying checks nothing changed since.
+  if (ops.some((op) => op.tool === "insert_my_component")) {
+    ctx.myComponents = await loadMyComponents();
+  }
   for (const [i, op] of ops.entries()) {
     if (op.tool !== "add_mermaid" && op.tool !== "add_image" && !EXTENSION_TOOLS.has(op.tool))
       continue;
@@ -1782,6 +1844,7 @@ export async function runSceneTool(
   if (!READ_ONLY.has(tool)) throw new ToolError(`Unknown canvas tool "${tool}"`);
   const args: Args = isObj(rawArgs) ? rawArgs : {};
   if (tool === "list_tabs") return listTabs();
+  if (tool === "list_my_components") return listMyComponentsTool();
   const { tabId, tab } = resolveTab(args, defaultTabId);
   if (READ_ONLY.get(tool) === false && tab.isViewer()) {
     throw new ToolError(

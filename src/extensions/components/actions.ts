@@ -11,7 +11,9 @@ import {
   hasAnyTag,
   listComponents,
   OVERRIDE_KEYS,
+  isOwned,
   tagOf,
+  tagsOf,
   withTag,
   type ComponentInfo,
   type ComponentTag,
@@ -22,7 +24,7 @@ import {
   cleanOverrides,
   componentMembers,
   overridable,
-  syncComponent,
+  syncCascade,
   type SyncAccess,
 } from "./sync";
 
@@ -43,9 +45,8 @@ export function draftAccess(draft: Draft): SyncAccess {
 export function syncDraft(draft: Draft, componentIds?: Iterable<string>): void {
   const ids = componentIds
     ? new Set(componentIds)
-    : new Set(draft.toArray().flatMap((e) => (tagOf(e) ? [tagOf(e)!.componentId] : [])));
-  const access = draftAccess(draft);
-  for (const cid of ids) syncComponent(cid, access);
+    : new Set(draft.toArray().flatMap((e) => tagsOf(e).map((t) => t.componentId)));
+  syncCascade(ids, draftAccess(draft));
 }
 
 /**
@@ -57,24 +58,21 @@ export function syncDraft(draft: Draft, componentIds?: Iterable<string>): void {
 export function syncEdited(draft: Draft): void {
   if (!draft.changed.size) return;
   const masterGroups = new Map<string, string>();
-  for (const el of draft.toArray()) {
-    const t = tagOf(el);
-    const g = t?.role === "master" ? groupOf(el, t) : null;
-    if (g && !el.isDeleted) masterGroups.set(g, t!.componentId);
-  }
+  for (const el of draft.toArray())
+    for (const t of tagsOf(el)) {
+      const g = t.role === "master" ? groupOf(el, t) : null;
+      if (g && !el.isDeleted) masterGroups.set(g, t.componentId);
+    }
   const cids = new Set<string>();
   for (const id of draft.changed) {
     for (const el of [draft.original.get(id), draft.peek(id)]) {
       if (!el) continue;
-      const t = tagOf(el);
-      if (t) cids.add(t.componentId);
+      for (const t of tagsOf(el)) cids.add(t.componentId);
       for (const g of el.groupIds) if (masterGroups.has(g)) cids.add(masterGroups.get(g)!);
     }
   }
   if (!cids.size) return;
-  const access = draftAccess(draft);
-  const changed = new Set(draft.changed);
-  for (const cid of cids) syncComponent(cid, access, { changed });
+  syncCascade(cids, draftAccess(draft), { changed: new Set(draft.changed) });
 }
 
 export function componentsOf(draft: Draft): ComponentInfo[] {
@@ -242,22 +240,49 @@ export interface InstanceRef {
   children: El[];
 }
 
-/** An instance by its group id or the id of any of its children. */
+/**
+ * An instance by its group id or the id of any of its children. For an element in several
+ * components (nested), the outermost instance that isn't owned by another instance wins.
+ */
 export function resolveInstance(draft: Draft, ref: unknown): InstanceRef {
   if (typeof ref !== "string") throw new ToolError("instance must be a group id or element id");
   const el = draft.get(ref);
-  const tag = el && tagOf(el);
-  const groupId = tag ? groupOf(el!, tag) : ref;
-  const children = draft.live().filter((e) => {
-    const t = tagOf(e);
-    return t?.role === "instance" && groupOf(e, t) === groupId;
-  });
+  let groupId: string | null = ref;
+  let componentId: string | undefined;
+  if (el) {
+    const tags = tagsOf(el);
+    const free = tags.filter((t) => t.role === "instance" && !isOwned(el, t.componentId));
+    const tag = free[free.length - 1];
+    if (!tag) {
+      if (tags.length) throw new ToolError(`"${ref}" is part of a master, not an instance`);
+      throw new ToolError(`"${ref}" is not a component instance (or one of its elements)`);
+    }
+    groupId = groupOf(el, tag);
+    componentId = tag.componentId;
+  }
+  const children = draft
+    .live()
+    .filter((e) =>
+      tagsOf(e).some(
+        (t) =>
+          t.role === "instance" &&
+          groupOf(e, t) === groupId &&
+          (!componentId || t.componentId === componentId),
+      ),
+    );
   if (!groupId || !children.length) {
-    if (tag?.role === "master")
-      throw new ToolError(`"${ref}" is part of a master, not an instance`);
+    const master = draft
+      .live()
+      .some((e) => tagsOf(e).some((t) => t.role === "master" && groupOf(e, t) === ref));
+    if (master) throw new ToolError(`"${ref}" is a master, not an instance`);
     throw new ToolError(`"${ref}" is not a component instance (or one of its elements)`);
   }
-  return { componentId: tagOf(children[0])!.componentId, groupId, children };
+  componentId ??= tagsOf(children[0]).find((t) => groupOf(children[0], t) === groupId)!.componentId;
+  if (isOwned(children[0], componentId))
+    throw new ToolError(
+      `"${ref}" is a nested instance inside another instance; edit it through that instance`,
+    );
+  return { componentId, groupId, children };
 }
 
 export interface OverrideEntry {
@@ -294,6 +319,7 @@ const VALIDATORS: Record<OverrideKey, (v: unknown) => boolean> = {
   opacity: (v) => typeof v === "number" && v >= 0 && v <= 100,
   link: (v) => typeof v === "string",
   fileId: (v) => typeof v === "string",
+  visible: (v) => typeof v === "boolean",
 };
 
 export function setOverrides(

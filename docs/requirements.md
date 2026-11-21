@@ -142,7 +142,14 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 
 ### 4.14 Components (DX wave 2)
 
-- **FR-54** **Components**: a selection or group can become a component **master** on the canvas; duplicating, pasting or Alt-dragging the master (or `insert_instance`) places **instances** that follow it live: geometry under each instance's own translate / scale / rotation, styles, text (re-measured, never copied) and added or removed children. Each instance can override text, fill/stroke colour, opacity, link and image per child, reset them, or be detached. A master edit and the instance updates it causes are **one undo step**. Deleting the master promotes one instance (undo restores the original). Component data is versioned `customData` (D-DX2) that survives save, reload and collab. The agent gets `create_component`, `insert_instance`, `list_components`, `set_overrides`, `reset_overrides` and `detach_instance`. The UI (sidebar tab, panel section) is a follow-up; until then Alt/Option+Cmd/Ctrl+K creates a component. See `docs/components.md`.
+- **FR-54** **Components**: a selection or group can become a component **master** on the canvas; duplicating, pasting or Alt-dragging the master (or `insert_instance`) places **instances** that follow it live: geometry under each instance's own translate / scale / rotation, styles, text (re-measured, never copied) and added or removed children. Each instance can override text, fill/stroke colour, opacity, link and image per child, reset them, or be detached. A master edit and the instance updates it causes are **one undo step**. Deleting the master promotes one instance (undo restores the original). Component data is versioned `customData` (D-DX2) that survives save, reload and collab. The agent gets `create_component`, `insert_instance`, `list_components`, `set_overrides`, `reset_overrides` and `detach_instance`. Alt/Option+Cmd/Ctrl+K creates a component; the UI is FR-55. See `docs/components.md`.
+- **FR-55** **Components UI**:
+  - A **Components** sidebar tab lists this drawing's masters, the user's personal **My components** library, and Excalidraw library items, all with thumbnails. Click or drag a row to place an instance; library items can become components.
+  - My components is cross-document and stored in app data per profile. It supports components with images, storing their files with each entry. Guests can't save, and it exports to `.excalidrawlib` (images dropped, with a warning).
+  - Inserting a saved component places a library-backed instance whose master stays in My components. **Edit master…** puts it on the canvas until **Done**, which saves and removes it, or **Cancel**, which reverts as one undo step. On-canvas masters keep working, and can be moved to My components.
+  - A properties-panel section offers create, go to master, reset overrides (all or per slot), detach, and **Add to my components** for instances from another machine.
+  - Edit → Create Component sits in the native menu.
+  - The agent gets `list_my_components` and `insert_my_component`.
 
 ### 4.15 Named styles (DX wave 2)
 

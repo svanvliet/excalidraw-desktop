@@ -33,6 +33,7 @@ import {
   type ElementComponentInfo,
 } from "./model";
 import { createStyleRule } from "../styles/rule";
+import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 import { createComponentRule } from "./rule";
 
 type Api = ExcalidrawImperativeAPI;
@@ -147,6 +148,17 @@ export const resetInstanceOverrides = (
 ) => runComponentCommand(api, (d) => resetOverrides(d, instance, opts));
 export const detachComponentInstance = (api: Api, instance: string) =>
   runComponentCommand(api, (d) => detachInstance(d, instance));
+
+/**
+ * Library-backed masters (docs/components.md § Library). Each is one undo step and returns
+ * null in view mode or when it fails (the reason is shown as a toast), like the actions above.
+ */
+export const materializeMaster = (api: Api, instanceGroupId: string): string | null =>
+  runComponentCommand(api, (d) => materialize(d, instanceGroupId));
+export const dematerializeMaster = (api: Api, masterGroupId: string): ComponentDefinition | null =>
+  runComponentCommand(api, (d) => dematerialize(d, masterGroupId));
+export const adoptInstanceAsMaster = (api: Api, instanceGroupId: string): string | null =>
+  runComponentCommand(api, (d) => adoptAsMaster(d, instanceGroupId));
 
 export function sceneComponents(api: Api): ComponentInfo[] {
   return listComponents(api.getSceneElementsIncludingDeleted());
