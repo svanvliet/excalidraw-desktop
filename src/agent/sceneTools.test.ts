@@ -746,3 +746,83 @@ describe("turns", () => {
     expect(api.byId("b").y).toBe(0);
   });
 });
+
+describe("shape data", () => {
+  it("sets, replaces and removes data as one undo step each, visible to every read tool", async () => {
+    setup(boxes());
+    const res = await call("set_shape_data", {
+      ids: ["a", "b"],
+      set: { owner: "ann", cost: 3, done: false },
+    });
+    expect(res.updated).toEqual(["a", "b"]);
+    expect(res.data.a).toEqual({ owner: "ann", cost: "3", done: "false" });
+    expect(api.undoStack).toHaveLength(1);
+
+    await call("set_shape_data", { ids: ["a"], set: { cost: null, owner: "bob" } });
+    const summary = await call("get_scene_summary");
+    const rowA = summary.elements.find((r: { id: string }) => r.id === "a");
+    expect(rowA.data).toEqual({ owner: "bob", done: "false" });
+    expect(summary.elements.find((r: { id: string }) => r.id === "c").data).toBeUndefined();
+
+    const els = await call("get_elements", { ids: ["a", "c"] });
+    expect(els.data).toEqual({ a: { owner: "bob", done: "false" } });
+
+    const found = await call("find_elements", { dataKey: "owner", dataValue: "ann" });
+    expect(found.elements.map((r: { id: string }) => r.id)).toEqual(["b"]);
+
+    await call("set_shape_data", { ids: ["b"], set: { x: "1" }, replace: true });
+    expect((await call("get_shape_data", { ids: ["b"] })).elements).toEqual([
+      { id: "b", type: "ellipse", data: { x: "1" } },
+    ]);
+    expect(api.undoStack).toHaveLength(3);
+    api.undo();
+    expect((await call("get_shape_data", { ids: ["b"] })).elements[0].data).toEqual({
+      owner: "ann",
+      cost: "3",
+      done: "false",
+    });
+  });
+
+  it("lists every element with data, as JSON or CSV", async () => {
+    setup(boxes());
+    await call("set_shape_data", { ids: ["a"], set: { owner: "ann" } });
+    await call("set_shape_data", { ids: ["c"], set: { cost: "=1+1" } });
+    const all = await call("get_shape_data");
+    expect(all.elements).toEqual([
+      { id: "a", type: "rectangle", label: "Alpha", data: { owner: "ann" } },
+      { id: "c", type: "diamond", data: { cost: "=1+1" } },
+    ]);
+    const csv = await call("get_shape_data", { format: "csv", ids: ["a", "c", "zz"] });
+    expect(csv.csv).toBe(
+      "id,type,label,owner,cost\r\na,rectangle,Alpha,ann,\r\nc,diamond,,,'=1+1\r\n",
+    );
+    expect(csv.missing).toEqual(["zz"]);
+  });
+
+  it("rejects bad input without changing anything", async () => {
+    setup(boxes());
+    await expect(call("set_shape_data", { ids: ["a"], set: { " ": "x" } })).rejects.toThrow(
+      /empty/,
+    );
+    await expect(call("set_shape_data", { ids: ["a"], set: { k: {} } })).rejects.toThrow(/strings/);
+    await expect(call("set_shape_data", { ids: ["a", "nope"], set: { k: "v" } })).rejects.toThrow(
+      /nope/,
+    );
+    expect(api.undoStack).toHaveLength(0);
+  });
+
+  it("works inside apply_ops", async () => {
+    setup(boxes());
+    await call("apply_ops", {
+      ops: [
+        { tool: "set_shape_data", args: { ids: ["a"], set: { k: "1" } } },
+        { tool: "set_shape_data", args: { ids: ["a"], set: { j: "2" } } },
+      ],
+    });
+    expect((await call("get_shape_data", { ids: ["a"] })).elements[0].data).toEqual({
+      k: "1",
+      j: "2",
+    });
+    expect(api.undoStack).toHaveLength(1);
+  });
+});

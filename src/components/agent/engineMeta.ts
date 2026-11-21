@@ -114,6 +114,8 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   duplicate_elements: "Duplicated elements",
   set_canvas: "Changed the canvas settings",
   apply_ops: "Edited the canvas",
+  set_shape_data: "Set shape data",
+  get_shape_data: "Read shape data",
 };
 
 export function toolLabel(name: string, title: string | null): string {

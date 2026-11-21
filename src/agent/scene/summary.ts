@@ -1,5 +1,6 @@
 /** Compact, model-friendly rows for scene summaries (one row per element). */
 import { extensionStateOf } from "../../extensions/stack";
+import { dataRecord } from "../../lib/shapeData";
 import { type Draft, type El, isLinear, isText } from "./draft";
 
 export interface SummaryRow {
@@ -25,6 +26,8 @@ export interface SummaryRow {
   ext?: Record<string, Record<string, unknown>>;
   /** Extensions whose stored intent no longer matches the element (edited elsewhere). */
   extStale?: string[];
+  /** Shape data (docs/plan.md D-DX2). */
+  data?: Record<string, string>;
 }
 
 const r = (n: number) => Math.round(n);
@@ -67,5 +70,7 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
   const ext = extensionStateOf(el);
   if (ext && Object.keys(ext.applied).length) row.ext = ext.applied;
   if (ext?.stale.length) row.extStale = ext.stale;
+  const data = dataRecord(el);
+  if (data) row.data = data;
   return row;
 }
