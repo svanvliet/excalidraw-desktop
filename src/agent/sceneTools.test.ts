@@ -1055,12 +1055,9 @@ describe("elbow anchors", () => {
     // Plain connect stays a straight arrow.
     const plain = await call("connect", { from: "a", to: "c" });
     expect(plain.elbow).toBeUndefined();
-    await expect(
-      call("connect", { from: "a", to: "c", elbow: false, endAnchor: "n" }),
-    ).rejects.toThrow(/need an elbow/);
   });
 
-  it("set_arrow_anchors re-pins ends and rejects non-elbow arrows", async () => {
+  it("set_arrow_anchors re-pins elbow ends", async () => {
     setup(boxes());
     const { id } = await call("connect", { from: "a", to: "c", elbow: true });
     expect(await call("set_arrow_anchors", { id, start: "e", end: "n" })).toMatchObject({
@@ -1079,11 +1076,8 @@ describe("elbow anchors", () => {
       ),
     ).toEqual([0.5001, 1 + 5 / 60]);
 
-    const plain = await call("connect", { from: "a", to: "b" });
-    await expect(call("set_arrow_anchors", { id: plain.id, start: "n" })).rejects.toThrow(
-      /not an elbow arrow/,
-    );
     await expect(call("set_arrow_anchors", { id, start: "up" })).rejects.toThrow(/must be one of/);
+    await expect(call("set_arrow_anchors", { id, start: "free" })).rejects.toThrow(/elbow ends/);
   });
 
   it("folds anchored connects into the active turn", async () => {
@@ -1094,6 +1088,59 @@ describe("elbow anchors", () => {
     expect(api.undoStack).toHaveLength(0);
     endTurn(TAB, "t1");
     expect(api.undoStack).toHaveLength(1);
+  });
+});
+
+describe("line anchors (straight arrows)", () => {
+  const PIN = "excalidrawDesktop.pin";
+  const endOf = (id: string) => {
+    const a = api.byId(id) as unknown as { x: number; y: number; points: number[][] };
+    const [px, py] = a.points[a.points.length - 1];
+    return [a.x + px, a.y + py];
+  };
+
+  it("connect with elbow:false pins a straight arrow to face midpoints", async () => {
+    setup(boxes());
+    const res = await call("connect", { from: "a", to: "b", elbow: false, endAnchor: "n" });
+    expect(res).toMatchObject({ endAnchor: "n", startAnchor: null });
+    expect(res.elbow).toBeUndefined();
+    const arrow = api.byId(res.id);
+    expect(arrow).toMatchObject({ type: "arrow", elbowed: false });
+    expect(arrow.customData?.[PIN]).toEqual({ end: { id: "b", anchor: "n" } });
+    const b = api.byId("b");
+    const [x, y] = endOf(res.id);
+    expect(x).toBeCloseTo(b.x + b.width / 2, 1);
+    expect(y).toBeCloseTo(b.y - 5, 1);
+    expect(api.undoStack).toHaveLength(1);
+    const row = (await call("get_scene_summary")).elements.find(
+      (r: { id: string }) => r.id === res.id,
+    );
+    expect(row).toMatchObject({ endAnchor: "n", from: "a", to: "b" });
+    expect(row.elbow).toBeUndefined();
+
+    // Moving the shape through a tool keeps the end on its pin.
+    await call("update_elements", { updates: [{ id: "b", patch: { x: b.x + 90, y: b.y + 40 } }] });
+    const [x2, y2] = endOf(res.id);
+    expect(x2).toBeCloseTo(b.x + 90 + b.width / 2, 1);
+    expect(y2).toBeCloseTo(b.y + 40 - 5, 1);
+  });
+
+  it("set_arrow_anchors pins and frees straight arrow ends (also via apply_ops)", async () => {
+    setup(boxes());
+    const { id } = await call("connect", { from: "a", to: "b" });
+    expect(await call("set_arrow_anchors", { id, start: "center", end: "w" })).toMatchObject({
+      updated: 1,
+      arrows: [{ id, startAnchor: "center", endAnchor: "w" }],
+    });
+    expect(api.byId(id).customData?.[PIN]).toEqual({
+      start: { id: "a", anchor: "center" },
+      end: { id: "b", anchor: "w" },
+    });
+    await call("apply_ops", { ops: [{ tool: "set_arrow_anchors", args: { id, end: "free" } }] });
+    expect(api.byId(id).customData?.[PIN]).toEqual({ start: { id: "a", anchor: "center" } });
+    await expect(call("set_arrow_anchors", { id: "a", start: "n" })).rejects.toThrow(
+      /not an arrow/,
+    );
   });
 });
 

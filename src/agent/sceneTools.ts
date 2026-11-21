@@ -25,6 +25,7 @@ import {
   type Anchor,
   type AnchorChange,
 } from "../lib/elbowAnchors";
+import { endAnchors, hasPin, snapPatches, type End } from "../lib/lineAnchors";
 import { bytesToBase64 } from "../lib/fileFormat";
 import {
   customDataWith,
@@ -991,10 +992,9 @@ function connect(draft: Draft, args: Args): unknown {
   if (args.elbow !== undefined && typeof args.elbow !== "boolean") {
     throw new ToolError(`"elbow" must be a boolean`);
   }
-  if (args.elbow === false && (anchors.start || anchors.end)) {
-    throw new ToolError(`Anchors need an elbow arrow; drop "elbow": false`);
-  }
-  const elbow = args.elbow === true || Boolean(anchors.start || anchors.end);
+  const pinned = Boolean(anchors.start || anchors.end);
+  // Anchors make an elbow arrow unless "elbow": false asks for a straight one pinned to them.
+  const elbow = args.elbow === true || (pinned && args.elbow !== false);
   const id = newId();
   const skeleton = {
     type: "arrow",
@@ -1014,41 +1014,70 @@ function connect(draft: Draft, args: Args): unknown {
   if (elbow)
     pinArrow(draft, id, { start: anchors.start ?? "center", end: anchors.end ?? "center" });
   routeArrow(draft, id);
+  if (!elbow && pinned) pinLine(draft, id, anchors);
   const arrow = draft.get(id)!;
   const labelEl = draft.boundTextOf(arrow);
   if (labelEl) refreshText(draft, labelEl.id);
   return {
     id,
     ...(labelEl ? { labelId: labelEl.id } : {}),
-    ...(elbow ? anchorsOf(arrow) : {}),
+    ...anchorsOf(arrow),
   };
 }
 
-function anchorArgs(args: Args, startKey: string, endKey: string): AnchorChange {
-  const read = (key: string): Anchor | undefined =>
+/** An end's anchor in agent args: a side, "center", or "free" (straight/curved arrows only). */
+type AnchorArg = Anchor | "free";
+type AnchorArgs = Partial<Record<End, AnchorArg>>;
+
+function anchorArgs(args: Args, startKey: string, endKey: string, free = false): AnchorArgs {
+  const allowed: readonly AnchorArg[] = free ? [...ANCHORS, "free"] : ANCHORS;
+  const read = (key: string): AnchorArg | undefined =>
     args[key] === undefined || args[key] === null
       ? undefined
-      : oneOf(args[key], ANCHORS, `"${key}"`);
+      : oneOf(args[key], allowed, `"${key}"`);
   return { start: read(startKey), end: read(endKey) };
 }
 
 function anchorsOf(arrow: El) {
-  if (!isElbowArrow(arrow)) return {};
-  return {
-    elbow: true,
-    startAnchor: sideOf(arrow.startBinding?.fixedPoint),
-    endAnchor: sideOf(arrow.endBinding?.fixedPoint),
-  };
+  if (isElbowArrow(arrow))
+    return {
+      elbow: true,
+      startAnchor: sideOf(arrow.startBinding?.fixedPoint),
+      endAnchor: sideOf(arrow.endBinding?.fixedPoint),
+    };
+  if (!isLinear(arrow) || !hasPin(arrow)) return {};
+  const { start, end } = endAnchors(arrow);
+  return { startAnchor: start, endAnchor: end };
 }
 
-function pinArrow(draft: Draft, id: string, change: AnchorChange): void {
+/** Pin a straight / curved arrow's bound ends to a face midpoint or centre, or free them. */
+function pinLine(draft: Draft, id: string, change: AnchorArgs): void {
+  for (const end of ["start", "end"] as const) {
+    const anchor = change[end];
+    if (!anchor) continue;
+    const arrow = draft.get(id);
+    if (!arrow || !isLinear(arrow)) throw new ToolError(`Element "${id}" is not an arrow`);
+    const bound = (end === "start" ? arrow.startBinding : arrow.endBinding)?.elementId;
+    const shape = bound ? draft.get(bound) : undefined;
+    if (anchor !== "free" && !shape) {
+      throw new ToolError(`Arrow "${id}": the ${end} isn't bound to a shape`);
+    }
+    const target = anchor === "free" ? null : { shape: shape!, anchor };
+    for (const [eid, patch] of snapPatches(arrow as never, end, target, (x) => draft.get(x)))
+      draft.update(eid, patch);
+  }
+}
+
+function pinArrow(draft: Draft, id: string, change: AnchorArgs): void {
   const arrow = draft.get(id);
   if (!arrow || !isElbowArrow(arrow)) {
     throw new ToolError(`Element "${id}" is not an elbow arrow (anchors need one)`);
   }
   let bindings;
   try {
-    bindings = anchorBindings(arrow, change, (eid) => draft.get(eid));
+    if (change.start === "free" || change.end === "free")
+      throw new Error(`"free" is for straight and curved arrows; elbow ends always have a side`);
+    bindings = anchorBindings(arrow, change as AnchorChange, (eid) => draft.get(eid));
   } catch (err) {
     throw new ToolError(`Arrow "${id}": ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -1061,11 +1090,15 @@ function setArrowAnchors(draft: Draft, args: Args) {
   if (one) ids.push(one);
   if (!ids.length) throw new ToolError(`"id" or "ids" is required`);
   if (ids.length > 200) throw new ToolError(`At most 200 arrows per call`);
-  const change = anchorArgs(args, "start", "end");
+  const change = anchorArgs(args, "start", "end", true);
   if (!change.start && !change.end) throw new ToolError(`Give "start" and/or "end"`);
   const arrows = [...new Set(ids)].map((id) => {
-    pinArrow(draft, id, change);
-    routeArrow(draft, id);
+    const arrow = draft.mustGet(id);
+    if (arrow.type !== "arrow") throw new ToolError(`Element "${id}" is not an arrow`);
+    if (isElbowArrow(arrow)) {
+      pinArrow(draft, id, change);
+      routeArrow(draft, id);
+    } else pinLine(draft, id, change);
     return { id, ...anchorsOf(draft.get(id)!) };
   });
   return { updated: arrows.length, arrows };
