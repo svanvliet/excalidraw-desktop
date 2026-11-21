@@ -53,7 +53,7 @@ const memoryStore = (): PersistedKV => {
 };
 
 let storeSingleton: PersistedKV | null = null;
-let loadPromise: Promise<readonly MyComponent[]> | null = null;
+let loadPromise: Promise<void> | null = null;
 let loaded = false;
 let saveDisabled = false;
 let current: readonly MyComponent[] = [];
@@ -111,10 +111,10 @@ export function loadMyComponents(): Promise<readonly MyComponent[]> {
       }
       loaded = true;
       notify();
-      return current;
     })();
   }
-  return loadPromise;
+  // The current list, not the one at load time: later saves replace `current`.
+  return loadPromise.then(() => current);
 }
 
 /** The library as last loaded or changed (empty before load). */

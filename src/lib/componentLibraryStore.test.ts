@@ -35,7 +35,12 @@ describe("componentLibraryStore", () => {
   beforeEach(() => __resetMyComponentsForTest());
 
   it("loads stored components and drops malformed ones", async () => {
-    const photo = { id: "f", mimeType: "image/png", dataURL: "data:image/png;base64,x", created: 1 };
+    const photo = {
+      id: "f",
+      mimeType: "image/png",
+      dataURL: "data:image/png;base64,x",
+      created: 1,
+    };
     __resetMyComponentsForTest(
       fakeStore([
         entry("a"),
@@ -72,6 +77,8 @@ describe("componentLibraryStore", () => {
     const seen: string[][] = [];
     subscribeMyComponents((items) => seen.push(items.map((c) => `${c.id}:${c.name}`)));
     await putMyComponent(entry("b"));
+    // Later loads see saves made after the first load.
+    expect((await loadMyComponents()).map((c) => c.id)).toEqual(["a", "b"]);
     await putMyComponent({ ...entry("a", "Card"), created: 99 });
     expect(getMyComponents()[0]).toMatchObject({ id: "a", name: "Card", created: 1 });
     await renameMyComponent("b", "  Button  ");
