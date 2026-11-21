@@ -35,20 +35,27 @@ const EPS = 1e-6;
 export const near = (a: number, b: number) => Math.abs(a - b) < EPS;
 
 /** Unit keys in layout order: by main-axis centre, then z-order. */
-export function stackOrder(def: Pick<ContainerDef, "direction">, units: readonly StackUnit[]) {
+export function stackOrder<U extends StackUnit>(
+  def: Pick<ContainerDef, "direction">,
+  units: readonly U[],
+): U[] {
   const v = def.direction === "vertical";
   const mid = (r: Rect) => (v ? r.y + r.h / 2 : r.x + r.w / 2);
   return [...units].sort((a, b) => mid(a.rect) - mid(b.rect) || a.z - b.z);
 }
 
-/** Where every unit goes and how big the box is. The box's top-left is the anchor. */
+/**
+ * Where every unit goes and how big the box is. The box's top-left is the anchor. `keepOrder`
+ * lays units out in the given order (an explicit reorder) instead of by position.
+ */
 export function computeStack(
   def: Omit<ContainerDef, "gi">,
   box: Rect,
   units: readonly StackUnit[],
+  opts: { keepOrder?: boolean } = {},
 ): StackResult {
   const v = def.direction === "vertical";
-  const ordered = stackOrder(def, units);
+  const ordered = opts.keepOrder ? [...units] : stackOrder(def, units);
   const pad = def.padding;
   const [padMainA, padMainB] = v ? [pad.top, pad.bottom] : [pad.left, pad.right];
   const [padCrossA, padCrossB] = v ? [pad.left, pad.right] : [pad.top, pad.bottom];
