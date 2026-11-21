@@ -4,10 +4,19 @@
  * `npm run extensions:sync-tools` so src/agent/tools.json advertises it to the agent.
  */
 import { borderExtension } from "./border";
+import { grayscaleExtension } from "./grayscale";
 import { maskExtension } from "./mask";
+import { shadowExtension } from "./shadow";
+import { tintExtension } from "./tint";
 import type { AnyDesktopExtension } from "./types";
 
-export const BUILTIN_EXTENSIONS: readonly AnyDesktopExtension[] = [maskExtension, borderExtension];
+export const BUILTIN_EXTENSIONS: readonly AnyDesktopExtension[] = [
+  grayscaleExtension,
+  tintExtension,
+  maskExtension,
+  borderExtension,
+  shadowExtension,
+];
 
 const byStage = (list: readonly AnyDesktopExtension[]) =>
   [...list].sort((a, b) => a.stage - b.stage);
