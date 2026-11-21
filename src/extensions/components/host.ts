@@ -32,6 +32,7 @@ import {
   type ComponentInfo,
   type ElementComponentInfo,
 } from "./model";
+import { createAnchorRule, type AnchorRule } from "../anchors/rule";
 import { createStyleRule } from "../styles/rule";
 import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 import { createComponentRule } from "./rule";
@@ -40,6 +41,7 @@ type Api = ExcalidrawImperativeAPI;
 
 const engines = new WeakMap<Api, Reactor>();
 const remotes = new WeakMap<Api, Api>();
+const anchorRules = new WeakMap<Api, AnchorRule>();
 
 export function installComponents(
   api: Api,
@@ -47,11 +49,14 @@ export function installComponents(
 ): Reactor {
   let reactor = engines.get(api);
   if (!reactor) {
+    const anchors = createAnchorRule();
+    anchorRules.set(api, anchors);
     reactor = createReactor({
       api,
       // Styles first: a style writes master children, which components then copy to
-      // instances in the same flush (D-DX12, docs/styles.md § "Rule order").
-      rules: [createStyleRule(), createComponentRule()],
+      // instances in the same flush (D-DX12, docs/styles.md § "Rule order"). Line anchors
+      // last, so pinned arrow ends follow shapes the earlier rules moved (D-DX15).
+      rules: [createStyleRule(), createComponentRule(), anchors],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
@@ -64,9 +69,15 @@ export function componentsReactor(api: Api): Reactor | undefined {
   return engines.get(api);
 }
 
+/** The editor's line-anchors rule (suspends pinned arrows while the user drags them). */
+export function lineAnchorRule(api: Api): AnchorRule | undefined {
+  return anchorRules.get(api);
+}
+
 export function uninstallComponents(api: Api): void {
   engines.get(api)?.dispose();
   engines.delete(api);
+  anchorRules.delete(api);
 }
 
 /** Forget sync state and re-index from the current scene (file opened into this editor). */
