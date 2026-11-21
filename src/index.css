@@ -85,20 +85,24 @@ button {
   position: relative;
 }
 
-/* ------------------------- Image properties panel ------------------------ */
+/* --------------------------- Properties panel ---------------------------- */
 
 /*
- * Image stroke / mask sections (ImagePropertiesPanel). Inside Excalidraw's panel they inherit its
- * own `.panelColumn` / `.buttonList` / `.color-picker*` styles; these rules only fill the gaps.
+ * Our sections in Excalidraw's panel (PropertiesPanelHost: image stroke / mask, shape data,
+ * arrow anchors). They inherit its own `.panelColumn` / `.buttonList` / `.color-picker*` styles;
+ * these rules only fill the gaps.
  */
-.excalidraw .image-props {
+.excalidraw .props-section {
   display: flex;
   flex-direction: column;
   row-gap: 0.75rem;
 }
 
 /* Fallback when the native panel is not in the DOM (e.g. Excalidraw's mobile layout). */
-.excalidraw .Island.image-props-dock {
+.excalidraw .Island.props-dock {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.75rem;
   --padding: 2;
   position: absolute;
   top: 4.5rem;

@@ -34,7 +34,7 @@ async function selectDroppedImage(page: Page) {
   await page.goto("/");
   await expect(page.locator(".excalidraw")).toBeVisible({ timeout: 15_000 });
   await dropImage(page);
-  // Pins the DOM contract the injection relies on (ImagePropertiesPanel's PANEL_SELECTOR).
+  // Pins the DOM contract the injection relies on (PANEL_SELECTOR in src/components/propertiesPanel/panel.ts).
   const panel = page.locator(".App-menu__left .panelColumn > [data-testid=image-props-native]");
   // Excalidraw selects the dropped image once inserted (async), but only records the insert in
   // history with the next commit; deselect and click it again like a user so undo can't take it.

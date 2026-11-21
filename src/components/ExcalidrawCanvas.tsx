@@ -7,7 +7,8 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
-import { ImagePropertiesPanel } from "./imageProps/ImagePropertiesPanel";
+import { PropertiesPanelHost } from "./propertiesPanel/PropertiesPanelHost";
+import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
@@ -54,6 +55,24 @@ export interface ExcalidrawCanvasProps {
   onPointerUpdate?: ExcalidrawProps["onPointerUpdate"];
 }
 
+declare global {
+  interface Window {
+    /** The last mounted editor's API, only when the e2e flag is set (see GuestApp's `__guest`). */
+    __canvas?: ExcalidrawImperativeAPI;
+  }
+}
+
+/** Same flag as GuestApp's E2E_FLAG_KEY. */
+const E2E_FLAG_KEY = "excalidraw-desktop:e2e";
+
+function exposeForE2e(api: ExcalidrawImperativeAPI): void {
+  try {
+    if (localStorage.getItem(E2E_FLAG_KEY) === "1") window.__canvas = api;
+  } catch {
+    // storage unavailable
+  }
+}
+
 /**
  * Thin wrapper around the official `@excalidraw/excalidraw` component.
  * Intentionally minimal — we let the component manage its own state and only
@@ -80,6 +99,7 @@ export function ExcalidrawCanvas({
       apiRef.current = api;
       setApi(api);
       onApi(api);
+      exposeForE2e(api);
     },
     [onApi],
   );
@@ -133,7 +153,9 @@ export function ExcalidrawCanvas({
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
         {...(theme ? { theme } : {})}
       />
-      {api && !viewOnly && <ImagePropertiesPanel api={api} container={canvasRef} />}
+      {api && !viewOnly && (
+        <PropertiesPanelHost api={api} container={canvasRef} sections={PANEL_SECTIONS} />
+      )}
     </div>
   );
 }
