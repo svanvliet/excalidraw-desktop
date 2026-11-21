@@ -8,6 +8,7 @@ import {
   convertToExcalidrawElements,
   Excalidraw,
   newElementWith,
+  restoreElements,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawTextElement } from "@excalidraw/excalidraw/element/types";
@@ -268,6 +269,24 @@ describe("named styles (real Excalidraw)", () => {
     clock.frame();
     expect(get(api, "P").strokeColor).toBe("#e03131");
     expect(styleTagOf(get(api, "P"))?.rev).toBe(2);
+  });
+
+  it("survives save + reload with overrides and keeps syncing", async () => {
+    const { api, clock } = await setup();
+    const { styleId } = run(api, (d) =>
+      createStyle(d, ["R", "E"], "S", { strokeColor: "#1971c2" }),
+    );
+    clock.frame();
+    userEdit(api, { E: { strokeColor: "#2f9e44" } });
+    clock.frame();
+    const saved = JSON.parse(JSON.stringify(all(api)));
+    cleanup();
+    const { api: api2, clock: clock2 } = await setup(restoreElements(saved, null) as El[]);
+    expect(listStyles(all(api2)).map((s) => s.id)).toEqual([styleId]);
+    run(api2, (d) => updateStyle(d, styleId, { props: { strokeColor: "#e03131" } }));
+    clock2.frame();
+    expect(get(api2, "R").strokeColor).toBe("#e03131");
+    expect(get(api2, "E").strokeColor).toBe("#2f9e44");
   });
 
   describe("with components", () => {

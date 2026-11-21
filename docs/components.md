@@ -183,7 +183,9 @@ reverted.
 
 ## 9. Out of scope and caveats
 
-- Nested components, component properties and styles (Wave 3). Nesting is rejected.
+- Nested components and component properties (Wave 3). Nesting is rejected.
+- Named styles are a separate rule that runs before this one (`docs/styles.md`, D-DX12). A
+  styled master child carries its style to instances as a master change, not an override.
 - The UI (sidebar tab, panel section and personal component library) is a follow-up lane.
 - Bound text in rotated instances, and arrow labels, have only light test coverage.
 - Alt-drag role swap is covered by a unit test of `componentsOnDuplicate`, not by a real
