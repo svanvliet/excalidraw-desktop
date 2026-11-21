@@ -165,6 +165,12 @@ export const CANVAS_TOOL_NAMES = [
   "set_shape_data",
   "set_arrow_anchors",
   "get_shape_data",
+  "create_component",
+  "insert_instance",
+  "list_components",
+  "set_overrides",
+  "reset_overrides",
+  "detach_instance",
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
 

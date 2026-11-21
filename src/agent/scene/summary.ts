@@ -1,5 +1,6 @@
 /** Compact, model-friendly rows for scene summaries (one row per element). */
 import { extensionStateOf } from "../../extensions/stack";
+import { elementComponentInfo } from "../../extensions/components/model";
 import { isElbowArrow, sideOf } from "../../lib/elbowAnchors";
 import { dataRecord } from "../../lib/shapeData";
 import { type Draft, type El, isLinear, isText } from "./draft";
@@ -32,6 +33,14 @@ export interface SummaryRow {
   elbow?: true;
   startAnchor?: string;
   endAnchor?: string;
+  /** Component membership (docs/components.md). */
+  cmp?: {
+    id: string;
+    role: "master" | "instance";
+    slot: string;
+    group: string | null;
+    overrides?: string[];
+  };
 }
 
 const r = (n: number) => Math.round(n);
@@ -83,5 +92,10 @@ export function rowOf(draft: Draft, el: El): SummaryRow {
   if (ext?.stale.length) row.extStale = ext.stale;
   const data = dataRecord(el);
   if (data) row.data = data;
+  const cmp = elementComponentInfo(el);
+  if (cmp) {
+    row.cmp = { id: cmp.componentId, role: cmp.role, slot: cmp.slot, group: cmp.groupId };
+    if (cmp.overrides) row.cmp.overrides = Object.keys(cmp.overrides);
+  }
   return row;
 }

@@ -1,7 +1,6 @@
 /**
- * EXPERIMENTAL — derived-sync "reactor" spike (docs/reactor-spike.md, plan D-DX1).
- * Not wired into the app UI. Kept so Components v1 / styles / smart containers can build on
- * the findings; the API may change freely.
+ * Derived-sync "reactor" (docs/reactor-spike.md, plan D-DX1). One per editor (see
+ * `src/extensions/components/host.ts`); Components v1 is its first production rule.
  *
  * A reactor watches `api.onChange`, detects LOCAL edits to *source* elements by diffing
  * `version`/`versionNonce`, asks its rules for derived patches to *target* elements, and applies
@@ -39,14 +38,38 @@ export interface DeriveContext {
   get(id: string): El | undefined;
 }
 
+/** What changed for one key since the last flush (key-level rules). */
+export interface ReconcileChange {
+  /** A source element of the key changed (including deletes/undeletes). */
+  sourceChanged: boolean;
+  /** Target elements of the key that changed locally (including deletes/undeletes). */
+  targets: ReadonlySet<string>;
+}
+
+export interface ReconcileContext extends DeriveContext {
+  /** Every element linked to `key` (sources and targets, deleted included), pending applied. */
+  members(key: string): El[];
+  /** Write a patch (keys that already match are dropped). */
+  patch(id: string, patch: Patch): void;
+  /** Insert a new element (z-order: right after `afterId`, else on top). */
+  add(el: El, afterId?: string): void;
+}
+
 export interface ReactorRule {
   name: string;
   links(el: El): readonly ReactorLink[];
   /**
-   * Desired props for `target` given its `source`. Return only what the rule owns; the reactor
-   * drops keys that already match, so this must be pure and idempotent.
+   * Element-level rule: desired props for `target` given its `source`. Return only what the
+   * rule owns; the reactor drops keys that already match, so this must be pure and idempotent.
    */
-  derive(target: El, source: El, ctx: DeriveContext): Patch | null;
+  derive?(target: El, source: El, ctx: DeriveContext): Patch | null;
+  /**
+   * Key-level rule: called once per dirty key with every member, and may patch, add or
+   * (un)delete members. Deleted targets count as changes here. Must be idempotent.
+   */
+  reconcile?(key: string, change: ReconcileChange, ctx: ReconcileContext): void;
+  /** Called before the reactor (re)seeds, so the rule can drop caches/indexes. */
+  reset?(): void;
 }
 
 export type ReactorApi = Pick<
@@ -146,6 +169,10 @@ export function createReactor(opts: ReactorOptions): Reactor {
   const expected = new Map<string, Stamp>();
   const dirtyKeys = new Set<string>();
   const dirtyTargets = new Set<string>();
+  /** Key-level rules: per rule, per key, what changed. */
+  const dirtyRec = new Map<ReactorRule, Map<string, { source: boolean; targets: Set<string> }>>();
+  const recRules = rules.filter((r) => r.reconcile);
+  const deriveRules = rules.filter((r) => r.derive);
   let cancel: (() => void) | null = null;
   let disposed = false;
 
@@ -159,10 +186,19 @@ export function createReactor(opts: ReactorOptions): Reactor {
     loopGuardHits: 0,
   };
 
-  const linksOf = (el: El): ReactorLink[] => {
+  const linksOf = (el: El, only: readonly ReactorRule[] = deriveRules): ReactorLink[] => {
     const out: ReactorLink[] = [];
-    for (const r of rules) for (const l of r.links(el)) out.push(l);
+    for (const r of only) for (const l of r.links(el)) out.push(l);
     return out;
+  };
+
+  const markRec = (rule: ReactorRule, link: ReactorLink, id: string) => {
+    let byKey = dirtyRec.get(rule);
+    if (!byKey) dirtyRec.set(rule, (byKey = new Map()));
+    let entry = byKey.get(link.key);
+    if (!entry) byKey.set(link.key, (entry = { source: false, targets: new Set() }));
+    if (link.role === "source") entry.source = true;
+    else entry.targets.add(id);
   };
 
   const seed = () => {
@@ -170,7 +206,13 @@ export function createReactor(opts: ReactorOptions): Reactor {
     expected.clear();
     dirtyKeys.clear();
     dirtyTargets.clear();
-    for (const el of api.getSceneElementsIncludingDeleted()) seen.set(el.id, stamp(el));
+    dirtyRec.clear();
+    for (const r of rules) r.reset?.();
+    for (const el of api.getSceneElementsIncludingDeleted()) {
+      seen.set(el.id, stamp(el));
+      // Lets rules rebuild their indexes (e.g. group → component) without deriving.
+      for (const r of recRules) r.links(el);
+    }
   };
 
   const observe = (elements: readonly El[]) => {
@@ -187,6 +229,12 @@ export function createReactor(opts: ReactorOptions): Reactor {
         if (exp === s) {
           stats.ignored++;
           continue;
+        }
+      }
+      for (const r of recRules) {
+        for (const link of r.links(el)) {
+          markRec(r, link, el.id);
+          dirty = true;
         }
       }
       for (const link of linksOf(el)) {
@@ -216,10 +264,12 @@ export function createReactor(opts: ReactorOptions): Reactor {
       cancel();
       cancel = null;
     }
-    if (dirtyKeys.size === 0 && dirtyTargets.size === 0) return;
+    if (dirtyKeys.size === 0 && dirtyTargets.size === 0 && dirtyRec.size === 0) return;
     const t0 = performance.now();
     const scene = api.getSceneElementsIncludingDeleted();
     const byId = new Map<string, El>();
+    /** Inserted by reconcile rules, with the id they go after (null = top). */
+    const added: Array<{ el: El; after: string | null }> = [];
     const sources = new Map<string, El>();
     const targetsByKey = new Map<string, El[]>();
     const targetKeys = new Map<string, string[]>();
@@ -247,6 +297,48 @@ export function createReactor(opts: ReactorOptions): Reactor {
     dirtyKeys.clear();
     dirtyTargets.clear();
 
+    if (dirtyRec.size > 0) {
+      const recDirty = new Map(dirtyRec);
+      dirtyRec.clear();
+      for (const [rule, byKey] of recDirty) {
+        const members = new Map<string, string[]>();
+        const addMember = (el: El) => {
+          for (const l of rule.links(el)) {
+            let list = members.get(l.key);
+            if (!list) members.set(l.key, (list = []));
+            if (!list.includes(el.id)) list.push(el.id);
+          }
+        };
+        for (const el of scene) addMember(el);
+        const rctx: ReconcileContext = {
+          get: ctx.get,
+          members: (key) => (members.get(key) ?? []).map((id) => ctx.get(id)!).filter(Boolean),
+          patch: (id, p) => {
+            const current = ctx.get(id);
+            if (!current) return;
+            const eff = effectivePatch(current, p);
+            if (eff) pending.set(id, newElementWith(current, eff as never));
+          },
+          add: (el, afterId) => {
+            if (ctx.get(el.id)) return;
+            pending.set(el.id, el);
+            added.push({ el, after: afterId ?? null });
+            addMember(el);
+          },
+        };
+        for (const [key, change] of byKey) {
+          try {
+            rule.reconcile!(key, { sourceChanged: change.source, targets: change.targets }, rctx);
+          } catch (err) {
+            log.error(`reactor: ${rule.name} failed to reconcile ${key}`, err);
+          }
+        }
+      }
+      // Element-level rules may chain off what the key-level rules wrote.
+      for (const id of pending.keys())
+        for (const l of linksOf(pending.get(id)!)) if (l.role === "source") keys.add(l.key);
+    }
+
     for (let pass = 0; keys.size > 0 || explicit.size > 0; pass++) {
       if (pass >= maxPasses) {
         stats.loopGuardHits++;
@@ -270,9 +362,9 @@ export function createReactor(opts: ReactorOptions): Reactor {
         const sourceId = sources.get(key)?.id;
         const source = sourceId ? ctx.get(sourceId) : undefined;
         if (!source) continue; // orphan: left as-is
-        for (const rule of rules) {
+        for (const rule of deriveRules) {
           const current = ctx.get(target.id)!;
-          const want = rule.derive(current, source, ctx);
+          const want = rule.derive!(current, source, ctx);
           const patch = want && effectivePatch(current, want);
           if (!patch) continue;
           if (pass > 0 && pending.has(target.id)) {
@@ -303,25 +395,62 @@ export function createReactor(opts: ReactorOptions): Reactor {
     }
 
     if (pending.size > 0) {
-      let next: readonly El[];
-      if (apply === "mutate") {
-        for (const [id, el] of pending) {
-          const orig = byId.get(id)!;
-          const diff: Patch = {};
-          for (const k of Object.keys(el) as Array<keyof El>)
-            if (!SKIP_DIFF.has(k) && el[k] !== orig[k]) diff[k] = el[k];
-          mutateElement(orig as never, diff as never, false);
-          expected.set(id, stamp(orig));
+      const isAdded = (id: string) => !byId.has(id);
+      // Clones carrying the new values (and, in mutate mode, the stamps the originals end on).
+      const commits = new Map<string, El>();
+      const inPlace: Array<{ orig: El; diff: Patch; to: El }> = [];
+      for (const [id, el] of pending) {
+        if (isAdded(id)) {
+          commits.set(id, el);
+          continue;
         }
-        next = scene.slice();
-      } else {
-        for (const el of pending.values()) expected.set(el.id, stamp(el));
-        next = scene.map((el) => pending.get(el.id) ?? el);
+        if (apply !== "mutate") {
+          commits.set(id, el);
+          continue;
+        }
+        const orig = byId.get(id)!;
+        const diff: Patch = {};
+        for (const k of Object.keys(el) as Array<keyof El>)
+          if (!SKIP_DIFF.has(k) && el[k] !== orig[k]) diff[k] = el[k];
+        const to = newElementWith(orig, diff as never);
+        commits.set(id, to);
+        inPlace.push({ orig, diff, to });
       }
+      for (const el of commits.values()) expected.set(el.id, stamp(el));
+      const build = (pick: (el: El) => El) => {
+        const next = scene.map(pick);
+        for (const { el, after } of added) {
+          const latest = pick(el);
+          const at = after === null ? -1 : next.findIndex((e) => e.id === after);
+          if (at < 0) next.push(latest);
+          else next.splice(at + 1, 0, latest);
+        }
+        return next;
+      };
+      // The NEVER write goes in with untouched scene objects: updateScene keeps the *snapshot*
+      // version of any element whose live object is ahead of it ("uncommitted local edit"), so
+      // patching in place first would leave the Store snapshot stale and later commits on the
+      // element would be filtered out of history.
       api.updateScene({
-        elements: next,
+        elements: build((el) => commits.get(el.id) ?? el),
         captureUpdate: CaptureUpdateAction.NEVER,
       });
+      if (inPlace.length) {
+        // mutate: bring the scene's own objects to the committed values and stamps and swap them
+        // back in (no store action; same render batch), so their ShapeCache entries survive.
+        for (const { orig, diff, to } of inPlace) {
+          mutateElement(orig as never, diff as never, false);
+          Object.assign(orig, {
+            version: to.version,
+            versionNonce: to.versionNonce,
+            updated: to.updated,
+          });
+        }
+        const originals = new Map(inPlace.map(({ orig }) => [orig.id, orig]));
+        api.updateScene({
+          elements: build((el) => originals.get(el.id) ?? commits.get(el.id) ?? el),
+        });
+      }
       stats.patched += pending.size;
     }
     stats.flushes++;

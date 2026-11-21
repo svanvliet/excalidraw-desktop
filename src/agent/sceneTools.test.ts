@@ -1035,3 +1035,107 @@ describe("elbow anchors", () => {
     expect(api.undoStack).toHaveLength(1);
   });
 });
+
+describe("component tools", () => {
+  it("create, insert, sync via update_elements, overrides, reset, detach", async () => {
+    setup(boxes());
+    const made = await call("create_component", { ids: ["a"], name: "Card" });
+    expect(made.componentId).toBeTruthy();
+    expect(api.undoStack).toHaveLength(1);
+
+    const inst = await call("insert_instance", { component: "a", x: 500, y: 200 });
+    expect(inst.componentId).toBe(made.componentId);
+    expect(inst.ids).toHaveLength(2); // rectangle + its label
+    const [rect, label] = inst.ids.map((id: string) => api.byId(id));
+    const instRect = rect.type === "rectangle" ? rect : label;
+    const instText = rect.type === "text" ? rect : label;
+    expect(instRect.x).toBe(500);
+    expect(instText.text).toBe("Alpha");
+
+    let list = (await call("list_components")).components;
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ name: "Card", instances: [{ groupId: inst.groupId }] });
+
+    // Editing the master through a generic tool syncs the instance in the same commit.
+    const textId = api.byId("a").boundElements!.find((b) => b.type === "text")!.id;
+    const steps = api.undoStack.length;
+    await call("update_elements", {
+      updates: [{ id: "a", patch: { backgroundColor: "#ffc9c9", width: 140 } }],
+    });
+    expect(api.undoStack.length).toBe(steps + 1);
+    expect(api.byId(instRect.id)).toMatchObject({ backgroundColor: "#ffc9c9", width: 140 });
+
+    // Overrides by slot (the master element id).
+    await call("set_overrides", {
+      instance: inst.groupId,
+      overrides: [{ slot: textId, values: { text: "Beta" } }],
+    });
+    expect((api.byId(instText.id) as unknown as { text: string }).text).toBe("Beta");
+    await call("update_elements", { updates: [{ id: textId, patch: { text: "Gamma" } }] });
+    expect((api.byId(instText.id) as unknown as { text: string }).text).toBe("Beta");
+
+    // A direct edit of an instance child's overridable key becomes an override; others revert.
+    await call("update_elements", {
+      updates: [{ id: instRect.id, patch: { strokeColor: "#1971c2", roughness: 2 } }],
+    });
+    expect(api.byId(instRect.id).strokeColor).toBe("#1971c2");
+    expect(api.byId(instRect.id).roughness).toBe(api.byId("a").roughness);
+
+    const summary = await call("get_scene_summary");
+    const row = summary.elements.find((r: { id: string }) => r.id === instRect.id);
+    expect(row.cmp).toMatchObject({
+      id: made.componentId,
+      role: "instance",
+      group: inst.groupId,
+      overrides: ["strokeColor"],
+    });
+    const got = await call("get_elements", { ids: [instText.id] });
+    expect(got.components[instText.id]).toMatchObject({ role: "instance", slot: textId });
+
+    await call("reset_overrides", { instance: instText.id });
+    expect((api.byId(instText.id) as unknown as { text: string }).text).toBe("Gamma");
+    expect(api.byId(instRect.id).strokeColor).toBe(api.byId("a").strokeColor);
+
+    await expect(
+      runSceneTool(
+        "set_overrides",
+        { instance: "a", overrides: [{ slot: "a", values: { text: "x" } }] },
+        TAB,
+      ),
+    ).rejects.toThrow(/master, not an instance/);
+    await expect(
+      runSceneTool(
+        "set_overrides",
+        { instance: inst.groupId, overrides: [{ slot: "a", values: { roughness: 1 } }] },
+        TAB,
+      ),
+    ).rejects.toThrow(/can't be overridden/);
+
+    const det = await call("detach_instance", { instance: inst.groupId });
+    expect(det.detached.ids).toHaveLength(2);
+    list = (await call("list_components")).components;
+    expect(list[0].instances).toHaveLength(0);
+    await call("update_elements", { updates: [{ id: "a", patch: { backgroundColor: "#000" } }] });
+    expect(api.byId(instRect.id).backgroundColor).toBe("#ffc9c9");
+  });
+
+  it("works inside apply_ops and is refused on a viewer tab", async () => {
+    setup(boxes());
+    const res = await call("apply_ops", {
+      ops: [
+        { tool: "create_component", args: { ids: ["b"] } },
+        { tool: "insert_instance", args: { component: "b", x: 0, y: 300, scale: 2, angle: 90 } },
+      ],
+    });
+    expect(api.undoStack).toHaveLength(1);
+    const inst = res.results[1];
+    const el = api.byId(inst.ids[0]);
+    expect(el.width).toBe(200);
+    expect(el.angle).toBeCloseTo(Math.PI / 2);
+    viewer = true;
+    await expect(runSceneTool("detach_instance", { instance: inst.groupId }, TAB)).rejects.toThrow(
+      /view-only/,
+    );
+    expect((await call("list_components")).components).toHaveLength(1);
+  });
+});
