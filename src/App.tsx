@@ -825,6 +825,7 @@ export function App() {
                   collabTabId === tab.id ? collab.handlers.onPointerUpdate : undefined
                 }
                 libraryReturnUrl={libraryReturnUrl}
+                persistLibrary={!(collabTabId === tab.id && collabSession?.role === "guest")}
                 theme={resolvedTheme}
               />
             </div>

@@ -129,6 +129,11 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-LAYOUT-4** The layout engine (ELK) MUST be bundled and run in a **web worker** loaded from the app's own origin, offline, under the shipped CSP (no `unsafe-eval`; `worker-src 'self' blob:`). It is loaded lazily on first use.
 - **FR-LAYOUT-5** The agent gets the same capability as an `auto_layout` canvas tool (algorithm, direction, spacing, optional ids) that also works inside `apply_ops`.
 
+### 4.11 Library & layers
+
+- **FR-49** The personal Excalidraw library ("My library") MUST persist across launches in app data (`library.json`, or `library-<profile>.json` under `--profile`) and load as each editor's initial library. Adds, removes and `.excalidrawlib` imports save immediately and appear in every open tab. Nothing is saved before the stored library has loaded, so a failed or slow load can never wipe it. Live-collab guest tabs and the browser guest app never write to it.
+- **FR-50** Excalidraw's own sidebar MUST gain a **Layers** tab, next to Search and Library, that lists the scene as a tree: frames, then groups (outer groups containing inner ones), then elements, topmost first. Clicking a row selects it and scrolls it into view. Each row has a lock toggle (a group locks all its members). Double-click renames: groups and elements store the name in `customData["excalidrawDesktop.layer"]`; frames use their native `name`. Every rename or lock is one undo step and syncs to collab peers. It follows the light/dark theme with Excalidraw's own styling. The agent gets `list_layers` and `update_layer`. Hiding layers is deferred.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.

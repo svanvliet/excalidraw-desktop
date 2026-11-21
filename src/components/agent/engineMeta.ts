@@ -115,6 +115,8 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   set_canvas: "Changed the canvas settings",
   auto_layout: "Laid out the diagram",
   apply_ops: "Edited the canvas",
+  list_layers: "Read the layers",
+  update_layer: "Updated a layer",
 };
 
 export function toolLabel(name: string, title: string | null): string {

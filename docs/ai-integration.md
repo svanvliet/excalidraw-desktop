@@ -194,6 +194,8 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `apply_extension`    | Applies a desktop extension preset/params (e.g. mask an image to a circle); see `extensions.md`  |
 | `remove_extension`   | Removes an extension and restores the element from its stored source                             |
 | `auto_layout`        | Lays out the canvas or `ids` (layered/tree, direction, spacing) with ELK; re-routes bound arrows |
+| `list_layers`        | Layers tree as flat rows (frames → groups → elements) with names, lock state and depth           |
+| `update_layer`       | Renames and/or locks an element, frame or group by id (works in `apply_ops`)                     |
 | `apply_ops`          | Batches several edits into one undo step                                                         |
 | `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 

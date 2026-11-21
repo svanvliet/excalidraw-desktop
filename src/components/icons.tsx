@@ -306,3 +306,32 @@ export const MaskRoundedIcon = () => (
     <rect x="3.75" y="3.75" width="12.5" height="12.5" rx="3.5" strokeWidth="1.25" />
   </NativeIcon>
 );
+
+/** Sidebar / Layers tab icons, drawn in the native 24px stroke style; sized by the caller's CSS. */
+export const LayersIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="M12 4 4 8l8 4 8-4-8-4" />
+    <path d="m4 12 8 4 8-4" />
+    <path d="m4 16 8 4 8-4" />
+  </NativeIcon>
+);
+
+export const LockIcon = () => (
+  <NativeIcon grid={24}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 1 1 8 0v4" />
+  </NativeIcon>
+);
+
+export const UnlockIcon = () => (
+  <NativeIcon grid={24}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V6a4 4 0 0 1 8 0" />
+  </NativeIcon>
+);
+
+export const ChevronRightIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="m9 6 6 6-6 6" />
+  </NativeIcon>
+);

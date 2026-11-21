@@ -28,6 +28,12 @@
  *   2. `IMMEDIATELY` with the final elements — captures the whole turn as one increment.
  * Edits outside a turn commit with `IMMEDIATELY` (one undo step per tool call).
  *
+ * ## `customData` that was `undefined`
+ * Undo/redo applies deltas through `newElementWith`, which skips `undefined` values — so undoing
+ * the first `customData` write on an element (undefined → {...}) silently keeps the new value.
+ * `commitUndoable` and `endTurn` therefore seed `{}` into the snapshot first (NEVER), so the
+ * recorded delta is `{}` → `{...}` and undo restores `{}`.
+ *
  * `revertTurn` is separate from undo: it writes the baseline back as *new versions* (so collab
  * peers accept it) and is itself one undoable step.
  */
@@ -68,6 +74,36 @@ function recordWritten(turn: TurnState, api: SceneTab["api"], ids: Iterable<stri
   }
 }
 
+function gainsCustomData(before: El | undefined, after: El | undefined): boolean {
+  return !!before && !!after && before.customData === undefined && after.customData !== undefined;
+}
+
+/**
+ * Commit a draft as exactly one undo step that undo can fully revert (see "customData that was
+ * undefined" above). Used by agent tools outside a turn and by UI panels (e.g. Layers).
+ */
+export function commitUndoable(api: SceneTab["api"], draft: Draft): void {
+  const seed = [...draft.changed].filter((id) =>
+    gainsCustomData(draft.original.get(id), draft.peek(id)),
+  );
+  let elements = draft.toArray();
+  if (seed.length) {
+    const seedIds = new Set(seed);
+    const scene = api.getSceneElementsIncludingDeleted() as readonly El[];
+    api.updateScene({
+      elements: scene.map((el) =>
+        seedIds.has(el.id) && el.customData === undefined
+          ? newElementWith(el, { customData: {} } as never)
+          : el,
+      ),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    // The seed bumped those versions; bump ours past it so the final write wins everywhere.
+    elements = elements.map((el) => (seedIds.has(el.id) ? newElementWith(el, {}, true) : el));
+  }
+  api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+}
+
 /** Write a draft to the canvas (one undo step, or folded into the active turn). */
 export function commitDraft(
   tabId: string,
@@ -85,11 +121,12 @@ export function commitDraft(
     }
   }
   if (files?.length) tab.api.addFiles(files);
-  tab.api.updateScene({
-    elements: draft.toArray(),
-    captureUpdate: turn ? CaptureUpdateAction.NEVER : CaptureUpdateAction.IMMEDIATELY,
-  });
-  if (turn) recordWritten(turn, tab.api, draft.changed);
+  if (turn) {
+    tab.api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
+    recordWritten(turn, tab.api, draft.changed);
+  } else {
+    commitUndoable(tab.api, draft);
+  }
   tab.markDirty();
 }
 
@@ -129,7 +166,11 @@ export function endTurn(tabId: string, turnId: string): number {
       continue;
     }
     const base = turn.baseline.get(el.id);
-    if (base) rewound.push(clone(base));
+    if (base) {
+      const prev = clone(base);
+      if (gainsCustomData(base, el)) (prev as { customData?: unknown }).customData = {};
+      rewound.push(prev);
+    }
     // base === null → added by this turn → omitted (snapshot tombstone).
   }
   try {

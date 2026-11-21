@@ -4,14 +4,24 @@ import type {
   ExcalidrawInitialDataState,
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
 import { ImagePropertiesPanel } from "./imageProps/ImagePropertiesPanel";
+import { LayersIcon } from "./icons";
+import { LayersPanel } from "./sidebar/LayersPanel";
+import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
 import { autoLayoutCanvas, isAutoLayoutShortcut } from "../layout/canvasAction";
+import {
+  type LibrarySink,
+  loadLibrary,
+  registerLibrarySink,
+  saveLibrary,
+} from "../lib/libraryStore";
+import { log } from "../lib/logger";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -41,6 +51,11 @@ export interface ExcalidrawCanvasProps {
   viewOnly?: boolean;
   libraryReturnUrl?: string;
   /**
+   * Save this editor's personal-library changes to app data (libraryStore.ts). Off for
+   * live-collab guest tabs; they still show the stored library but never write it.
+   */
+  persistLibrary?: boolean;
+  /**
    * Resolved theme to apply to the editor chrome. The host app already
    * resolved "system" to a concrete light/dark value before passing it
    * in — Excalidraw only understands the two terminal values.
@@ -68,6 +83,7 @@ export function ExcalidrawCanvas({
   isCollaborating,
   viewOnly,
   libraryReturnUrl,
+  persistLibrary,
   theme,
   onCollabChange,
   onPointerUpdate,
@@ -106,6 +122,44 @@ export function ExcalidrawCanvas({
     [onSceneChange, onCollabChange],
   );
 
+  // Personal library: seed from app data once the editor mounts, then save every change and
+  // receive changes made in other tabs. Changes reported before seeding finished are ignored so
+  // the editor's initial empty library never overwrites the stored one.
+  const persistLibraryRef = useRef(persistLibrary ?? false);
+  persistLibraryRef.current = persistLibrary ?? false;
+  const librarySinkRef = useRef<LibrarySink | null>(null);
+  const librarySeededRef = useRef(false);
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    librarySeededRef.current = false;
+    const sink: LibrarySink = { updateLibrary: (opts) => api.updateLibrary(opts) };
+    librarySinkRef.current = sink;
+    const unregister = registerLibrarySink(sink);
+    void loadLibrary()
+      .then(async (items) => {
+        if (cancelled) return;
+        const merged = await api.updateLibrary({ libraryItems: items, merge: true });
+        if (cancelled) return;
+        librarySeededRef.current = true;
+        if (persistLibraryRef.current) await saveLibrary(merged, sink);
+      })
+      .catch((err) => log.warn("library: couldn't load into the editor", err));
+    return () => {
+      cancelled = true;
+      unregister();
+      if (librarySinkRef.current === sink) librarySinkRef.current = null;
+    };
+  }, [api]);
+
+  const handleLibraryChange = useCallback<NonNullable<ExcalidrawProps["onLibraryChange"]>>(
+    (items) => {
+      if (!librarySeededRef.current || !persistLibraryRef.current) return;
+      void saveLibrary(items, librarySinkRef.current ?? undefined);
+    },
+    [],
+  );
+
   // Text painted before its font loaded can stay in the fallback face; see fontRefresh.ts.
   useEffect(() => {
     if (!api) return;
@@ -121,12 +175,25 @@ export function ExcalidrawCanvas({
     return enableDraggablePropertiesPanel(root);
   }, []);
 
+  const sidebarTabs = useMemo<SidebarTabDef[]>(
+    () => [
+      {
+        tab: "layers",
+        title: "Layers",
+        icon: <LayersIcon />,
+        render: () => api && <LayersPanel api={api} readOnly={viewOnly} />,
+      },
+    ],
+    [api, viewOnly],
+  );
+
   return (
     <div ref={canvasRef} className="excalidraw-canvas">
       <Excalidraw
         initialData={initialData ?? undefined}
         excalidrawAPI={handleApi}
         onChange={handleChange}
+        onLibraryChange={handleLibraryChange}
         aiEnabled={aiEnabled ?? false}
         isCollaborating={isCollaborating ?? false}
         // `undefined` (not false) hands view mode back to the user when promoted.
@@ -134,7 +201,9 @@ export function ExcalidrawCanvas({
         {...(onPointerUpdate ? { onPointerUpdate } : {})}
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
         {...(theme ? { theme } : {})}
-      />
+      >
+        <SidebarTabs tabs={sidebarTabs} />
+      </Excalidraw>
       {api && !viewOnly && <ImagePropertiesPanel api={api} container={canvasRef} />}
     </div>
   );

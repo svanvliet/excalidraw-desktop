@@ -133,6 +133,13 @@
 - [x] ELK worker loads offline under the shipped CSP with no eval violations (Playwright `e2e/auto-layout.spec.ts`, org chart + undo).
 - [ ] Manual run in the packaged macOS/Windows app (production webview) — not yet done.
 
+### DX Wave 1 — Library + Layers
+
+- [x] Personal library persists per profile; guests don't write (Vitest: `libraryStore`, `ExcalidrawCanvas.library`).
+- [x] Layers tab: tree, select + reveal, rename, lock, one undo step each, light and dark (Playwright `layers.spec.ts`).
+- [x] `list_layers` / `update_layer` MCP tools (Vitest `sceneTools`).
+- [ ] Library persistence verified in the Tauri app across a restart and under `--profile verify` (no Tauri store in the web e2e build).
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
