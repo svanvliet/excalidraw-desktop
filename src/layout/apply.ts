@@ -3,14 +3,7 @@
  * (and their bound text) and re-route the arrows so their bindings stay valid. The caller
  * commits the draft — as one undo step (user action) or folded into the agent turn.
  */
-import {
-  isLinear,
-  placeBoundText,
-  routeArrow,
-  ToolError,
-  type Draft,
-  type LinearEl,
-} from "../agent/scene/draft";
+import { isLinear, routeArrow, ToolError, type Draft, type LinearEl } from "../agent/scene/draft";
 import {
   computeLayout,
   type LayoutAlgorithm,
@@ -18,6 +11,7 @@ import {
   type LayoutResult,
 } from "./elk";
 import { extractGraph, layoutTargets, type LayoutDirection, type LayoutGraph } from "./graph";
+import { fixedPointFor, type Side } from "../lib/elbowAnchors";
 
 export type { LayoutAlgorithm, LayoutDirection };
 
@@ -52,7 +46,7 @@ export async function autoLayoutDraft(
     orthogonal,
   };
   const result = await computeLayout(graph, layoutOpts);
-  return applyLayout(draft, graph, result);
+  return applyLayout(draft, graph, result, opts.direction ?? "down");
 }
 
 function isElbow(el: unknown): boolean {
@@ -69,6 +63,7 @@ export function applyLayout(
   draft: Draft,
   graph: LayoutGraph,
   result: LayoutResult,
+  direction: LayoutDirection = "down",
 ): AutoLayoutSummary {
   // ELK pads the root graph; shift so the laid-out nodes start at the original top-left.
   const placed = [...result.nodes.values()];
@@ -103,6 +98,12 @@ export function applyLayout(
   for (const edge of graph.edges) {
     const arrow = draft.get(edge.arrowId);
     if (!arrow || !isLinear(arrow)) continue;
+    if (isElbow(arrow)) {
+      pinElbowAlongFlow(draft, arrow, direction);
+      routed.add(arrow.id);
+      moved.add(arrow.id);
+      continue;
+    }
     const route = result.edges.get(edge.id);
     const abs = route
       ? route.map(([x, y]): [number, number] => [Math.round(originX + x), Math.round(originY + y)])
@@ -134,10 +135,41 @@ function translate(draft: Draft, id: string, [dx, dy]: [number, number]): void {
   if (el) draft.update(id, { x: el.x + dx, y: el.y + dy });
 }
 
+const FLOW_SIDES: Record<LayoutDirection, [Side, Side]> = {
+  down: ["s", "n"],
+  up: ["n", "s"],
+  right: ["e", "w"],
+  left: ["w", "e"],
+};
+
 /**
- * Give an edge arrow a fresh route. Ordinary arrows take ELK's polyline and then snap their
- * ends to the bound shapes' outlines (via `routeArrow`), so bindings stay valid even when the
- * node is a group or frame. Elbow arrows keep ELK's orthogonal route as-is.
+ * Elbow edge arrows don't take ELK's route: the tree algorithm (mrtree) can't route
+ * orthogonally, and a copied route leaves the old `fixedPoint` sides behind. Instead, pin both
+ * ends to the sides facing along the layout flow (parent S → child N for "down"; reversed for
+ * back edges) and let Excalidraw's elbow router draw it when the draft commits.
+ */
+function pinElbowAlongFlow(draft: Draft, arrow: LinearEl, direction: LayoutDirection): void {
+  const s = arrow.startBinding ? draft.get(arrow.startBinding.elementId) : undefined;
+  const e = arrow.endBinding ? draft.get(arrow.endBinding.elementId) : undefined;
+  if (!s || !e || !arrow.startBinding || !arrow.endBinding) return routeArrow(draft, arrow.id);
+  const vertical = direction === "down" || direction === "up";
+  const along = (el: typeof s) => (vertical ? el.y + el.height / 2 : el.x + el.width / 2);
+  const sign = direction === "down" || direction === "right" ? 1 : -1;
+  const forward = (along(e) - along(s)) * sign >= 0;
+  const [out, inn] = FLOW_SIDES[direction];
+  const [startSide, endSide] = forward ? [out, inn] : [inn, out];
+  draft.update(arrow.id, {
+    startBinding: { ...arrow.startBinding, fixedPoint: fixedPointFor(startSide, s) },
+    endBinding: { ...arrow.endBinding, fixedPoint: fixedPointFor(endSide, e) },
+    fixedSegments: null,
+  } as Partial<LinearEl>);
+  routeArrow(draft, arrow.id);
+}
+
+/**
+ * Give an ordinary edge arrow a fresh route: ELK's polyline, then its ends snap to the bound
+ * shapes' outlines (via `routeArrow`), so bindings stay valid even when the node is a group or
+ * frame.
  */
 function setArrowRoute(draft: Draft, arrow: LinearEl, abs?: Array<[number, number]>): void {
   let pts = abs;
@@ -161,12 +193,6 @@ function setArrowRoute(draft: Draft, arrow: LinearEl, abs?: Array<[number, numbe
     points,
     width: Math.max(...xs) - Math.min(...xs),
     height: Math.max(...ys) - Math.min(...ys),
-    ...(isElbow(arrow) ? { fixedSegments: null } : {}),
   });
-  if (isElbow(arrow)) {
-    const label = draft.boundTextOf(arrow);
-    if (label) placeBoundText(draft, label.id);
-  } else {
-    routeArrow(draft, arrow.id);
-  }
+  routeArrow(draft, arrow.id);
 }
