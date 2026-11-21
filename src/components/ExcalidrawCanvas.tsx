@@ -1,4 +1,8 @@
-import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
+import {
+  CaptureUpdateAction,
+  convertToExcalidrawElements,
+  Excalidraw,
+} from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
@@ -59,6 +63,11 @@ declare global {
   interface Window {
     /** The last mounted editor's API, only when the e2e flag is set (see GuestApp's `__guest`). */
     __canvas?: ExcalidrawImperativeAPI;
+    /** Scene helpers for e2e specs, same flag: build elements and run agent canvas tools. */
+    __e2e?: {
+      convertToExcalidrawElements: typeof convertToExcalidrawElements;
+      runSceneTool: typeof import("../agent/sceneTools").runSceneTool;
+    };
   }
 }
 
@@ -67,7 +76,11 @@ const E2E_FLAG_KEY = "excalidraw-desktop:e2e";
 
 function exposeForE2e(api: ExcalidrawImperativeAPI): void {
   try {
-    if (localStorage.getItem(E2E_FLAG_KEY) === "1") window.__canvas = api;
+    if (localStorage.getItem(E2E_FLAG_KEY) !== "1") return;
+    window.__canvas = api;
+    void import("../agent/sceneTools").then(({ runSceneTool }) => {
+      window.__e2e = { convertToExcalidrawElements, runSceneTool };
+    });
   } catch {
     // storage unavailable
   }

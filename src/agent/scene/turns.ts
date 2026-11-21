@@ -33,6 +33,7 @@
  */
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
+import { isElbowArrow, routedElbow } from "../../lib/elbowAnchors";
 import { log } from "../../lib/logger";
 import { getSceneTab, type SceneTab } from "../sceneBridge";
 import type { Draft, El } from "./draft";
@@ -77,20 +78,55 @@ export function commitDraft(
 ): void {
   if (!draft.changed.size && !files?.length) return;
   const turn = activeTurn(tabId);
+  const touched = new Set([...draft.changed, ...draft.reroute]);
   if (turn) {
-    for (const id of draft.changed) {
+    for (const id of touched) {
       if (turn.baseline.has(id)) continue;
       const orig = draft.original.get(id);
       turn.baseline.set(id, orig ? clone(orig) : null);
     }
   }
   if (files?.length) tab.api.addFiles(files);
-  tab.api.updateScene({
-    elements: draft.toArray(),
-    captureUpdate: turn ? CaptureUpdateAction.NEVER : CaptureUpdateAction.IMMEDIATELY,
-  });
-  if (turn) recordWritten(turn, tab.api, draft.changed);
+  const capture = turn ? CaptureUpdateAction.NEVER : CaptureUpdateAction.IMMEDIATELY;
+  if (draft.reroute.size) commitRerouted(tab, draft, capture);
+  else tab.api.updateScene({ elements: draft.toArray(), captureUpdate: capture });
+  if (turn) recordWritten(turn, tab.api, touched);
   tab.markDirty();
+}
+
+/**
+ * Excalidraw only routes elbow arrows that are live in its Scene, so: write the draft without
+ * history, let Excalidraw route the flagged arrows, then (outside a turn) rewind the snapshot to
+ * the pre-draft state as endTurn does, so the routed result lands as a single undo step.
+ */
+function commitRerouted(
+  tab: SceneTab,
+  draft: Draft,
+  capture: (typeof CaptureUpdateAction)[keyof typeof CaptureUpdateAction],
+): void {
+  tab.api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
+  const live = tab.api.getSceneElementsIncludingDeleted();
+  const routed = live.map((el) => {
+    if (!draft.reroute.has(el.id) || el.isDeleted || !isElbowArrow(el)) return el;
+    try {
+      return routedElbow(el);
+    } catch (err) {
+      log.warn(`agent: elbow re-route of ${el.id} failed`, err);
+      return el;
+    }
+  });
+  if (capture === CaptureUpdateAction.IMMEDIATELY) {
+    const rewound: El[] = [];
+    for (const el of live) {
+      if (!draft.changed.has(el.id)) rewound.push(el);
+      else {
+        const orig = draft.original.get(el.id);
+        if (orig) rewound.push(orig);
+      }
+    }
+    tab.api.updateScene({ elements: rewound, captureUpdate: CaptureUpdateAction.NEVER });
+  }
+  tab.api.updateScene({ elements: routed, captureUpdate: capture });
 }
 
 /** Start grouping this tab's agent edits under `turnId`. Ends any other active turn first. */

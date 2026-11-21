@@ -205,7 +205,7 @@
     {
       "name": "connect",
       "readOnly": false,
-      "description": "Draw an arrow bound to two existing elements (it follows them when they move), optionally labeled. style may set strokeColor, strokeWidth, strokeStyle, roughness, opacity, startArrowhead, endArrowhead. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Draw an arrow bound to two existing elements (it follows them when they move), optionally labeled. elbow: true draws an orthogonal (elbow) arrow. startAnchor / endAnchor pin an end to the n, e, s or w side of its shape (center = the side facing the other shape, chosen now) and imply elbow; unpinned elbow ends also face the other shape. style may set strokeColor, strokeWidth, strokeStyle, roughness, opacity, startArrowhead, endArrowhead. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -226,6 +226,17 @@
           },
           "style": {
             "type": "object"
+          },
+          "elbow": {
+            "type": "boolean"
+          },
+          "startAnchor": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
+          },
+          "endAnchor": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
           }
         },
         "required": ["from", "to"],
@@ -762,6 +773,42 @@
           }
         },
         "required": ["ids", "set"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_arrow_anchors",
+      "readOnly": false,
+      "description": "Pin the bound ends of elbow arrows to a side of the shape they're bound to: n (top), e (right), s (bottom), w (left), or center (the side facing the other end, chosen now; it doesn't follow later moves). The arrow is re-routed; one undoable change. Only elbow arrows whose end is bound to a shape can be anchored (draw one with connect elbow: true). get_scene_summary rows show elbow arrows' startAnchor / endAnchor. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          },
+          "start": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
+          },
+          "end": {
+            "type": "string",
+            "enum": ["n", "e", "s", "w", "center"]
+          }
+        },
         "additionalProperties": false
       }
     },

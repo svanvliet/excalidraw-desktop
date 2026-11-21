@@ -17,6 +17,14 @@ import {
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
+import {
+  ANCHORS,
+  anchorBindings,
+  isElbowArrow,
+  sideOf,
+  type Anchor,
+  type AnchorChange,
+} from "../lib/elbowAnchors";
 import { bytesToBase64 } from "../lib/fileFormat";
 import {
   customDataWith,
@@ -79,6 +87,7 @@ const EDIT_TOOLS = new Set([
   "apply_extension",
   "remove_extension",
   "set_shape_data",
+  "set_arrow_anchors",
 ]);
 
 // --- arg helpers -------------------------------------------------------------
@@ -890,6 +899,14 @@ function connect(draft: Draft, args: Args): unknown {
       oneOf(style.strokeStyle, STYLE_ENUMS.strokeStyle, "strokeStyle");
   }
   const label = optStr(args, "label");
+  const anchors = anchorArgs(args, "startAnchor", "endAnchor");
+  if (args.elbow !== undefined && typeof args.elbow !== "boolean") {
+    throw new ToolError(`"elbow" must be a boolean`);
+  }
+  if (args.elbow === false && (anchors.start || anchors.end)) {
+    throw new ToolError(`Anchors need an elbow arrow; drop "elbow": false`);
+  }
+  const elbow = args.elbow === true || Boolean(anchors.start || anchors.end);
   const id = newId();
   const skeleton = {
     type: "arrow",
@@ -899,15 +916,71 @@ function connect(draft: Draft, args: Args): unknown {
     width: 100,
     height: 0,
     ...style,
+    ...(elbow ? { elbowed: true, roundness: null } : {}),
     ...(label ? { label: { text: label } } : {}),
   } as unknown as ExcalidrawElementSkeleton;
   for (const el of convertToExcalidrawElements([skeleton], { regenerateIds: false })) draft.add(el);
   draft.bindArrow(id, "start", from.id);
   draft.bindArrow(id, "end", to.id);
+  // Elbow bindings need a fixedPoint; unpinned ends get the side facing the other shape.
+  if (elbow)
+    pinArrow(draft, id, { start: anchors.start ?? "center", end: anchors.end ?? "center" });
   routeArrow(draft, id);
-  const labelEl = draft.boundTextOf(draft.get(id)!);
+  const arrow = draft.get(id)!;
+  const labelEl = draft.boundTextOf(arrow);
   if (labelEl) refreshText(draft, labelEl.id);
-  return { id, ...(labelEl ? { labelId: labelEl.id } : {}) };
+  return {
+    id,
+    ...(labelEl ? { labelId: labelEl.id } : {}),
+    ...(elbow ? anchorsOf(arrow) : {}),
+  };
+}
+
+function anchorArgs(args: Args, startKey: string, endKey: string): AnchorChange {
+  const read = (key: string): Anchor | undefined =>
+    args[key] === undefined || args[key] === null
+      ? undefined
+      : oneOf(args[key], ANCHORS, `"${key}"`);
+  return { start: read(startKey), end: read(endKey) };
+}
+
+function anchorsOf(arrow: El) {
+  if (!isElbowArrow(arrow)) return {};
+  return {
+    elbow: true,
+    startAnchor: sideOf(arrow.startBinding?.fixedPoint),
+    endAnchor: sideOf(arrow.endBinding?.fixedPoint),
+  };
+}
+
+function pinArrow(draft: Draft, id: string, change: AnchorChange): void {
+  const arrow = draft.get(id);
+  if (!arrow || !isElbowArrow(arrow)) {
+    throw new ToolError(`Element "${id}" is not an elbow arrow (anchors need one)`);
+  }
+  let bindings;
+  try {
+    bindings = anchorBindings(arrow, change, (eid) => draft.get(eid));
+  } catch (err) {
+    throw new ToolError(`Arrow "${id}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+  draft.update(id, bindings);
+}
+
+function setArrowAnchors(draft: Draft, args: Args) {
+  const ids = strArray(args, "ids") ?? [];
+  const one = optStr(args, "id");
+  if (one) ids.push(one);
+  if (!ids.length) throw new ToolError(`"id" or "ids" is required`);
+  if (ids.length > 200) throw new ToolError(`At most 200 arrows per call`);
+  const change = anchorArgs(args, "start", "end");
+  if (!change.start && !change.end) throw new ToolError(`Give "start" and/or "end"`);
+  const arrows = [...new Set(ids)].map((id) => {
+    pinArrow(draft, id, change);
+    routeArrow(draft, id);
+    return { id, ...anchorsOf(draft.get(id)!) };
+  });
+  return { updated: arrows.length, arrows };
 }
 
 interface MermaidPrepared {
@@ -1373,6 +1446,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return duplicate(draft, args);
     case "set_shape_data":
       return setShapeData(draft, args);
+    case "set_arrow_anchors":
+      return setArrowAnchors(draft, args);
     case "apply_extension":
     case "remove_extension": {
       const prepared = ctx.extensions.get(args);

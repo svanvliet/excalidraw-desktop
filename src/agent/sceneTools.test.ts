@@ -826,3 +826,76 @@ describe("shape data", () => {
     expect(api.undoStack).toHaveLength(1);
   });
 });
+
+describe("elbow anchors", () => {
+  const fixed = (el: El | undefined, end: "startBinding" | "endBinding") =>
+    (el as unknown as Record<string, { fixedPoint?: number[] } | null>)[end]?.fixedPoint;
+
+  it("connect pins elbow ends and commits as one undo step", async () => {
+    setup(boxes());
+    const res = await call("connect", {
+      from: "a",
+      to: "b",
+      startAnchor: "s",
+      endAnchor: "center",
+    });
+    expect(res).toMatchObject({ elbow: true, startAnchor: "s", endAnchor: "w" });
+    const arrow = api.elements.find((e) => e.id === res.id)!;
+    expect(arrow).toMatchObject({ type: "arrow", elbowed: true });
+    expect(fixed(arrow, "startBinding")).toEqual([0.5001, 1 + 5 / 60]);
+    expect(api.undoStack).toHaveLength(1);
+    expect(api.undoStack[0].get(res.id)?.before?.isDeleted ?? true).toBe(true);
+    const row = (await call("get_scene_summary")).elements.find(
+      (r: { id: string }) => r.id === res.id,
+    );
+    expect(row).toMatchObject({
+      elbow: true,
+      startAnchor: "s",
+      endAnchor: "w",
+      from: "a",
+      to: "b",
+    });
+    // Plain connect stays a straight arrow.
+    const plain = await call("connect", { from: "a", to: "c" });
+    expect(plain.elbow).toBeUndefined();
+    await expect(
+      call("connect", { from: "a", to: "c", elbow: false, endAnchor: "n" }),
+    ).rejects.toThrow(/need an elbow/);
+  });
+
+  it("set_arrow_anchors re-pins ends and rejects non-elbow arrows", async () => {
+    setup(boxes());
+    const { id } = await call("connect", { from: "a", to: "c", elbow: true });
+    expect(await call("set_arrow_anchors", { id, start: "e", end: "n" })).toMatchObject({
+      updated: 1,
+      arrows: [{ id, elbow: true, startAnchor: "e", endAnchor: "n" }],
+    });
+    const arrow = api.elements.find((e) => e.id === id)!;
+    expect(fixed(arrow, "startBinding")).toEqual([1.05, 0.5001]);
+    expect(fixed(arrow, "endBinding")).toEqual([0.5001, -5 / 80]);
+    expect(api.undoStack).toHaveLength(2);
+    api.undo();
+    expect(
+      fixed(
+        api.elements.find((e) => e.id === id),
+        "startBinding",
+      ),
+    ).toEqual([0.5001, 1 + 5 / 60]);
+
+    const plain = await call("connect", { from: "a", to: "b" });
+    await expect(call("set_arrow_anchors", { id: plain.id, start: "n" })).rejects.toThrow(
+      /not an elbow arrow/,
+    );
+    await expect(call("set_arrow_anchors", { id, start: "up" })).rejects.toThrow(/must be one of/);
+  });
+
+  it("folds anchored connects into the active turn", async () => {
+    setup(boxes());
+    beginTurn(TAB, "t1");
+    await call("connect", { from: "a", to: "b", startAnchor: "n" });
+    await call("connect", { from: "b", to: "c", endAnchor: "e" });
+    expect(api.undoStack).toHaveLength(0);
+    endTurn(TAB, "t1");
+    expect(api.undoStack).toHaveLength(1);
+  });
+});

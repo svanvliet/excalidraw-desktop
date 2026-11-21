@@ -115,6 +115,7 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   set_canvas: "Changed the canvas settings",
   apply_ops: "Edited the canvas",
   set_shape_data: "Set shape data",
+  set_arrow_anchors: "Pin arrow anchors",
   get_shape_data: "Read shape data",
 };
 

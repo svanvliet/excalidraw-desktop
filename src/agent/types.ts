@@ -160,6 +160,7 @@ export const CANVAS_TOOL_NAMES = [
   "apply_extension",
   "remove_extension",
   "set_shape_data",
+  "set_arrow_anchors",
   "get_shape_data",
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
