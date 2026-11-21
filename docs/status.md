@@ -32,6 +32,9 @@
 | DX-2 | DX wave 2: Components core (engine + agent tools)                                             | 🟡     | Engine, live sync, overrides, orphans, duplicate, collab, 6 MCP tools, smoke. UI is a follow-up lane.                                                                                                                                                                                                                                                                                                                                                             |
 | DX-5 | DX wave 2: Named styles                                                                       | ✅     | Style definitions on linked elements, live reactor rule before components (chained), overrides, 6 MCP tools, Styles tab + panel picker. Vitest + `e2e/styles.spec.ts` green.                                                                                                                                                                                                                                                                                      |
 | DX-3 | DX wave 2: Components UI (tab, My components, panel section, library masters)                 | ✅     | Components tab, My components with images and `.excalidrawlib` export, panel section, Edit master… / Done / Cancel on the engine primitives, Edit → Create Component, 2 MCP tools (FR-55, D-DX10). Vitest + `e2e/components-ui.spec.ts` green.                                                                                                                                                                                                                    |
+| DX-6 | DX wave 2: Smart containers                                                                   | ✅     | Stack containers (gap, padding, align, distribute, hug or fixed), live re-flow on the reactor (one undo step, no collab echo), Container panel section + Alt/Option+Shift+A, 6 MCP tools (FR-59, D-DX13). Vitest + `e2e/containers.spec.ts` green. Layout menu/toolbar entries via DX-7.                                                                                                                                                                          |
+| DX-7 | DX wave 2: Tidy arrows + Layout menu                                                          | ✅     | Layout ▸ Tidy Arrows (selection or all, one undo step, optional convert) with an orthogonal obstacle-avoiding router and org-chart trunks; top-level Layout menu + toolbar Layout dropdown from one command list (auto-layout, tidy, containers); `tidy_arrows` MCP tool (FR-60, D-DX14). Vitest + `e2e/tidy-arrows.spec.ts` green.                                                                                                                               |
+| DX-4 | DX wave 2: Component properties + nested components                                           | ✅     | Typed properties bound to slots (instance values = overrides), Properties panel section, nested components (cycles rejected, cascade sync, overrides at both levels), 3 MCP tools (FR-56, FR-57, D-DX11). Real-Excalidraw + collab vitest and `e2e/component-properties.spec.ts` (incl. real Alt-drag) green.                                                                                                                                                     |
 
 ## Acceptance checks (per milestone)
 
@@ -162,6 +165,28 @@
 - [x] MCP tools + summary/get_elements style info (Vitest `sceneTools`).
 - [x] Panel picker creates a style, Styles tab edits it live, one undo reverts, overrides reset (Playwright `styles.spec.ts`).
 
+### DX Wave 2 — Smart containers
+
+- [x] Make/update/remove containers; vertical and horizontal stacks with gap, padding, align, distribute and hug/fixed sizing (Vitest `actions`, `containers.real`).
+- [x] Live re-flow on move/reorder, resize, text growth, add and remove; gestures settle on release; one undo step; Redo kept (Vitest `containers.real`).
+- [x] Nested containers, a container inside a component master, an instance as a child (no overrides), bound arrows follow (Vitest `containers.real`).
+- [x] A style font change re-flows its container and reaches instances in one step; a container inside a library-backed master survives dematerialize/materialize (Vitest `containers.real`).
+- [x] Collab convergence without echo (Vitest `containers.collab.real`).
+- [x] Panel section, shortcut, auto-layout treats a container as one node (Vitest `ContainerSection`).
+- [x] MCP tools incl. inside `apply_ops` and re-flow after generic edits (Vitest `sceneTools`).
+- [x] Shortcut → panel gap edit → agent child resize, each undone in one step (Playwright `containers.spec.ts`).
+- [x] Layout menu and toolbar entries (shared Layout command list, DX-7; Vitest `commands`, Playwright `tidy-arrows.spec.ts`).
+
+### DX Wave 2 — Tidy arrows + Layout menu
+
+- [x] Router avoids every obstacle in fixtures, shares trunks, honours pinned sides, ~0.7s for 300 shapes (Vitest `route.test.ts`, `tidy.test.ts`).
+- [x] Route survives restore and a later shape move keeps the interior segments; one undo restores, including convert (Vitest `tidy.real.test.tsx`).
+- [x] Auto-layout keeps its along-flow elbow sides and tidies those elbows (Vitest `layout.real.test.tsx`).
+- [x] Layout menu (native, from `commands.json`) and toolbar dropdown list the same commands (cargo `menu`, Vitest `commands`, `LayoutMenu`).
+- [x] `tidy_arrows` MCP tool alone and inside `apply_ops`, one undo step (Vitest `sceneTools`).
+- [x] Toolbar Layout ▸ Tidy Arrows on an org chart: no arrow crosses a non-endpoint card, shapes unmoved, one undo restores (Playwright `tidy-arrows.spec.ts`).
+- [ ] Manual run in the packaged macOS/Windows app.
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -183,4 +208,7 @@
 | 2026-11-21 | DX-1       | ⬜ → ✅   | Panel host, shape data (FR-52) and elbow anchors (FR-53).                                                                              |
 | 2026-11-21 | DX-2       | ⬜ → 🟡   | Components engine + agent tools (FR-54, D-DX9); UI pending.                                                                            |
 | 2026-11-21 | DX-5       | ⬜ → ✅   | Named styles (FR-58, D-DX12): engine, UI and agent tools.                                                                              |
+| 2026-11-21 | DX-6       | — → ✅    | Smart containers (FR-59, D-DX13).                                                                                                      |
 | 2026-11-22 | DX-3       | ⬜ → ✅   | Components UI (FR-55, D-DX10).                                                                                                         |
+| 2026-11-21 | DX-7       | — → ✅    | Tidy Arrows + Layout menu/toolbar (FR-60, D-DX14).                                                                                     |
+| 2026-11-22 | DX-4       | ⬜ → ✅   | Component properties and nested components (FR-56, FR-57, D-DX11).                                                                     |

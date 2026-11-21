@@ -8,6 +8,7 @@ import { beginTurn, canRevertTurn, endTurn, revertTurn, runSceneTool } from "./s
 import { resetTurns } from "./scene/turns";
 import ElkBundled from "elkjs/lib/elk.bundled.js";
 import { setElkFactory } from "../layout/elk";
+import { pathCrossesBox } from "../layout/route";
 import type { ToolContent } from "./types";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
 import { Draft } from "./scene/draft";
@@ -771,6 +772,57 @@ describe("auto_layout", () => {
   });
 });
 
+describe("tidy_arrows", () => {
+  // A straight arrow from "top" to "bot" runs straight through "mid".
+  const stack = () =>
+    scene([
+      { type: "rectangle", id: "top", x: 0, y: 0, width: 120, height: 60 },
+      { type: "rectangle", id: "mid", x: 0, y: 200, width: 120, height: 60 },
+      { type: "rectangle", id: "bot", x: 0, y: 400, width: 120, height: 60 },
+      { type: "arrow", id: "a1", x: 0, y: 0, start: { id: "top" }, end: { id: "bot" } },
+    ]);
+  const absolute = (id: string) => {
+    const el = api.byId(id) as unknown as { x: number; y: number; points: [number, number][] };
+    return el.points.map(([x, y]) => [el.x + x, el.y + y] as [number, number]);
+  };
+  const midBox = { minX: 0, minY: 200, maxX: 120, maxY: 260 };
+
+  it("routes around shapes as one undo step, converting when asked", async () => {
+    setup(stack());
+    const before = absolute("a1");
+    await expect(runSceneTool("tidy_arrows", {}, TAB)).rejects.toThrow(/No elbow arrows/);
+    const res = await call("tidy_arrows", { convert: true });
+    expect(res).toMatchObject({ routed: ["a1"], skipped: [], converted: ["a1"] });
+    expect(api.byId("a1")).toMatchObject({ elbowed: true });
+    expect(pathCrossesBox(absolute("a1"), midBox)).toBe(false);
+    expect(api.byId("mid")).toMatchObject({ x: 0, y: 200 });
+    // A seeding commit (fields that were undefined, e.g. fixedSegments), then one undo step.
+    expect(api.undoStack).toHaveLength(1);
+    api.undo();
+    expect(api.byId("a1")).toMatchObject({ elbowed: false });
+    expect(absolute("a1")).toEqual(before);
+  });
+
+  it("validates convert", async () => {
+    setup(stack());
+    await expect(runSceneTool("tidy_arrows", { convert: "yes" }, TAB)).rejects.toThrow(/convert/);
+  });
+
+  it("works inside apply_ops", async () => {
+    setup(stack().filter((e) => e.id !== "a1"));
+    const res = await call("apply_ops", {
+      ops: [
+        { tool: "connect", args: { from: "top", to: "bot" } },
+        { tool: "tidy_arrows", args: { convert: true } },
+      ],
+    });
+    expect(res.results[1].routed).toHaveLength(1);
+    const arrow = api.elements.find((e) => e.type === "arrow" && !e.isDeleted)!;
+    expect(pathCrossesBox(absolute(arrow.id), midBox)).toBe(false);
+    expect(api.undoStack).toHaveLength(1);
+  });
+});
+
 describe("turns", () => {
   it("collapses a whole turn into one undo step, leaving user edits separate", async () => {
     setup(boxes());
@@ -1146,6 +1198,141 @@ describe("component tools", () => {
       /view-only/,
     );
     expect((await call("list_components")).components).toHaveLength(1);
+  });
+
+  it("declares properties, sets values (one undo step each) and nests components", async () => {
+    setup(boxes());
+    const card = await call("create_component", { ids: ["a"], name: "Card" });
+    const def = await call("define_property", {
+      component: card.componentId,
+      property: { name: "Title", type: "text", bindings: [{ elementId: "a" }] },
+    });
+    expect(def.propertyId).toBeTruthy();
+    const inst = await call("insert_instance", { component: "a", x: 500, y: 0 });
+    const undo = api.undoStack.length;
+    const set = await call("set_properties", {
+      instance: inst.groupId,
+      values: { Title: "Hi" },
+    });
+    expect(set.values).toEqual({ [def.propertyId]: "Hi" });
+    expect(api.undoStack).toHaveLength(undo + 1);
+    const label = inst.ids
+      .map((id: string) => api.byId(id))
+      .find((e: { type: string }) => e.type === "text");
+    expect((api.byId(label.id) as unknown as { text: string }).text).toBe("Hi");
+    const summary = (await call("list_components")).components[0];
+    expect(summary.props).toHaveLength(1);
+    expect(summary.instances[0].values).toEqual({ [def.propertyId]: "Hi" });
+    await expect(
+      call("set_properties", { instance: inst.groupId, values: { Nope: "x" } }),
+    ).rejects.toThrow(/property/i);
+
+    // Nest a Card instance inside a Panel master; set the nested Title from a Panel instance.
+    const panel = await call("create_component", { ids: ["b"], name: "Panel" });
+    const nested = await call("insert_instance", {
+      component: card.componentId,
+      into: panel.masterGroupId,
+      x: 300,
+      y: 100,
+    });
+    await expect(
+      call("insert_instance", { component: panel.componentId, into: card.masterGroupId }),
+    ).rejects.toThrow(/cycle/);
+    const pi = await call("insert_instance", { component: panel.componentId, x: 0, y: 500 });
+    expect(pi.componentId).toBe(panel.componentId);
+    expect(pi.ids).toHaveLength(3); // ellipse + nested card rect + label
+    await call("set_properties", {
+      instance: pi.groupId,
+      nested: nested.groupId,
+      values: { Title: "Deep" },
+    });
+    const texts = pi.ids
+      .map((id: string) => api.byId(id))
+      .filter((e: { type: string }) => e.type === "text");
+    expect(texts.map((t: { text: string }) => t.text)).toEqual(["Deep"]);
+    const comps = (await call("list_components")).components;
+    expect(
+      comps.find((c: { componentId: string }) => c.componentId === panel.componentId).uses,
+    ).toEqual([card.componentId]);
+    const rows = (await call("get_scene_summary")).elements;
+    const nestedRect = pi.ids.find((id: string) => api.byId(id).type === "rectangle");
+    expect(rows.find((r: { id: string }) => r.id === nestedRect).cmp).toMatchObject({
+      id: panel.componentId,
+      in: [card.componentId],
+    });
+
+    await call("remove_property", { component: card.componentId, property: "Title" });
+    expect((api.byId(label.id) as unknown as { text: string }).text).toBe("Alpha");
+  });
+});
+
+describe("container tools", () => {
+  const stack = () =>
+    scene([
+      { type: "rectangle", id: "a", x: 0, y: 0, width: 100, height: 40 },
+      { type: "rectangle", id: "b", x: 0, y: 100, width: 60, height: 60 },
+      { type: "rectangle", id: "c", x: 400, y: 0, width: 50, height: 50 },
+      { type: "arrow", id: "x", x: 60, y: 130, start: { id: "b" }, end: { id: "c" } },
+    ]);
+
+  it("create, re-flow generic edits, update order, add, take out, remove", async () => {
+    setup(stack());
+    const made = await call("create_container", { ids: ["a", "b"], gap: 10, padding: 0 });
+    const box = made.containerId;
+    expect(made.container).toMatchObject({ direction: "vertical", x: 0, y: 0, height: 110 });
+    expect(api.byId("b").y).toBe(50);
+    expect(api.undoStack).toHaveLength(1);
+
+    // A generic edit to a child re-flows its container in the same commit; bound arrows follow.
+    const arrowY = api.byId("x").y;
+    await call("update_elements", { updates: [{ id: "a", patch: { height: 80 } }] });
+    expect(api.byId("b").y).toBe(90);
+    expect(api.byId("x").y).toBe(arrowY + 40);
+    expect(api.byId(box).height).toBe(150);
+    expect(api.undoStack).toHaveLength(2);
+
+    await call("update_container", {
+      containerId: "a",
+      order: ["b", "a"],
+      direction: "horizontal",
+    });
+    expect(api.byId("b")).toMatchObject({ x: 0, y: 0 });
+    expect(api.byId("a").x).toBe(70);
+
+    const added = await call("add_to_container", { containerId: box, ids: ["c"], index: 0 });
+    expect(added.container.children.map((c: { key: string }) => c.key)).toEqual(["c", "b", "a"]);
+    const listed = (await call("list_containers")).containers;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ containerId: box, width: 50 + 10 + 60 + 10 + 100 });
+
+    await call("remove_from_container", { ids: ["c"] });
+    expect(api.byId("c").groupIds).toEqual([]);
+    expect(api.byId(box).width).toBe(170);
+
+    await call("remove_container", { containerId: box });
+    expect(api.byId(box).isDeleted).toBe(true);
+    expect(api.byId("a").groupIds).toEqual([]);
+    expect((await call("list_containers")).containers).toEqual([]);
+  });
+
+  it("works inside apply_ops and rejects bad settings", async () => {
+    setup(stack());
+    const res = await call("apply_ops", {
+      ops: [
+        { tool: "create_container", args: { ids: ["a", "b"], direction: "horizontal", gap: 0 } },
+        { tool: "update_elements", args: { updates: [{ id: "a", patch: { width: 50 } }] } },
+      ],
+    });
+    expect(api.undoStack).toHaveLength(1);
+    // b's centre is further left, so it leads; a's new width re-flows the box.
+    expect(api.byId("a").x).toBe(api.byId("b").x + 60);
+    expect(api.byId(res.results[0].containerId).width).toBe(16 + 60 + 50 + 16);
+    await expect(
+      runSceneTool("update_container", { containerId: res.results[0].containerId, gap: -1 }, TAB),
+    ).rejects.toThrow(/gap must be/);
+    await expect(runSceneTool("update_container", { containerId: "c" }, TAB)).rejects.toThrow(
+      /not a smart container/,
+    );
   });
 });
 

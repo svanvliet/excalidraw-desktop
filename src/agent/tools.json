@@ -614,9 +614,35 @@
       }
     },
     {
+      "name": "tidy_arrows",
+      "readOnly": false,
+      "description": "Re-route arrows bound at both ends as orthogonal (elbow) paths around the other shapes, without moving any shape (runs locally). Arrows leaving the same shape share a trunk, org-chart style; ends pinned to a side (set_arrow_anchors) keep that side. ids: arrows, or shapes whose arrows to tidy; omit for every arrow. convert: also turn bound straight/curved arrows into elbow arrows first (default false; otherwise only elbow arrows are tidied). Returns routed, skipped (no clear route; left unchanged) and converted ids. Works inside apply_ops. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "convert": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "apply_ops",
       "readOnly": false,
-      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Run several edit operations atomically: if any op fails nothing is applied. Each op is {tool, args} using add_elements, update_elements, delete_elements, connect, add_mermaid, add_image, arrange, move_elements, duplicate_elements, auto_layout, tidy_arrows, define_property, remove_property, set_properties, update_layer, set_shape_data, set_arrow_anchors, create_component, insert_instance, set_overrides, reset_overrides, detach_instance, create_container, update_container, remove_container, add_to_container, remove_from_container, create_style, apply_style, update_style, delete_style, reset_style_overrides, insert_my_component, apply_extension, or remove_extension (omit tabId/expectedRevision inside ops; extension ops must target elements no earlier op in the batch changed). Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1004,7 +1030,7 @@
     {
       "name": "create_component",
       "readOnly": false,
-      "description": "Turn elements into a reusable component (Figma/Sketch style): the elements become the component's master, grouped under one component group. ids: the elements (labels/bound text come along; an existing group that is exactly the selection becomes the component group). name: optional display name. Elements already in a component can't be used (no nesting). Returns componentId and masterGroupId. Then insert_instance places live copies: editing the master (update_elements on its elements, adding to or removing from its group) updates every instance. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Turn elements into a reusable component (Figma/Sketch style): the elements become the component's master, grouped under one component group. ids: the elements (labels/bound text come along; an existing group that is exactly the selection becomes the component group). name: optional display name. Whole instances of other components may be included (nested components: they keep following their own master); elements of a master, or parts of an instance, can't. Returns componentId and masterGroupId. Then insert_instance places live copies: editing the master (update_elements on its elements, adding to or removing from its group) updates every instance. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1034,7 +1060,7 @@
     {
       "name": "insert_instance",
       "readOnly": false,
-      "description": "Place a new instance of a component. component: the componentId (or any element/group id of its master or an instance). x, y: top-left of the instance (default: right of the master). scale: uniform scale (default 1). angle: rotation in degrees. Instances follow the master's geometry, styles and text live; move, resize or rotate the whole instance group freely. Returns groupId (select/move it as a unit) and the child ids. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "description": "Place a new instance of a component. component: the componentId (or any element/group id of its master or an instance). x, y: top-left of the instance (default: right of the master). scale: uniform scale (default 1). angle: rotation in degrees. into: a master group id (or master element id) of another component to nest the instance inside that master, so every instance of the outer component carries a copy that still follows this component (cycles are rejected). Instances follow the master's geometry, styles and text live; move, resize or rotate the whole instance group freely. Returns groupId (select/move it as a unit) and the child ids. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1059,6 +1085,9 @@
           },
           "angle": {
             "type": "number"
+          },
+          "into": {
+            "type": "string"
           }
         },
         "required": ["component"],
@@ -1068,7 +1097,7 @@
     {
       "name": "list_components",
       "readOnly": true,
-      "description": "List the components on the canvas: componentId, name, masterGroupId and masterIds (null/empty when the master was deleted and no instance could be promoted), and each instance's groupId, child ids and number of overridden slots. get_scene_summary rows also carry cmp {id, role, slot, group, overrides} for component elements; get_elements returns a components map.",
+      "description": "List the components on the canvas: componentId, name, masterGroupId and masterIds (null/empty when the master was deleted and no instance could be promoted), and each instance's groupId, child ids number of overridden slots, property values and parent (the component master/instance it is nested in); each component's props (declared properties) and uses (components nested in its master). get_scene_summary rows also carry cmp {id, role, slot, group, overrides, values, in} for component elements; get_elements returns a components map.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1237,6 +1266,433 @@
           }
         },
         "required": ["instance"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "define_property",
+      "readOnly": false,
+      "description": "Declare (or replace, by id) a typed property on a component, bound to master elements; instances then set values with set_properties and the values become overrides. component: componentId or any element/group id of it. property: {id?, name (unique), type: text | color | boolean | choice, default?, options? (choice, at least 2), bindings: [{elementId or slot (master element id), key?, map?}]}. Default keys: text → text (a container binding drives its label), color → backgroundColor, boolean → visible (hides/shows the slot). Choice bindings take map {option: value} for their key. Returns propertyId. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "property": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "type": {
+                "type": "string",
+                "enum": ["text", "color", "boolean", "choice"]
+              },
+              "default": {
+                "type": ["string", "boolean"]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50
+              },
+              "bindings": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "elementId": {
+                      "type": "string"
+                    },
+                    "slot": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "backgroundColor",
+                        "strokeColor",
+                        "opacity",
+                        "link",
+                        "fileId",
+                        "visible"
+                      ]
+                    },
+                    "map": {
+                      "type": "object"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["name", "type", "bindings"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["component", "property"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remove_property",
+      "readOnly": false,
+      "description": "Remove a declared property from a component (by id or name); instances drop its values and follow the master again. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "property": {
+            "type": "string"
+          }
+        },
+        "required": ["component", "property"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_properties",
+      "readOnly": false,
+      "description": "Set property values on one instance: values {property id or name: value, or null for the default}. text: string; color: CSS colour; boolean: true/false (slot visible); choice: one of the options. Explicit overrides on the keys a property drives are cleared. instance: groupId or any of its element ids. nested: to set a nested component's properties from the outer instance, the groupId of that nested instance inside the outer master (see list_components: instances whose parent.role is master). Returns the resulting values. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "nested": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": ["string", "boolean", "null"]
+            }
+          }
+        },
+        "required": ["instance", "values"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_container",
+      "readOnly": false,
+      "description": "Make a smart container (auto-layout stack, like a Figma auto-layout frame) from elements: they are grouped with a background rectangle (the box) that hugs them with padding, and they are stacked along direction with gap between them. ids: the children (labels come along; a group or component instance stays one child). direction (default vertical), gap (16), padding (16; a number or {top,right,bottom,left}), align (cross-axis: start/center/end), justify (main-axis distribution, only when that axis is fixed), sizing {w,h}: hug (fit the children) or fixed; width/height set a fixed size. From then on the container re-flows by itself when children are resized, edited, added or removed, and moves as one unit; style the box like any rectangle. Containers can nest and can sit inside a component master. Returns containerId (the box id), groupId and the laid-out container. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["vertical", "horizontal"]
+          },
+          "gap": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "padding": {
+            "type": ["number", "object"],
+            "description": "One number for every side, or {top, right, bottom, left} (any subset), each 0-10000.",
+            "properties": {
+              "top": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "right": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "bottom": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "left": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              }
+            },
+            "additionalProperties": false
+          },
+          "align": {
+            "type": "string",
+            "enum": ["start", "center", "end"]
+          },
+          "justify": {
+            "type": "string",
+            "enum": ["start", "center", "end", "space-between"]
+          },
+          "sizing": {
+            "type": "object",
+            "properties": {
+              "w": {
+                "type": "string",
+                "enum": ["hug", "fixed"]
+              },
+              "h": {
+                "type": "string",
+                "enum": ["hug", "fixed"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100000
+          }
+        },
+        "required": ["ids"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_container",
+      "readOnly": false,
+      "description": "Change a smart container's settings (same fields as create_container; omitted fields keep their value) and/or the order of its children. order: every child key once, in the new order (keys from list_containers: an element id, or a group id for a grouped child; any member id of a child also works). Returns the re-flowed container. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string",
+            "description": "The container's box id (from create_container / list_containers), its group id, or the id of anything inside it (innermost container)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["vertical", "horizontal"]
+          },
+          "gap": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "padding": {
+            "type": ["number", "object"],
+            "description": "One number for every side, or {top, right, bottom, left} (any subset), each 0-10000.",
+            "properties": {
+              "top": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "right": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "bottom": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "left": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000
+              }
+            },
+            "additionalProperties": false
+          },
+          "align": {
+            "type": "string",
+            "enum": ["start", "center", "end"]
+          },
+          "justify": {
+            "type": "string",
+            "enum": ["start", "center", "end", "space-between"]
+          },
+          "sizing": {
+            "type": "object",
+            "properties": {
+              "w": {
+                "type": "string",
+                "enum": ["hug", "fixed"]
+              },
+              "h": {
+                "type": "string",
+                "enum": ["hug", "fixed"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          }
+        },
+        "required": ["containerId"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remove_container",
+      "readOnly": false,
+      "description": "Stop a smart container: by default its box is deleted and its group dissolved (children stay where they are). keepBox: true only turns off the layout, leaving a plain group with its rectangle. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string",
+            "description": "The container's box id (from create_container / list_containers), its group id, or the id of anything inside it (innermost container)."
+          },
+          "keepBox": {
+            "type": "boolean"
+          }
+        },
+        "required": ["containerId"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_to_container",
+      "readOnly": false,
+      "description": "Move elements into a smart container as children (a group or component instance stays one child), at index in the stack order (default: the end). The container re-flows to fit. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string",
+            "description": "The container's box id (from create_container / list_containers), its group id, or the id of anything inside it (innermost container)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["containerId", "ids"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "remove_from_container",
+      "readOnly": false,
+      "description": "Take elements out of the smart container they are direct children of (one level up; they keep any enclosing container). They stay where they are and the container re-flows. Pass expectedRevision (from the last read) to fail instead of overwriting concurrent changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          }
+        },
+        "required": ["ids"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_containers",
+      "readOnly": true,
+      "description": "List the smart containers on the canvas: containerId (box id), groupId, parentContainerId (for nested containers), settings, the box's bounds, and children in stack order ({key, ids}).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "additionalProperties": false
       }
     },

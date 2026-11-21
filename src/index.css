@@ -277,6 +277,64 @@ button {
   white-space: nowrap;
 }
 
+/* Component properties (components/componentProps): typed property values and declarations. */
+.excalidraw .cmp-propvals {
+  min-width: 0;
+}
+
+.excalidraw .cmp-propvals__rows,
+.excalidraw .cmp-propvals__form {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.25rem;
+}
+
+.excalidraw .cmp-propvals__form {
+  margin-top: 0.5rem;
+}
+
+.excalidraw .cmp-propvals__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 1.5rem;
+  column-gap: 0.25rem;
+  align-items: center;
+}
+
+.excalidraw .cmp-propvals__def {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.5rem;
+  align-items: center;
+}
+
+.excalidraw .cmp-propvals__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 0.25rem;
+}
+
+.excalidraw .cmp-propvals__name {
+  overflow: hidden;
+  color: var(--text-primary-color);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excalidraw .cmp-propvals__type {
+  color: var(--color-muted-darker);
+}
+
+.excalidraw .cmp-propvals__title {
+  margin: 0.375rem 0 0.25rem;
+  color: var(--color-muted-darker);
+  font-size: 0.75rem;
+}
+
+.excalidraw .cmp-propvals__check {
+  justify-self: start;
+  margin: 0;
+}
+
 /* Shape data (components/shapeData): key / value rows. */
 .excalidraw .shape-data__fieldset {
   min-width: 0;
@@ -355,6 +413,66 @@ button {
 .excalidraw .shape-data__icon:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Smart containers (components/containers): stack settings and child actions. */
+.excalidraw .container-props {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.5rem;
+  min-width: 0;
+}
+
+.excalidraw .container-props__row {
+  display: flex;
+  column-gap: 0.375rem;
+}
+
+.excalidraw .container-props__child {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.excalidraw .container-props__field {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  row-gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.excalidraw .container-props__btn {
+  align-self: flex-start;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--border-radius-md, 0.375rem);
+  background: var(--button-gray-1);
+  color: var(--text-primary-color);
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.excalidraw .container-props__btn:hover:not(:disabled) {
+  background: var(--button-gray-2);
+}
+
+.excalidraw .container-props__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.excalidraw .container-props__btn--danger {
+  color: var(--danger);
+}
+
+.excalidraw .container-props__size {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .excalidraw .shape-data__note {
@@ -1153,6 +1271,23 @@ button {
   text-overflow: ellipsis;
   direction: rtl;
   text-align: left;
+}
+
+.popover__panel--compact {
+  min-width: 220px;
+}
+
+.popover__item--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.popover__item-shortcut {
+  font-size: var(--font-size-xs);
+  color: var(--fg-subtle);
+  white-space: nowrap;
 }
 
 .popover__separator {

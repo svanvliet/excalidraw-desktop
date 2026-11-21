@@ -61,22 +61,41 @@ import { extensionStateOf } from "../extensions/stack";
 import { applyLayerEdit, buildLayerTree, flattenLayers } from "../layers/layers";
 import { commitDraft } from "./scene/turns";
 import { autoLayoutDraft } from "../layout/apply";
+import { tidyAfterLayout, tidyArrowsDraft } from "../layout/tidy";
 import {
   componentsOf,
   createComponent,
+  defineProperty,
   detachInstance,
   insertInstance,
+  instanceProperties,
+  removeProperty,
+  setProperties,
   resetOverrides,
   setOverrides,
   syncEdited,
   type OverrideEntry,
+  type PropertyInput,
 } from "../extensions/components/actions";
 import {
   elementComponentInfo,
   groupOf,
   listComponents,
   tagOf,
+  tagsOf,
 } from "../extensions/components/model";
+import {
+  addToContainer,
+  describeContainers,
+  makeContainer,
+  removeContainer,
+  removeFromContainer,
+  resolveContainer,
+  updateContainer,
+  type ContainerChanges,
+} from "../layout/containers/actions";
+import { reflowDraft } from "../layout/containers/draftAccess";
+import { isActiveBox } from "../layout/containers/model";
 import {
   applyStyle,
   createStyle,
@@ -119,6 +138,7 @@ const EDIT_TOOLS = new Set([
   "move_elements",
   "duplicate_elements",
   "auto_layout",
+  "tidy_arrows",
   "update_layer",
   "apply_extension",
   "remove_extension",
@@ -129,6 +149,14 @@ const EDIT_TOOLS = new Set([
   "set_overrides",
   "reset_overrides",
   "detach_instance",
+  "define_property",
+  "remove_property",
+  "set_properties",
+  "create_container",
+  "update_container",
+  "remove_container",
+  "add_to_container",
+  "remove_from_container",
   "create_style",
   "apply_style",
   "update_style",
@@ -1213,7 +1241,16 @@ async function autoLayout(draft: Draft, args: Args): Promise<unknown> {
   }
   const ids = strArray(args, "ids");
   const summary = await autoLayoutDraft(draft, { ids, algorithm, direction, spacing });
+  tidyAfterLayout(draft);
   return { laidOut: summary.nodes, edges: summary.edges, moved: summary.moved.length };
+}
+
+function tidyArrows(draft: Draft, args: Args): unknown {
+  if (args.convert != null && typeof args.convert !== "boolean") {
+    throw new ToolError(`"convert" must be a boolean`);
+  }
+  const summary = tidyArrowsDraft(draft, { ids: strArray(args, "ids"), convert: !!args.convert });
+  return summary;
 }
 
 function duplicate(draft: Draft, args: Args): unknown {
@@ -1448,7 +1485,11 @@ function listComponentsTool(tab: SceneTab, tabId: string): ToolContent[] {
   return json({ tabId, revision: revisionOf(elements), components: listComponents(elements) });
 }
 
-/** A component id, or any element / group id belonging to one of its masters or instances. */
+/**
+ * A component id, or any element / group id belonging to one of its masters or instances. A
+ * group id resolves to the component that owns that group (nested components); an element id to
+ * its outermost component.
+ */
 function componentIdOf(draft: Draft, ref: unknown): string {
   if (typeof ref !== "string" || !ref) throw new ToolError(`"component" must be a string id`);
   const comps = componentsOf(draft);
@@ -1456,8 +1497,8 @@ function componentIdOf(draft: Draft, ref: unknown): string {
   const tag = tagOf(draft.get(ref));
   if (tag) return tag.componentId;
   for (const el of draft.live()) {
-    const t = tagOf(el);
-    if (t && groupOf(el, t) === ref) return t.componentId;
+    const t = tagsOf(el).find((t) => groupOf(el, t) === ref);
+    if (t) return t.componentId;
   }
   throw new ToolError(
     `"${ref}" is not a component (or an element / group of one); see list_components`,
@@ -1472,13 +1513,15 @@ function createComponentTool(draft: Draft, args: Args) {
 
 function insertInstanceTool(draft: Draft, args: Args) {
   const angle = optNum(args, "angle");
-  const out = insertInstance(draft, componentIdOf(draft, args.component), {
+  const componentId = componentIdOf(draft, args.component);
+  const out = insertInstance(draft, componentId, {
+    into: optStr(args, "into"),
     x: optNum(args, "x"),
     y: optNum(args, "y"),
     scale: optNum(args, "scale"),
     angle: angle === undefined ? undefined : (angle * Math.PI) / 180,
   });
-  return { componentId: componentIdOf(draft, out.groupId), ...out };
+  return { componentId, ...out };
 }
 
 function setOverridesTool(draft: Draft, args: Args) {
@@ -1553,6 +1596,107 @@ function insertMyComponentTool(draft: Draft, args: Args, ctx: EditCtx) {
 
 function detachInstanceTool(draft: Draft, args: Args) {
   return { detached: detachInstance(draft, args.instance) };
+}
+
+function definePropertyTool(draft: Draft, args: Args) {
+  const componentId = componentIdOf(draft, args.component);
+  if (!isObj(args.property)) throw new ToolError(`"property" must be an object`);
+  const id = defineProperty(draft, componentId, args.property as unknown as PropertyInput);
+  return { componentId, propertyId: id };
+}
+
+function removePropertyTool(draft: Draft, args: Args) {
+  const componentId = componentIdOf(draft, args.component);
+  removeProperty(draft, componentId, args.property);
+  return { componentId, removed: args.property };
+}
+
+function setPropertiesTool(draft: Draft, args: Args) {
+  if (!isObj(args.values)) throw new ToolError(`"values" must be an object`);
+  const nested = optStr(args, "nested");
+  setProperties(draft, args.instance, args.values, { nested });
+  const target = instanceProperties(draft, args.instance).find((t) =>
+    nested ? t.nestedKey === nested : !t.nestedKey,
+  );
+  return { instance: args.instance, ...(nested ? { nested } : {}), values: target?.values ?? {} };
+}
+
+// --- smart containers (docs/plan.md D-DX13) -------------------------------------
+
+const CONTAINER_KEYS = [
+  "direction",
+  "gap",
+  "padding",
+  "align",
+  "justify",
+  "sizing",
+  "width",
+  "height",
+] as const;
+
+function containerChanges(args: Args): ContainerChanges {
+  const out: Record<string, unknown> = {};
+  for (const k of CONTAINER_KEYS) if (args[k] !== undefined) out[k] = args[k];
+  return out as ContainerChanges;
+}
+
+function describeContainer(draft: Draft, containerId: string) {
+  return describeContainers(draft).find((c) => c.containerId === containerId);
+}
+
+function createContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const made = makeContainer(draft, ids, containerChanges(args));
+  return { ...made, container: describeContainer(draft, made.containerId) };
+}
+
+function updateContainerTool(draft: Draft, args: Args) {
+  const order = strArray(args, "order");
+  const c = updateContainer(draft, args.containerId, {
+    ...containerChanges(args),
+    ...(order ? { order } : {}),
+  });
+  return { container: describeContainer(draft, c.box.id) };
+}
+
+function removeContainerTool(draft: Draft, args: Args) {
+  if (args.keepBox !== undefined && typeof args.keepBox !== "boolean") {
+    throw new ToolError(`"keepBox" must be a boolean`);
+  }
+  removeContainer(draft, args.containerId, { keepBox: args.keepBox === true });
+  return { removed: args.containerId };
+}
+
+function addToContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  const added = addToContainer(draft, args.containerId, ids, optNum(args, "index"));
+  return {
+    added,
+    container: describeContainer(draft, resolveContainer(draft, args.containerId).box.id),
+  };
+}
+
+function removeFromContainerTool(draft: Draft, args: Args) {
+  const ids = reqStrArray(args, "ids");
+  if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
+  return { removed: removeFromContainer(draft, ids) };
+}
+
+function listContainersTool(tab: SceneTab, tabId: string): ToolContent[] {
+  const elements = tab.api.getSceneElementsIncludingDeleted();
+  return json({
+    tabId,
+    revision: revisionOf(elements),
+    containers: describeContainers(new Draft(elements)),
+  });
+}
+
+/** Containers holding anything a generic edit touched re-flow in the same step. */
+function reflowEdited(draft: Draft): void {
+  if (!draft.changed.size || !draft.live().some(isActiveBox)) return;
+  reflowDraft(draft, [...draft.changed]);
 }
 
 // --- named styles (docs/styles.md) ------------------------------------------
@@ -1696,6 +1840,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return duplicate(draft, args);
     case "auto_layout":
       return autoLayout(draft, args);
+    case "tidy_arrows":
+      return tidyArrows(draft, args);
     case "update_layer":
       return updateLayer(draft, args);
     case "set_shape_data":
@@ -1712,6 +1858,22 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return resetOverridesTool(draft, args);
     case "detach_instance":
       return detachInstanceTool(draft, args);
+    case "define_property":
+      return definePropertyTool(draft, args);
+    case "remove_property":
+      return removePropertyTool(draft, args);
+    case "set_properties":
+      return setPropertiesTool(draft, args);
+    case "create_container":
+      return createContainerTool(draft, args);
+    case "update_container":
+      return updateContainerTool(draft, args);
+    case "remove_container":
+      return removeContainerTool(draft, args);
+    case "add_to_container":
+      return addToContainerTool(draft, args);
+    case "remove_from_container":
+      return removeFromContainerTool(draft, args);
     case "create_style":
       return createStyleTool(draft, args);
     case "apply_style":
@@ -1818,9 +1980,11 @@ async function runEdit(
         "The canvas kept changing while the layout was being computed; no changes were applied. Retry.",
       );
     }
-    // Styles first, then components (the live reactor's rule order, D-DX12): direct edits to
-    // styled elements become style overrides, and styled master children reach their instances.
+    // The live reactor's rule order (D-DX12, D-DX13): styles (direct edits to styled elements
+    // become overrides; font changes re-measure text), then containers touched by the edit or by
+    // the style sync re-flow, then components keep instances in sync.
     syncStylesEdited(draft);
+    reflowEdited(draft);
     syncEdited(draft);
     commitDraft(tabId, tab, draft, ctx.files);
     return json({
@@ -1877,6 +2041,8 @@ export async function runSceneTool(
       return getShapeData(tab, tabId, args);
     case "list_components":
       return listComponentsTool(tab, tabId);
+    case "list_containers":
+      return listContainersTool(tab, tabId);
     case "list_styles":
       return listStylesTool(tab, tabId);
     default:

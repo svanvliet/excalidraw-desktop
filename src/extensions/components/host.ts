@@ -1,5 +1,6 @@
 /**
- * Components v1 host: one reactor per editor, plus the functions and hook the UI calls.
+ * Components v1 host: one reactor per editor (also running the smart-container rule), plus the
+ * functions and hook the UI calls.
  *
  *  - `installComponents(api)` (idempotent) starts the live sync for an editor; patches are
  *    applied in place (`apply: "mutate"`) and are never undo steps of their own.
@@ -19,12 +20,16 @@ import { log } from "../../lib/logger";
 import { createReactor, type Reactor } from "../reactor/reactor";
 import {
   createComponent,
+  defineProperty,
   detachInstance,
   insertInstance,
+  removeProperty,
   resetOverrides,
   setOverrides,
+  setProperties,
   type InsertOptions,
   type OverrideEntry,
+  type PropertyInput,
 } from "./actions";
 import {
   elementComponentInfo,
@@ -36,10 +41,12 @@ import { createAnchorRule, type AnchorRule } from "../anchors/rule";
 import { createStyleRule } from "../styles/rule";
 import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
 import { createComponentRule } from "./rule";
+import { createContainerRule, createHoldTracker } from "../../layout/containers/rule";
 
 type Api = ExcalidrawImperativeAPI;
 
 const engines = new WeakMap<Api, Reactor>();
+const holds = new WeakMap<Api, ReturnType<typeof createHoldTracker>>();
 const remotes = new WeakMap<Api, Api>();
 const anchorRules = new WeakMap<Api, AnchorRule>();
 
@@ -51,16 +58,25 @@ export function installComponents(
   if (!reactor) {
     const anchors = createAnchorRule();
     anchorRules.set(api, anchors);
+    const hold = createHoldTracker();
     reactor = createReactor({
       api,
-      // Styles first: a style writes master children, which components then copy to
-      // instances in the same flush (D-DX12, docs/styles.md § "Rule order"). Line anchors
-      // last, so pinned arrow ends follow shapes the earlier rules moved (D-DX15).
-      rules: [createStyleRule(), createComponentRule(), anchors],
+      // Order matters (D-DX12, D-DX13; docs/styles.md § "Rule order", docs/containers.md §3):
+      // a style writes master children (and grows text), containers then re-flow around them,
+      // components then copy all of it to instances, and line anchors finally re-snap pinned
+      // arrow ends to the shapes the earlier rules moved (D-DX15).
+      rules: [
+        createStyleRule(),
+        createContainerRule({ held: hold.held }),
+        createComponentRule(),
+        anchors,
+      ],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
+    hold.attach(api, reactor);
     engines.set(api, reactor);
+    holds.set(api, hold);
   }
   return reactor;
 }
@@ -78,6 +94,8 @@ export function uninstallComponents(api: Api): void {
   engines.get(api)?.dispose();
   engines.delete(api);
   anchorRules.delete(api);
+  holds.get(api)?.dispose();
+  holds.delete(api);
 }
 
 /** Forget sync state and re-index from the current scene (file opened into this editor). */
@@ -170,6 +188,17 @@ export const dematerializeMaster = (api: Api, masterGroupId: string): ComponentD
   runComponentCommand(api, (d) => dematerialize(d, masterGroupId));
 export const adoptInstanceAsMaster = (api: Api, instanceGroupId: string): string | null =>
   runComponentCommand(api, (d) => adoptAsMaster(d, instanceGroupId));
+
+export const defineComponentProperty = (api: Api, componentId: string, input: PropertyInput) =>
+  runComponentCommand(api, (d) => defineProperty(d, componentId, input));
+export const removeComponentProperty = (api: Api, componentId: string, prop: string) =>
+  runComponentCommand(api, (d) => removeProperty(d, componentId, prop));
+export const setInstanceProperties = (
+  api: Api,
+  instance: string,
+  values: Record<string, unknown>,
+  opts?: { nested?: string },
+) => runComponentCommand(api, (d) => setProperties(d, instance, values, opts));
 
 export function sceneComponents(api: Api): ComponentInfo[] {
   return listComponents(api.getSceneElementsIncludingDeleted());

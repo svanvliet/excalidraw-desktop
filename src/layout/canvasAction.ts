@@ -3,6 +3,7 @@ import { Draft, ToolError, revisionOf } from "../agent/scene/draft";
 import { commitDraftUndoable } from "../agent/scene/turns";
 import { log } from "../lib/logger";
 import { autoLayoutDraft, type AutoLayoutOptions } from "./apply";
+import { tidyAfterLayout, tidyArrowsDraft, type TidyOptions } from "./tidy";
 
 export type CanvasLayoutPreset = "down" | "right" | "tree";
 
@@ -39,6 +40,7 @@ export async function autoLayoutCanvas(
       (id) => appState.selectedElementIds[id],
     );
     const summary = await autoLayoutDraft(draft, { ...LAYOUT_PRESETS[preset], ids });
+    tidyAfterLayout(draft);
     if (revisionOf(api.getSceneElementsIncludingDeleted()) !== revisionOf(base)) {
       api.setToast({ message: "The canvas changed during auto-layout; try again." });
       return false;
@@ -57,5 +59,45 @@ export async function autoLayoutCanvas(
     return false;
   } finally {
     running = false;
+  }
+}
+
+/**
+ * The user-facing "Tidy Arrows" action: re-routes the selected arrows (and those bound to selected
+ * shapes), or every arrow when nothing is selected, around the other shapes as one undo step.
+ */
+export function tidyArrowsCanvas(
+  api: ExcalidrawImperativeAPI,
+  opts: Pick<TidyOptions, "convert"> = {},
+): boolean {
+  const appState = api.getAppState();
+  if (appState.viewModeEnabled) return false;
+  try {
+    const draft = new Draft(api.getSceneElementsIncludingDeleted());
+    const ids = Object.keys(appState.selectedElementIds).filter(
+      (id) => appState.selectedElementIds[id],
+    );
+    const summary = tidyArrowsDraft(draft, { ...opts, ids });
+    if (draft.changed.size) commitDraftUndoable(api, draft);
+    log.info(
+      `tidy arrows: ${summary.routed.length} routed, ${summary.skipped.length} skipped, ` +
+        `${summary.converted.length} converted`,
+    );
+    if (!summary.routed.length) {
+      api.setToast({ message: "Couldn't find a clear route for those arrows." });
+    } else if (summary.skipped.length) {
+      api.setToast({
+        message: `Tidied ${summary.routed.length} arrows; ${summary.skipped.length} had no clear route.`,
+      });
+    }
+    return summary.routed.length > 0;
+  } catch (err) {
+    if (err instanceof ToolError) {
+      api.setToast({ message: err.message });
+    } else {
+      log.error("tidy arrows failed", err);
+      api.setToast({ message: "Tidy Arrows failed. See the log for details." });
+    }
+    return false;
   }
 }

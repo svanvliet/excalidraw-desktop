@@ -4,8 +4,9 @@
  *
  *  - A copy of a whole master (new group) becomes a new instance of it.
  *  - Alt-drag: Excalidraw leaves the new ids behind and keeps dragging the originals. When every
- *    master copy sits exactly where its original is, the roles swap: the stationary copies stay
- *    the master and the dragged originals become the instance.
+ *    master copy sits exactly where its original is, or ahead of it in z-order (Alt-drag puts the
+ *    copies in the originals' slots and appends the originals), the roles swap: the stationary
+ *    copies stay the master and the dragged originals become the instance.
  *  - A copy of an instance (new group) is another instance with the same overrides.
  *  - A copy made inside a master group (group editing) becomes a new master child; inside an
  *    instance group it is detached (instances only hold children mirrored from the master).
@@ -46,6 +47,7 @@ export function componentsOnDuplicate(next: readonly El[], prev: readonly El[]):
 
   const replace = new Map<string, El>();
   const nextById = new Map(next.map((e) => [e.id, e]));
+  const indexOf = new Map(next.map((e, i) => [e.id, i]));
   const cur = (id: string): El => replace.get(id) ?? nextById.get(id) ?? prevById.get(id)!;
   const set = (el: El, customData: Record<string, unknown>) =>
     replace.set(el.id, { ...el, customData } as El);
@@ -97,7 +99,10 @@ export function componentsOnDuplicate(next: readonly El[], prev: readonly El[]):
       if (!m) return false;
       const a = boxOf(e);
       const b = boxOf(m);
-      return near(a.cx, b.cx) && near(a.cy, b.cy) && near(a.w, b.w) && near(a.h, b.h);
+      if (!near(a.w, b.w) || !near(a.h, b.h)) return false;
+      // Excalidraw has already moved the originals by the first drag step, but it puts each copy
+      // in its original's z-slot and appends the originals; duplicate and paste go after them.
+      return (near(a.cx, b.cx) && near(a.cy, b.cy)) || indexOf.get(e.id)! < indexOf.get(m.id)!;
     });
     if (altDrag) {
       // Copies stay the master; the dragged originals become the instance.
