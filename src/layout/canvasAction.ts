@@ -1,6 +1,6 @@
-import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, ToolError, revisionOf } from "../agent/scene/draft";
+import { commitDraftUndoable } from "../agent/scene/turns";
 import { log } from "../lib/logger";
 import { autoLayoutDraft, type AutoLayoutOptions } from "./apply";
 
@@ -44,7 +44,7 @@ export async function autoLayoutCanvas(
       return false;
     }
     if (!draft.changed.size) return true;
-    api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    commitDraftUndoable(api, draft);
     log.info(`auto-layout (${preset}): ${summary.nodes} nodes, ${summary.edges} edges`);
     return true;
   } catch (err) {
