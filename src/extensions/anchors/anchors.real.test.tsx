@@ -10,8 +10,9 @@ import {
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { anchorPoint } from "../../lib/elbowAnchors";
-import { absolutePoints, endAnchors, snapPatches } from "../../lib/lineAnchors";
+import { anchorPoint, sideOf } from "../../lib/elbowAnchors";
+import { absolutePoints, endAnchors, pinOf, snapPatches } from "../../lib/lineAnchors";
+import { settleEnds } from "./pointer";
 import { installComponents, uninstallComponents } from "../components/host";
 import type { El } from "../reactor/reactor";
 
@@ -48,12 +49,20 @@ function manualSchedule() {
   };
 }
 
-async function setup() {
+async function setup(elbowed = false) {
   const elements = convertToExcalidrawElements(
     [
       { type: "rectangle", id: "A", x: 0, y: 0, width: 100, height: 60 },
       { type: "rectangle", id: "B", x: 300, y: 100, width: 100, height: 60 },
-      { type: "arrow", id: "a", x: 0, y: 0, start: { id: "A" }, end: { id: "B" } },
+      {
+        type: "arrow",
+        id: "a",
+        x: 0,
+        y: 0,
+        start: { id: "A" },
+        end: { id: "B" },
+        ...(elbowed ? { elbowed: true } : {}),
+      },
     ] as ExcalidrawElementSkeleton[],
     { regenerateIds: false },
   );
@@ -114,7 +123,10 @@ describe("line anchors (real Excalidraw)", () => {
       userEdit(api, new Map([["B", patch]]));
       clock.frame();
       expectAt(endOf(api), anchorPoint("n", get(api, "B")));
-      expect(get(api, "a").endBinding).toMatchObject({ elementId: "B", gap: 5 });
+      expect((get(api, "a") as unknown as { endBinding: unknown }).endBinding).toMatchObject({
+        elementId: "B",
+        gap: 5,
+      });
     }
   });
 
@@ -143,5 +155,52 @@ describe("line anchors (real Excalidraw)", () => {
     clock.frame();
     expectAt(endOf(api), free);
     expect(endAnchors(get(api, "a") as never).end).toBeNull();
+  });
+
+  describe("settleEnds (pointer-up)", () => {
+    /** Drop the arrow's end at `p` (as if the user had dragged it there), then settle it. */
+    function dropEnd(api: Api, p: [number, number], bypass = false) {
+      const a = get(api, "a") as never as { x: number; y: number; points: number[][] };
+      const points = a.points.map((q, i) =>
+        i === a.points.length - 1 ? [p[0] - a.x, p[1] - a.y] : q,
+      );
+      userEdit(api, new Map([["a", { points }]]));
+      act(() => {
+        settleEnds(get(api, "a"), ["end"], all(api), 1, bypass);
+      });
+    }
+
+    it("snaps, binds and pins an end dropped near a face midpoint", async () => {
+      const { api, clock } = await setup();
+      dropEnd(api, [345, 96]); // B's north midpoint is (350, 100)
+      clock.frame();
+      expectAt(endOf(api), anchorPoint("n", get(api, "B")));
+      expect(pinOf(get(api, "a")).end).toEqual({ id: "B", anchor: "n" });
+      expect(get(api, "B").boundElements?.some((b) => b.id === "a")).toBe(true);
+    });
+
+    it("snaps to the centre too, and leaves a far or bypassed drop free", async () => {
+      const { api, clock } = await setup();
+      dropEnd(api, [352, 128]);
+      clock.frame();
+      expect(endAnchors(get(api, "a") as never).end).toBe("center");
+
+      dropEnd(api, [330, 120]);
+      clock.frame();
+      expect(pinOf(get(api, "a")).end).toBeUndefined();
+
+      dropEnd(api, [345, 96], true);
+      clock.frame();
+      expect(pinOf(get(api, "a")).end).toBeUndefined();
+    });
+
+    it("sets an elbow arrow's fixedPoint instead of a pin", async () => {
+      const { api } = await setup(true);
+      dropEnd(api, [404, 131]); // B's east midpoint is (400, 130)
+      const a = get(api, "a") as never as { endBinding: { fixedPoint: [number, number] } };
+      expect(sideOf(a.endBinding.fixedPoint)).toBe("e");
+      expect(pinOf(get(api, "a")).end).toBeUndefined();
+      expectAt(endOf(api), anchorPoint("e", get(api, "B")));
+    });
   });
 });

@@ -68,6 +68,8 @@ export interface CollabSettings {
 export interface EditorSettings {
   /** Write file-backed tabs to disk automatically after edits. */
   autosave: boolean;
+  /** Snap dragged arrow ends to shape face midpoints / centres and pin them (FR-61). */
+  snapArrowAnchors: boolean;
 }
 
 export interface UpdateSettings {
@@ -101,6 +103,8 @@ export interface SettingsState extends AllSettings {
   setAutoUpdate: (value: boolean) => Promise<void>;
   /** Turn automatic saving of file-backed tabs on or off. */
   setAutosave: (value: boolean) => Promise<void>;
+  /** Turn face-centre snapping of arrow ends on or off. */
+  setSnapArrowAnchors: (value: boolean) => Promise<void>;
   /** Reset every toggle/secret to its default. Useful for tests + "Reset" UI. */
   resetAll: () => Promise<void>;
 }
@@ -133,6 +137,7 @@ export const SETTINGS_DEFAULTS = {
   collabManualUrl: "",
   collabPort: DEFAULT_COLLAB_PORT,
   autosave: true,
+  snapArrowAnchors: true,
   autoUpdate: null,
 } as const satisfies AllSettings;
 const DEFAULTS: AllSettings = SETTINGS_DEFAULTS;
@@ -209,6 +214,8 @@ export function sanitize(raw: unknown): AllSettings {
     collabManualUrl: isHttpUrl(r.collabManualUrl) ? r.collabManualUrl : DEFAULTS.collabManualUrl,
     collabPort: isValidPort(r.collabPort) ? r.collabPort : DEFAULTS.collabPort,
     autosave: typeof r.autosave === "boolean" ? r.autosave : DEFAULTS.autosave,
+    snapArrowAnchors:
+      typeof r.snapArrowAnchors === "boolean" ? r.snapArrowAnchors : DEFAULTS.snapArrowAnchors,
     autoUpdate: typeof r.autoUpdate === "boolean" ? r.autoUpdate : DEFAULTS.autoUpdate,
   };
 }
@@ -226,6 +233,7 @@ function snapshot(s: AllSettings): AllSettings {
     collabManualUrl: s.collabManualUrl,
     collabPort: s.collabPort,
     autosave: s.autosave,
+    snapArrowAnchors: s.snapArrowAnchors,
     autoUpdate: s.autoUpdate,
   };
 }
@@ -296,6 +304,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   async setAutosave(value) {
     set({ autosave: value });
+    await persist(snapshot(get()));
+  },
+
+  async setSnapArrowAnchors(value) {
+    set({ snapArrowAnchors: value });
     await persist(snapshot(get()));
   },
 
