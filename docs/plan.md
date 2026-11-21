@@ -370,7 +370,7 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 
 ### DX wave 1 — Panel host, shape data, elbow anchors
 
-`src/components/propertiesPanel/` (`PropertiesPanelHost`, `panel.ts` section contract, `keyboard.ts` shortcut bridge, `sections.ts` order: image → anchors → data; D-DX4). Shape data: `src/lib/shapeData.ts`, `src/components/shapeData/`, agent tools `set_shape_data` / `get_shape_data` (D-DX2). Anchors: `src/lib/elbowAnchors.ts`, `src/components/arrowAnchors/`, `connect` `startAnchor`/`endAnchor` and `set_arrow_anchors` (D-DX7). Smoke: `e2e/shape-data-anchors.spec.ts`. No new capability or CSP change.
+`src/components/propertiesPanel/` (`PropertiesPanelHost`, `panel.ts` section contract, `keyboard.ts` shortcut bridge, `sections.ts` order: image → anchors → data; D-DX4). Shape data: `src/lib/shapeData.ts`, `src/components/shapeData/`, agent tools `set_shape_data` / `get_shape_data` (D-DX2). Anchors: `src/lib/elbowAnchors.ts`, `src/components/arrowAnchors/`, `connect` `startAnchor`/`endAnchor` and `set_arrow_anchors` (D-DX8). Smoke: `e2e/shape-data-anchors.spec.ts`. No new capability or CSP change.
 
 ## 7. Decisions log
 

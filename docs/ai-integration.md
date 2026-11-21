@@ -198,7 +198,7 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `update_layer`       | Renames and/or locks an element, frame or group by id (works in `apply_ops`)                     |
 | `set_shape_data`     | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)            |
 | `get_shape_data`     | Returns elements' key/value data as JSON or CSV                                                  |
-| `set_arrow_anchors`  | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX7)                 |
+| `set_arrow_anchors`  | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX8)                 |
 | `apply_ops`          | Batches several edits into one undo step                                                         |
 | `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 
