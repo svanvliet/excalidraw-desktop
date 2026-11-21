@@ -165,3 +165,49 @@ for (const [name, query, count] of [
       expect(redone.find((e) => e.id === tr.id)!.x).toBe(s1.x + linkOf(tr)!.dx!);
     });
 }
+
+test("point 4 in a real browser: overridden text is measured with the real loaded font", async ({
+  page,
+}) => {
+  await open(page, "mode=reactor&apply=mutate&instances=9", 100);
+  await page.evaluate(() => document.fonts.ready);
+  await drag(page); // derive after fonts are loaded
+  const els = await page.evaluate(
+    () =>
+      (window as never as { __spike: { api: { getSceneElements(): unknown[] } } }).__spike.api
+        .getSceneElements()
+        .map((e) => ({ ...(e as object) })) as Array<
+        El & { width: number; height: number; text?: string; containerId?: string | null }
+      >,
+  );
+  const byId = new Map(els.map((e) => [e.id, e]));
+  const text0 = (role: string, dx?: number) =>
+    els.find(
+      (e) =>
+        e.type === "text" &&
+        linkOf(e)?.key === "text0" &&
+        linkOf(e)?.role === role &&
+        (dx === undefined || linkOf(e)?.dx === dx),
+    )!;
+  const master = text0("source");
+  const fontWidth = await page.evaluate(() => {
+    const ctx = document.createElement("canvas").getContext("2d")!;
+    ctx.font = "16px Excalifont";
+    return ctx.measureText("Item 0").width;
+  });
+  // Instance 1 overrides the label with the master's own text. The re-measure uses the real,
+  // loaded Excalifont, whereas the master (built by a skeleton before the font loaded) keeps a
+  // stale fallback-font width that Excalidraw never refreshes. See docs/reactor-spike.md.
+  const same = text0("target", 600);
+  expect(same.text).toBe(master.text);
+  expect(same.width).toBeCloseTo(fontWidth, 3);
+  expect(same.height).toBe(master.height);
+  expect(master.width).not.toBeCloseTo(fontWidth, 0);
+  expect(same.x + same.width / 2 - linkOf(same)!.dx!).toBeCloseTo(master.x + master.width / 2, 3);
+  // Instance 2's long override wraps inside its 90px container and stays centred.
+  const long = text0("target", 1200);
+  const box = byId.get(long.containerId!)!;
+  expect(long.text).toContain("\n");
+  expect(long.width).toBeLessThanOrEqual(box.width);
+  expect(long.x + long.width / 2).toBeCloseTo(box.x + box.width / 2, 0);
+});
