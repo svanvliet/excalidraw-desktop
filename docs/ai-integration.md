@@ -199,6 +199,12 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `set_shape_data`     | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)            |
 | `get_shape_data`     | Returns elements' key/value data as JSON or CSV                                                  |
 | `set_arrow_anchors`  | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX8)                 |
+| `create_component`   | Turns `ids` (or a group) into a component master (D-DX9, `docs/components.md`)                   |
+| `insert_instance`    | Places an instance of a component (`x`, `y`, `scale`, `angle` in degrees)                        |
+| `list_components`    | Masters and instances with slots and overrides; no undo step                                     |
+| `set_overrides`      | Per-slot instance overrides: text, colours, opacity, link, image (`null` clears)                 |
+| `reset_overrides`    | Clears an instance's overrides (all, or some slots/keys)                                         |
+| `detach_instance`    | Turns an instance into plain elements that keep their look                                       |
 | `apply_ops`          | Batches several edits into one undo step                                                         |
 | `approve`            | Internal fallback for engines that route approvals through MCP; handled in Rust, not the webview |
 

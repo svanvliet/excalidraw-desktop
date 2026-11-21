@@ -29,6 +29,7 @@
 | AI-5 | AI agent: TTD dialog, resume, collab indicator, logging                                       | 🟡     | Collab indicator, logging and resume done: per-drawing conversation list with reopen/resume, engine/model/folder bar (live model switch on Copilot/Codex). Remaining: agent-backed TTD dialog (FR-34), selection context chips.                                                                                                                                                                                                                                   |
 | AI-6 | AI agent: 3 engines × 2 OS validation + terms review                                          | ⬜     | `docs/ai-testing.md`                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | DX-1 | DX wave 1: properties-panel host, shape data, elbow anchors                                   | ✅     | Generic `PropertiesPanelHost` with a Ctrl/Cmd key bridge (D-DX4); key/value shape data with a Data section, CSV copy and `set_shape_data`/`get_shape_data` (D-DX2); elbow anchors in an Anchors section, `connect` anchors and `set_arrow_anchors` (D-DX8). Vitest + `e2e/shape-data-anchors.spec.ts` green.                                                                                                                                                      |
+| DX-2 | DX wave 2: Components core (engine + agent tools)                                             | 🟡     | Engine, live sync, overrides, orphans, duplicate, collab, 6 MCP tools, smoke. UI is a follow-up lane.                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Acceptance checks (per milestone)
 
@@ -141,6 +142,15 @@
 - [x] `list_layers` / `update_layer` MCP tools (Vitest `sceneTools`).
 - [ ] Library persistence verified in the Tauri app across a restart and under `--profile verify` (no Tauri store in the web e2e build).
 
+### DX Wave 2 — Components core
+
+- [x] Create from selection/group, instances via duplicate/paste/`insert_instance`; live sync of geometry (translate/scale/rotate), styles, text (re-measured) and added/removed children (Vitest `components.real`).
+- [x] Overrides, reset, detach; direct instance edits become overrides or revert; orphan promotion and demotion (Vitest `components.real`).
+- [x] Save → reload round-trip and collab convergence without echo (Vitest `components.real`, `components.collab.real`).
+- [x] MCP tools + summary/get_elements component info (Vitest `sceneTools`).
+- [x] Master edit updates the instance, one undo reverts both (Playwright `components.spec.ts`).
+- [ ] Components sidebar tab / panel section (follow-up lane); real-browser Alt-drag check.
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -160,3 +170,4 @@
 | 2026-11-19 | AI-1…AI-4  | ⬜ → ✅   | Built by 7 parallel lanes and integrated; live Claude + Codex turns draw on the canvas. 313 JS + 175 Rust tests green.                 |
 | 2026-11-19 | AI-0, AI-5 | ⬜ → 🟡   | Copilot/Windows validation and TTD/resume/context chips remain.                                                                        |
 | 2026-11-21 | DX-1       | ⬜ → ✅   | Panel host, shape data (FR-52) and elbow anchors (FR-53).                                                                              |
+| 2026-11-21 | DX-2       | ⬜ → 🟡   | Components engine + agent tools (FR-54, D-DX9); UI pending.                                                                            |

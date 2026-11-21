@@ -86,6 +86,10 @@ apply: expected[id] = new stamp; api.updateScene({ elements, captureUpdate: NEVE
     never absorb the dragged source into the snapshot. The edge case: a _target_ that itself has an
     uncommitted local edit gets its derived change captured into the user's next entry. The effect is harmless,
     because undo re-derives, but it isn't "pure".
+    **Production note (Components v1):** the same filter also keeps the snapshot copy of an element the
+    reactor _mutated in place_ before calling `updateScene(NEVER)`, so later `IMMEDIATELY` edits on it were
+    dropped from history. `reactor.ts` now commits `newElementWith` clones with `NEVER` first, then mutates
+    the originals to the clones' versions (see `docs/components.md` §2).
 - Real browser: after a 90-step mouse drag of a master, one `Cmd/Ctrl+Z` restores the source and all
   990 targets, and `Cmd/Ctrl+Shift+Z` redoes it.
 

@@ -140,6 +140,10 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-52** **Shape data**: any element can carry ordered key/value string pairs, edited in a **Data** panel section (add, edit, rename, remove; a mixed selection shows the keys every element shares). Each change is one undo step. Data MUST survive save, reload, PNG round-trip and collab, be readable by the agent (`get_scene_summary`, `get_elements`, `get_shape_data`) and writable by it (`set_shape_data`), and be copyable as CSV. Data written by a newer version is shown read-only. External data sources are out of scope.
 - **FR-53** **Elbow-arrow anchors**: each bound end of an elbow arrow can be pinned to the top, right, bottom or left of its shape, or to the side facing the other end, from an **Anchors** panel section or the agent (`connect` with `startAnchor` / `endAnchor`, `set_arrow_anchors`). Excalidraw's router re-routes the arrow; each change is one undo step. Lines (which can't bind) are out of scope.
 
+### 4.14 Components (DX wave 2)
+
+- **FR-54** **Components**: a selection or group can become a component **master** on the canvas; duplicating, pasting or Alt-dragging the master (or `insert_instance`) places **instances** that follow it live: geometry under each instance's own translate / scale / rotation, styles, text (re-measured, never copied) and added or removed children. Each instance can override text, fill/stroke colour, opacity, link and image per child, reset them, or be detached. A master edit and the instance updates it causes are **one undo step**. Deleting the master promotes one instance (undo restores the original). Component data is versioned `customData` (D-DX2) that survives save, reload and collab. The agent gets `create_component`, `insert_instance`, `list_components`, `set_overrides`, `reset_overrides` and `detach_instance`. The UI (sidebar tab, panel section) is a follow-up; until then Alt/Option+Cmd/Ctrl+K creates a component. See `docs/components.md`.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.

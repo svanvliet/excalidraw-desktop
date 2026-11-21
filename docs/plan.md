@@ -372,6 +372,10 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 
 `src/components/propertiesPanel/` (`PropertiesPanelHost`, `panel.ts` section contract, `keyboard.ts` shortcut bridge, `sections.ts` order: image → anchors → data; D-DX4). Shape data: `src/lib/shapeData.ts`, `src/components/shapeData/`, agent tools `set_shape_data` / `get_shape_data` (D-DX2). Anchors: `src/lib/elbowAnchors.ts`, `src/components/arrowAnchors/`, `connect` `startAnchor`/`endAnchor` and `set_arrow_anchors` (D-DX8). Smoke: `e2e/shape-data-anchors.spec.ts`. No new capability or CSP change.
 
+### DX wave 2 — Components core
+
+`src/extensions/components/` (model, geometry, text, sync, rule, duplicate, actions, host) on the reactor (`src/extensions/reactor/`, D-DX1) with `apply: "mutate"`; installed by `ExcalidrawCanvas` and `GuestApp`, reseeded when `initialData` changes, and collab applies go through `remoteApi` (D-DX9). The reactor commits clones with `NEVER` before mutating originals so Excalidraw's store snapshot stays current (see `docs/components.md` §2). Agent tools `create_component`, `insert_instance`, `list_components`, `set_overrides`, `reset_overrides`, `detach_instance`; generic edit tools re-sync the components they touch. Temporary trigger: Alt/Option+Cmd/Ctrl+K (capture-phase keydown, because Excalidraw's hyperlink action claims every Cmd/Ctrl+K). Smoke: `e2e/components.spec.ts`. No new capability or CSP change.
+
 ## 7. Decisions log
 
 | #     | Decision                                                                                                                                                                                                                                                                            | Why                                                                                                                                 |
@@ -411,6 +415,7 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 | D-DX4 | UI surfaces: extra sidebar tabs through one `SidebarTabs` host (`DefaultSidebar.TabTriggers` / `Sidebar.Tab`); one properties-panel host (`PropertiesPanelHost`) for any selection, portaling registered sections into `.panelColumn` or a docked island and bridging Ctrl/Cmd keys |
 | D-DX7 | Personal library persisted to app data per profile; guests never write                                                                                                                                                                                                              | Fixes the library being lost between launches without network or new capabilities.                                                  |
 | D-DX8 | Elbow-arrow anchors pin bound ends with Excalidraw's own `fixedPoint` bindings (n/e/s/w; "center" = side facing the other end when set) and let its router re-route                                                                                                                 | 0.18.1 binds elbows by fixedPoint natively; no custom routing. Lines can't bind, so they're out of scope.                           |
+| D-DX9 | Components v1: master + live instances on the reactor (in-place apply, collab tagged remote); `excalidrawDesktop.component` v1 (role, componentId, slot, gi, base, overrides); orphans: smallest-group instance promoted; master copies become instances                            | One undo step per edit; deterministic across peers; see `docs/components.md`                                                        |
 
 ## 8. Risks & mitigations
 
