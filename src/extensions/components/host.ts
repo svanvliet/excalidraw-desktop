@@ -19,12 +19,16 @@ import { log } from "../../lib/logger";
 import { createReactor, type Reactor } from "../reactor/reactor";
 import {
   createComponent,
+  defineProperty,
   detachInstance,
   insertInstance,
+  removeProperty,
   resetOverrides,
   setOverrides,
+  setProperties,
   type InsertOptions,
   type OverrideEntry,
+  type PropertyInput,
 } from "./actions";
 import {
   elementComponentInfo,
@@ -156,6 +160,17 @@ export const dematerializeMaster = (api: Api, masterGroupId: string): ComponentD
   runComponentCommand(api, (d) => dematerialize(d, masterGroupId));
 export const adoptInstanceAsMaster = (api: Api, instanceGroupId: string): string | null =>
   runComponentCommand(api, (d) => adoptAsMaster(d, instanceGroupId));
+
+export const defineComponentProperty = (api: Api, componentId: string, input: PropertyInput) =>
+  runComponentCommand(api, (d) => defineProperty(d, componentId, input));
+export const removeComponentProperty = (api: Api, componentId: string, prop: string) =>
+  runComponentCommand(api, (d) => removeProperty(d, componentId, prop));
+export const setInstanceProperties = (
+  api: Api,
+  instance: string,
+  values: Record<string, unknown>,
+  opts?: { nested?: string },
+) => runComponentCommand(api, (d) => setProperties(d, instance, values, opts));
 
 export function sceneComponents(api: Api): ComponentInfo[] {
   return listComponents(api.getSceneElementsIncludingDeleted());

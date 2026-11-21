@@ -14,10 +14,15 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { El } from "../reactor/reactor";
 import {
   createComponent,
+  defineProperty,
   insertInstance,
+  instanceProperties,
+  removeProperty,
   resetOverrides,
   setOverrides,
+  setProperties,
   detachInstance,
+  resolveInstance,
 } from "./actions";
 import { componentsOnDuplicate } from "./duplicate";
 import {
@@ -28,7 +33,8 @@ import {
   runComponentCommand,
   uninstallComponents,
 } from "./host";
-import { groupOf, listComponents, tagFor, tagOf, withTag } from "./model";
+import { groupOf, listComponents, tagFor, tagOf, tagsOf, withTag } from "./model";
+import type { Draft } from "../../agent/scene/draft";
 
 type Api = ExcalidrawImperativeAPI;
 
@@ -148,6 +154,9 @@ async function setup(elements: El[] = base()) {
 }
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+const tagsOfIds = (api: Api, id: string) =>
+  tagsOf(get(api, id)).map((t) => `${t.componentId}:${t.role}`);
+const resolveFor = (d: Draft, ref: string) => resolveInstance(d, ref).groupId;
 
 describe("create + insert", () => {
   it("tags the master, builds a synced instance, one undo step each", async () => {
@@ -628,5 +637,370 @@ describe("library-backed masters", () => {
     clock.frame();
     expect(tagOf(get(api, r.id))).toMatchObject({ role: "instance" });
     expect(get(api, r.id).backgroundColor).toBe("#b2f2bb");
+  });
+});
+
+/** Live child of instance `group` of component `cid` for slot `slot` (nesting-aware). */
+const childOf = (api: Api, cid: string, group: string, slot: string) =>
+  all(api).find((e) => {
+    const t = tagFor(e, cid);
+    return !e.isDeleted && t?.role === "instance" && groupOf(e, t) === group && t.slot === slot;
+  });
+const slotChild = (api: Api, cid: string, group: string, slot: string) =>
+  all(api).find((e) => {
+    const t = tagFor(e, cid);
+    return t?.role === "instance" && groupOf(e, t) === group && t.slot === slot;
+  })!;
+
+describe("component properties", () => {
+  async function withProps() {
+    const s = await setup();
+    const cid = s.created.componentId;
+    run(s.api, (d) => {
+      defineProperty(d, cid, {
+        id: "label",
+        name: "Label",
+        type: "text",
+        bindings: [{ elementId: "R" }],
+      });
+      defineProperty(d, cid, {
+        id: "fill",
+        name: "Fill",
+        type: "color",
+        bindings: [{ elementId: "R" }],
+      });
+      defineProperty(d, cid, {
+        id: "badge",
+        name: "Badge",
+        type: "boolean",
+        bindings: [{ elementId: "E" }],
+      });
+      defineProperty(d, cid, {
+        id: "tone",
+        name: "Tone",
+        type: "choice",
+        options: ["info", "warn"],
+        bindings: [{ elementId: "E", key: "strokeColor", map: { warn: "#e03131" } }],
+      });
+    });
+    s.clock.frame();
+    return { ...s, cid };
+  }
+
+  it("instance values drive the bound slots; one undo step; master values are defaults", async () => {
+    const { api, clock, cid, inst, text } = await withProps();
+    const r = () => childOf(api, cid, inst.groupId, "R")!;
+    const label = () => childOf(api, cid, inst.groupId, text) as ExcalidrawTextElement;
+    expect(tagOf(r())).toMatchObject({ v: 2 });
+    expect(tagOf(r())!.props!.map((p) => p.name)).toEqual(["Label", "Fill", "Badge", "Tone"]);
+    run(api, (d) => setProperties(d, inst.groupId, { Label: "Hi", fill: "#a5d8ff", Tone: "warn" }));
+    clock.frame();
+    expect(label().originalText).toBe("Hi");
+    expect(r().backgroundColor).toBe("#a5d8ff");
+    expect(childOf(api, cid, inst.groupId, "E")!.strokeColor).toBe("#e03131");
+    expect(tagOf(r())!.pv).toEqual({ label: "Hi", fill: "#a5d8ff", tone: "warn" });
+    // Badge off: the slot is soft-deleted, and comes back with its id.
+    const eId = childOf(api, cid, inst.groupId, "E")!.id;
+    run(api, (d) => setProperties(d, inst.groupId, { Badge: false }));
+    clock.frame();
+    expect(get(api, eId).isDeleted).toBe(true);
+    // Master edits still flow to unbound keys, but not over set values.
+    userEdit(api, { R: { strokeColor: "#1971c2", backgroundColor: "#ffec99" } });
+    userEdit(api, { [text]: { text: "Master", originalText: "Master" } });
+    clock.frame();
+    expect(r()).toMatchObject({ strokeColor: "#1971c2", backgroundColor: "#a5d8ff" });
+    expect(label().originalText).toBe("Hi");
+    click("Undo");
+    click("Undo");
+    click("Undo"); // Badge
+    clock.frame();
+    expect(get(api, eId).isDeleted).toBe(false);
+    // null clears a value back to the master's.
+    run(api, (d) => setProperties(d, inst.groupId, { Label: null }));
+    clock.frame();
+    expect(label().originalText).toBe("Hello");
+    click("Undo");
+    clock.frame();
+    expect(label().originalText).toBe("Hi");
+  });
+
+  it("a direct edit to a bound key updates the property value, and setting a value clears overrides", async () => {
+    const { api, clock, cid, inst, text } = await withProps();
+    const label = childOf(api, cid, inst.groupId, text)!;
+    userEdit(api, { [label.id]: { text: "Typed", originalText: "Typed" } });
+    clock.frame();
+    expect(tagOf(get(api, label.id))!.pv).toEqual({ label: "Typed" });
+    expect(tagOf(get(api, label.id))!.overrides).toBeUndefined();
+    const r = childOf(api, cid, inst.groupId, "R")!;
+    run(api, (d) =>
+      setOverrides(d, inst.groupId, [
+        { elementId: r.id, values: { backgroundColor: "#ffc9c9", opacity: 50 } },
+      ]),
+    );
+    clock.frame();
+    run(api, (d) => setProperties(d, inst.groupId, { Fill: "#b2f2bb" }));
+    clock.frame();
+    expect(get(api, r.id)).toMatchObject({ backgroundColor: "#b2f2bb", opacity: 50 });
+    // A full reset clears property values too.
+    run(api, (d) => resetOverrides(d, inst.groupId));
+    clock.frame();
+    expect(get(api, r.id).backgroundColor).toBe(get(api, "R").backgroundColor);
+    expect((get(api, label.id) as ExcalidrawTextElement).originalText).toBe("Hello");
+  });
+
+  it("defaults apply to new instances; removing a property restores the master look", async () => {
+    const { api, clock, created } = await setup();
+    const cid = created.componentId;
+    run(api, (d) =>
+      defineProperty(d, cid, {
+        name: "Badge",
+        type: "boolean",
+        default: false,
+        bindings: [{ elementId: "E" }],
+      }),
+    );
+    const other = run(api, (d) => insertInstance(d, cid, { x: 0, y: 600 }));
+    clock.frame();
+    expect(childOf(api, cid, other.groupId, "E")).toBeUndefined();
+    expect(get(api, "E").isDeleted).toBe(false); // the master itself is untouched
+    let dup: unknown = "unset";
+    act(() => {
+      dup = runComponentCommand(api, (d) =>
+        defineProperty(d, cid, { name: "badge", type: "text", bindings: [{ elementId: "R" }] }),
+      );
+    });
+    expect(dup).toBeNull(); // names are unique, case-insensitively
+    run(api, (d) => removeProperty(d, cid, "Badge"));
+    clock.frame();
+    expect(childOf(api, cid, other.groupId, "E")).toBeDefined();
+    expect(created.ids).toContain("E");
+  });
+
+  it("rejects invalid declarations and values", async () => {
+    const { api, cid, inst } = await withProps();
+    const bad: Array<() => unknown> = [
+      () =>
+        runComponentCommand(api, (d) =>
+          defineProperty(d, cid, { name: "X", type: "number", bindings: [{ elementId: "R" }] }),
+        ),
+      () =>
+        runComponentCommand(api, (d) =>
+          defineProperty(d, cid, { name: "Fill", type: "color", bindings: [{ elementId: "R" }] }),
+        ),
+      () =>
+        runComponentCommand(api, (d) =>
+          defineProperty(d, cid, {
+            name: "Y",
+            type: "choice",
+            options: ["a"],
+            bindings: [{ elementId: "R", key: "opacity" }],
+          }),
+        ),
+      () =>
+        runComponentCommand(api, (d) =>
+          defineProperty(d, cid, { name: "Z", type: "text", bindings: [{ elementId: "E" }] }),
+        ),
+      () => runComponentCommand(api, (d) => setProperties(d, inst.groupId, { Tone: "nope" })),
+      () => runComponentCommand(api, (d) => setProperties(d, inst.groupId, { Badge: "yes" })),
+      () => runComponentCommand(api, (d) => setProperties(d, "R", { Label: "x" })),
+    ];
+    for (const fn of bad) {
+      let out: unknown = "unset";
+      act(() => {
+        out = fn();
+      });
+      expect(out).toBeNull();
+    }
+  });
+});
+
+describe("nested components", () => {
+  /** Card (A) as before; Panel (B) = an instance of Card + a frame rect "F". */
+  async function nested() {
+    const els = [
+      ...base(),
+      ...convertToExcalidrawElements(
+        [
+          { type: "rectangle", id: "F", x: -20, y: 280, width: 320, height: 140 },
+        ] as ExcalidrawElementSkeleton[],
+        { regenerateIds: false },
+      ),
+    ];
+    const s = await setup(els);
+    const a = s.created.componentId;
+    const b = run(s.api, (d) => createComponent(d, [s.inst.ids[0], "F"], "Panel"));
+    s.clock.frame();
+    const bInst = run(s.api, (d) => insertInstance(d, b.componentId, { x: 600, y: 280 }));
+    s.clock.frame();
+    // The Card copy inside the Panel instance.
+    const nestedGroup = groupOf(
+      childOf(s.api, b.componentId, bInst.groupId, s.inst.ids[0])!,
+      tagFor(childOf(s.api, b.componentId, bInst.groupId, s.inst.ids[0])!, a),
+    )!;
+    return { ...s, a, b, bInst, nestedGroup };
+  }
+
+  it("instances of B contain A copies that still follow A, in one cascade", async () => {
+    const { api, clock, a, b, bInst, inst, nestedGroup } = await nested();
+    expect(
+      listComponents(all(api))
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual(["Card", "Panel"]);
+    const copy = () => slotChild(api, a, nestedGroup, "R");
+    expect(tagsOfIds(api, copy().id)).toEqual([`${a}:instance`, `${b.componentId}:instance`]);
+    expect(copy()).toMatchObject({ width: 200, height: 80, x: 620, y: 300 });
+    userEdit(api, { R: { backgroundColor: "#ffc9c9", width: 240 } });
+    clock.frame();
+    expect(slotChild(api, a, inst.groupId, "R")).toMatchObject({
+      backgroundColor: "#ffc9c9",
+      width: 240,
+    });
+    expect(copy()).toMatchObject({ backgroundColor: "#ffc9c9", width: 240, x: 620 });
+    click("Undo");
+    clock.frame();
+    expect(copy()).toMatchObject({ width: 200 });
+    // Owned nested copies can't be addressed on their own.
+    expect(runComponentCommand(api, (d) => resolveFor(d, copy().id))).toBe(bInst.groupId);
+  });
+
+  it("overrides at both levels: on the nested master copy, and on the outer instance", async () => {
+    const { api, clock, a, b, bInst, inst, nestedGroup } = await nested();
+    // A-level override on the Card instance inside B's master flows to every Panel instance.
+    const innerR = slotChild(api, a, inst.groupId, "R");
+    run(api, (d) =>
+      setOverrides(d, inst.groupId, [
+        { elementId: innerR.id, values: { backgroundColor: "#d0bfff" } },
+      ]),
+    );
+    clock.frame();
+    expect(slotChild(api, a, nestedGroup, "R").backgroundColor).toBe("#d0bfff");
+    // B-level override on the copy inside the Panel instance survives A and B master edits.
+    const copy = slotChild(api, a, nestedGroup, "R");
+    run(api, (d) =>
+      setOverrides(d, bInst.groupId, [{ elementId: copy.id, values: { strokeColor: "#2f9e44" } }]),
+    );
+    clock.frame();
+    userEdit(api, { R: { strokeColor: "#1971c2", height: 100 } });
+    clock.frame();
+    expect(get(api, copy.id)).toMatchObject({
+      strokeColor: "#2f9e44",
+      backgroundColor: "#d0bfff",
+      height: 100,
+    });
+    expect(tagFor(get(api, copy.id), b.componentId)!.overrides).toEqual({ strokeColor: "#2f9e44" });
+  });
+
+  it("nested property values set from the outer instance", async () => {
+    const { api, clock, a, bInst, nestedGroup, text } = await nested();
+    run(api, (d) =>
+      defineProperty(d, a, {
+        id: "label",
+        name: "Label",
+        type: "text",
+        bindings: [{ elementId: "R" }],
+      }),
+    );
+    clock.frame();
+    const targets = run(api, (d) => instanceProperties(d, bInst.groupId));
+    expect(targets).toHaveLength(2);
+    const key = targets[1].nestedKey!;
+    expect(targets[1].props.map((p) => p.name)).toEqual(["Label"]);
+    run(api, (d) => setProperties(d, bInst.groupId, { Label: "Inner" }, { nested: key }));
+    clock.frame();
+    const label = () => slotChild(api, a, nestedGroup, text) as ExcalidrawTextElement;
+    expect(label().originalText).toBe("Inner");
+    userEdit(api, { [text]: { text: "Master", originalText: "Master" } });
+    clock.frame();
+    expect(label().originalText).toBe("Inner");
+    click("Undo");
+    click("Undo");
+    clock.frame();
+    expect(label().originalText).toBe("Hello");
+  });
+
+  it("rejects cycles and masters; detach and orphan promotion free the nested copies", async () => {
+    const { api, clock, a, b, bInst, created, nestedGroup } = await nested();
+    const fails = (fn: Parameters<typeof runComponentCommand>[1]) => {
+      let out: unknown = "unset";
+      act(() => {
+        out = runComponentCommand(api, fn);
+      });
+      expect(out).toBeNull();
+    };
+    fails((d) => insertInstance(d, b.componentId, { into: created.masterGroupId }));
+    fails((d) => insertInstance(d, a, { into: created.masterGroupId }));
+    fails((d) => createComponent(d, ["R"]));
+    // Insert a Card into the Panel master: Panel instances gain a copy.
+    run(api, (d) => insertInstance(d, a, { x: 0, y: 450, into: b.masterGroupId }));
+    clock.frame();
+    const cards = listComponents(all(api)).find((c) => c.componentId === a)!;
+    // Two free Card instances (in the Panel master) plus their owned copies in the Panel instance.
+    expect(cards.instances.filter((i) => i.parent?.role !== "instance")).toHaveLength(2);
+    expect(cards.instances.filter((i) => i.parent?.role === "instance")).toHaveLength(2);
+    // Detaching the Panel instance leaves free Card instances that follow Card.
+    run(api, (d) => detachInstance(d, bInst.groupId));
+    clock.frame();
+    expect(tagFor(slotChild(api, a, nestedGroup, "R"), b.componentId)).toBeNull();
+    userEdit(api, { R: { backgroundColor: "#ffd8a8" } });
+    clock.frame();
+    expect(slotChild(api, a, nestedGroup, "R").backgroundColor).toBe("#ffd8a8");
+    click("Undo");
+    click("Undo");
+    clock.frame();
+    // Deleting the Panel master promotes the Panel instance; its Card copies follow Card freely.
+    const bMaster = listComponents(all(api)).find((c) => c.componentId === b.componentId)!;
+    userEdit(api, Object.fromEntries(bMaster.masterIds.map((id) => [id, { isDeleted: true }])));
+    clock.frame();
+    expect(tagFor(slotChild(api, a, nestedGroup, "R"), b.componentId)!.role).toBe("master");
+    userEdit(api, { R: { backgroundColor: "#c3fae8" } });
+    clock.frame();
+    expect(slotChild(api, a, nestedGroup, "R").backgroundColor).toBe("#c3fae8");
+  });
+
+  it("Ctrl/Cmd+D on a Panel instance duplicates the nested copies too", async () => {
+    const { api, clock, a, b, bInst } = await nested();
+    const ids = listComponents(all(api)).find((c) => c.componentId === b.componentId)!.instances[0]
+      .ids;
+    act(() =>
+      api.updateScene({
+        appState: {
+          selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
+          selectedGroupIds: { [bInst.groupId]: true },
+        } as never,
+        captureUpdate: CaptureUpdateAction.NEVER,
+      }),
+    );
+    key("d", { ctrlKey: true });
+    clock.frame();
+    const panel = listComponents(all(api)).find((c) => c.componentId === b.componentId)!;
+    expect(panel.instances).toHaveLength(2);
+    const dup = panel.instances.find((i) => i.groupId !== bInst.groupId)!;
+    const copyR = all(api).find(
+      (e) => dup.ids.includes(e.id) && tagFor(e, a)?.slot === "R" && !e.isDeleted,
+    )!;
+    expect(copyR).toBeDefined();
+    userEdit(api, { R: { backgroundColor: "#eebefa" } });
+    clock.frame();
+    expect(get(api, copyR.id).backgroundColor).toBe("#eebefa");
+  });
+});
+
+describe("rotated instances", () => {
+  it("bound text stays centred and rotated with its container", async () => {
+    const { api, clock, created, text } = await setup();
+    const rot = run(api, (d) =>
+      insertInstance(d, created.componentId, { x: 0, y: 600, angle: Math.PI / 6 }),
+    );
+    clock.frame();
+    userEdit(api, { [text]: { text: "A longer label", originalText: "A longer label" } });
+    clock.frame();
+    const r = child(api, rot.groupId, "R");
+    const label = child(api, rot.groupId, text) as ExcalidrawTextElement;
+    expect(label.containerId).toBe(r.id);
+    expect(near(label.angle, r.angle)).toBe(true);
+    expect(near(r.angle, Math.PI / 6)).toBe(true);
+    expect(Math.abs(label.x + label.width / 2 - (r.x + r.width / 2))).toBeLessThan(0.5);
+    expect(Math.abs(label.y + label.height / 2 - (r.y + r.height / 2))).toBeLessThan(0.5);
   });
 });
