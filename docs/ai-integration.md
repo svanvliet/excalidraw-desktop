@@ -180,7 +180,7 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `add_elements`          | Adds skeleton-format elements; agent-chosen ids are checked for collisions                                      |
 | `update_elements`       | Updates elements, limited to an allowlisted set of fields; re-routes bound arrows                               |
 | `delete_elements`       | Tombstones elements and cascades to bound text and arrows                                                       |
-| `connect`               | Draws an arrow between shapes with manual bindings; `startAnchor`/`endAnchor` pin elbow ends                    |
+| `connect`               | Draws an arrow between shapes with manual bindings; `startAnchor`/`endAnchor` pin ends (face if `elbow: false`) |
 | `add_mermaid`           | Converts Mermaid via mermaid-to-excalidraw; reports when the result fell back to an image                       |
 | `add_image`             | Places a png/jpeg/gif/webp/svg (≤10 MB) from a conversation-folder `path` or inline `data`                      |
 | `arrange`               | align / distribute / grid / group / z-order / frame (put into or take out of a frame)                           |
@@ -199,7 +199,7 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `update_layer`          | Renames and/or locks an element, frame or group by id (works in `apply_ops`)                                    |
 | `set_shape_data`        | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)                           |
 | `get_shape_data`        | Returns elements' key/value data as JSON or CSV                                                                 |
-| `set_arrow_anchors`     | Pins bound elbow-arrow ends to n/e/s/w/center; Excalidraw re-routes them (D-DX8)                                |
+| `set_arrow_anchors`     | Pins bound arrow ends to n/e/s/w/center (elbow sides or face midpoints; `free` unpins; D-DX8, D-DX15)           |
 | `create_component`      | Turns `ids` (or a group) into a component master (D-DX9, `docs/components.md`)                                  |
 | `insert_instance`       | Places an instance of a component (`x`, `y`, `scale`, `angle` in degrees)                                       |
 | `list_components`       | Masters and instances with slots and overrides; no undo step                                                    |
