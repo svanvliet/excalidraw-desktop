@@ -1968,3 +1968,118 @@ button {
 .update-toast__error {
   color: var(--danger);
 }
+
+/* ------------------------- Sidebar: Layers tab ------------------------- */
+/* Rows reuse Excalidraw's search-panel classes; these rules only add the tree bits, using the
+   editor's own variables so light / dark follow its theme. */
+
+.desktop-layers__header {
+  min-height: 2rem;
+}
+
+.desktop-layers__title {
+  font-weight: 600;
+  color: var(--text-primary-color);
+}
+
+.desktop-layers__empty {
+  padding: 1rem 0.75rem;
+  color: var(--color-muted-darker);
+  font-size: 0.875rem;
+}
+
+.desktop-layers__list {
+  padding-top: 0.5rem;
+}
+
+.desktop-layers__row {
+  gap: 0.25rem;
+  padding-inline-start: calc(0.25rem + var(--layer-depth, 0) * 1rem);
+  padding-inline-end: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--text-primary-color);
+}
+
+.desktop-layers__row:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.desktop-layers__row--locked .desktop-layers__label {
+  color: var(--color-muted-darker);
+}
+
+.desktop-layers__label {
+  max-height: none;
+  line-height: 1.5rem;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.desktop-layers__kind {
+  color: var(--color-muted-darker);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
+.desktop-layers__twisty,
+.desktop-layers__lock {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  color: var(--color-muted-darker);
+  cursor: pointer;
+}
+
+.desktop-layers__twisty svg,
+.desktop-layers__lock svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.desktop-layers__twisty[data-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.desktop-layers__twisty:hover,
+.desktop-layers__lock:hover {
+  color: var(--color-primary);
+}
+
+/* The open lock only appears on hover / focus; a locked layer always shows its lock. */
+.desktop-layers__lock[data-locked="false"] {
+  opacity: 0;
+}
+
+.desktop-layers__row:hover .desktop-layers__lock,
+.desktop-layers__row:focus-within .desktop-layers__lock {
+  opacity: 1;
+}
+
+.desktop-layers__lock[data-locked="true"] {
+  color: var(--color-primary);
+}
+
+.desktop-layers__rename {
+  flex: 1;
+  min-width: 0;
+  height: 1.5rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--border-radius-md);
+  background: var(--island-bg-color);
+  color: var(--text-primary-color);
+  font: inherit;
+  outline: none;
+}
+
+.sidebar-tab-trigger[data-testid^="sidebar-tab-"] svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}

@@ -4,10 +4,13 @@ import type {
   ExcalidrawInitialDataState,
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
 import { ImagePropertiesPanel } from "./imageProps/ImagePropertiesPanel";
+import { LayersIcon } from "./icons";
+import { LayersPanel } from "./sidebar/LayersPanel";
+import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
@@ -170,6 +173,18 @@ export function ExcalidrawCanvas({
     return enableDraggablePropertiesPanel(root);
   }, []);
 
+  const sidebarTabs = useMemo<SidebarTabDef[]>(
+    () => [
+      {
+        tab: "layers",
+        title: "Layers",
+        icon: <LayersIcon />,
+        render: () => api && <LayersPanel api={api} readOnly={viewOnly} />,
+      },
+    ],
+    [api, viewOnly],
+  );
+
   return (
     <div ref={canvasRef} className="excalidraw-canvas">
       <Excalidraw
@@ -184,7 +199,9 @@ export function ExcalidrawCanvas({
         {...(onPointerUpdate ? { onPointerUpdate } : {})}
         {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
         {...(theme ? { theme } : {})}
-      />
+      >
+        <SidebarTabs tabs={sidebarTabs} />
+      </Excalidraw>
       {api && !viewOnly && <ImagePropertiesPanel api={api} container={canvasRef} />}
     </div>
   );
