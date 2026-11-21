@@ -20,6 +20,7 @@ import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel"
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
 import { autoLayoutCanvas, isAutoLayoutShortcut } from "../layout/canvasAction";
+import { registerContainerActions } from "../layout/containers/commands";
 import {
   type LibrarySink,
   loadLibrary,
@@ -134,6 +135,7 @@ export function ExcalidrawCanvas({
   const handleApi = useCallback(
     (api: ExcalidrawImperativeAPI) => {
       registerAutoLayoutAction(api);
+      registerContainerActions(api);
       // Before onApi, so the parent can wrap this editor's collab API right away.
       installComponents(api);
       apiRef.current = api;

@@ -244,6 +244,66 @@ button {
   cursor: default;
 }
 
+/* Smart containers (components/containers): stack settings and child actions. */
+.excalidraw .container-props {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.5rem;
+  min-width: 0;
+}
+
+.excalidraw .container-props__row {
+  display: flex;
+  column-gap: 0.375rem;
+}
+
+.excalidraw .container-props__child {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.excalidraw .container-props__field {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  row-gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.excalidraw .container-props__btn {
+  align-self: flex-start;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--border-radius-md, 0.375rem);
+  background: var(--button-gray-1);
+  color: var(--text-primary-color);
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.excalidraw .container-props__btn:hover:not(:disabled) {
+  background: var(--button-gray-2);
+}
+
+.excalidraw .container-props__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.excalidraw .container-props__btn--danger {
+  color: var(--danger);
+}
+
+.excalidraw .container-props__size {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .excalidraw .shape-data__note {
   margin-top: 0.25rem;
   color: var(--color-gray-50, var(--text-primary-color));

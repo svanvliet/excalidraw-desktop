@@ -1,5 +1,6 @@
 /** Every properties-panel section, in display order within each slot (see PropertiesPanelHost). */
 import { anchorsPanelSection } from "../arrowAnchors/anchorsPanelSection";
+import { containerPanelSection } from "../containers/containerPanelSection";
 import { imagePanelSection } from "../imageProps/imagePanelSection";
 import { dataPanelSection } from "../shapeData/dataPanelSection";
 import type { AnyPanelSection } from "./panel";
@@ -7,5 +8,6 @@ import type { AnyPanelSection } from "./panel";
 export const PANEL_SECTIONS: readonly AnyPanelSection[] = [
   imagePanelSection,
   anchorsPanelSection,
+  containerPanelSection,
   dataPanelSection,
 ];
