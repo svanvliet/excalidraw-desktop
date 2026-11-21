@@ -118,6 +118,12 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-39** **Border** for images, with the same treatment as native shape strokes: a colour picker matching the native one (top picks, palette, shades, hex; transparent removes the border), stroke width (thin / bold / extra bold), stroke style (solid / dashed / dotted) and sloppiness (architect / artist / cartoonist). Drawn inside the current outline (the mask shape when masked), so bounds never change; dashes and sloppiness follow that outline and re-render identically. Works with or without a mask; older borders keep loading.
 - **FR-40** Image controls MUST appear in Excalidraw's own properties panel when images are selected (including the mobile properties sheet), and fall back to a compact docked panel when that panel isn't available — never a long floating strip. Each change is one undo step and keyboard focus stays on the canvas.
 
+### 4.11 Panel host, shape data and anchors (DX wave 1)
+
+- **FR-41** Any selection type MAY add sections to Excalidraw's own properties panel through one shared host (same DOM contract and docked fallback as FR-40). Ctrl/Cmd shortcuts (undo, redo, …) MUST keep reaching the canvas after any panel control is used; a focused text input keeps its own typing and text undo.
+- **FR-42** **Shape data**: any element can carry ordered key/value string pairs, edited in a **Data** panel section (add, edit, rename, remove; a mixed selection shows the keys every element shares). Each change is one undo step. Data MUST survive save, reload, PNG round-trip and collab, be readable by the agent (`get_scene_summary`, `get_elements`, `get_shape_data`) and writable by it (`set_shape_data`), and be copyable as CSV. Data written by a newer version is shown read-only. External data sources are out of scope.
+- **FR-43** **Elbow-arrow anchors**: each bound end of an elbow arrow can be pinned to the top, right, bottom or left of its shape, or to the side facing the other end, from an **Anchors** panel section or the agent (`connect` with `startAnchor` / `endAnchor`, `set_arrow_anchors`). Excalidraw's router re-routes the arrow; each change is one undo step. Lines (which can't bind) are out of scope.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.

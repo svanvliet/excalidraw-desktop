@@ -1,5 +1,5 @@
 /**
- * Elbow-arrow anchor points (docs/plan.md D-DX3): pin a bound end to the north / east / south /
+ * Elbow-arrow anchor points (docs/plan.md D-DX7): pin a bound end to the north / east / south /
  * west side of its shape through the binding's `fixedPoint`.
  *
  * Verified against @excalidraw/excalidraw 0.18.1:

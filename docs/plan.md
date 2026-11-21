@@ -360,6 +360,10 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
 
 Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types.ts` contract, `registry.ts`, `runner.ts`, `groups.ts`, `tools.ts`, one folder per extension: `mask/`, `border/`). Image extensions are stages of one pipeline (`stack.ts`, `pipeline.ts`, `raster.ts`): an element carries an ordered chain of intents (shape stages before decorations) in `customData.excalidrawDesktop` (stack format v2; v1 single intents migrate on read), and every change re-renders the original through the whole chain into one PNG. Output is standard elements + files. The same definition drives the image controls injected into Excalidraw's properties panel (`ImagePropertiesPanel`, D-X3) and the generated `apply_extension` / `remove_extension` MCP tools. No new capability or CSP change.
 
+### DX wave 1 — Panel host, shape data, elbow anchors
+
+`src/components/propertiesPanel/` (`PropertiesPanelHost`, `panel.ts` section contract, `keyboard.ts` shortcut bridge, `sections.ts` order: image → anchors → data; D-DX4). Shape data: `src/lib/shapeData.ts`, `src/components/shapeData/`, agent tools `set_shape_data` / `get_shape_data` (D-DX2). Anchors: `src/lib/elbowAnchors.ts`, `src/components/arrowAnchors/`, `connect` `startAnchor`/`endAnchor` and `set_arrow_anchors` (D-DX7). Smoke: `e2e/shape-data-anchors.spec.ts`. No new capability or CSP change.
+
 ## 7. Decisions log
 
 | #     | Decision                                                                                                                                                                                        | Why                                                                                                                                 |
@@ -392,6 +396,9 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 | D-X1  | Desktop extensions store intent in `customData` and always write standard output; built-in only                                                                                                 | Adds features without forking Excalidraw or changing the file format; files still render everywhere; no third-party code loading.   |
 | D-X2  | Image extensions stack: ordered chain per element (stage, then id), one original + one output, re-rendered from the original on every change                                                    | Decorations (Border) must follow the current shape; re-rendering from the original avoids compounding loss and keeps one undo step. |
 | D-X3  | Image controls are portaled into Excalidraw's properties panel (`.panelColumn`), falling back to a docked island; image border mirrors native stroke (picker, width, style, roughjs sloppiness) | 0.18.1 has no panel API; a floating strip was unwieldy. The DOM contract is guarded by e2e, and no fork or patch is needed.         |
+| D-DX2 | Shape data and other new desktop features use sibling `customData` keys (`excalidrawDesktop.data` = versioned key/value pairs); image stack v2 is untouched; newer data is read-only            | Rides save, PNG, collab and stock Excalidraw like any element field; no file-format change; old builds leave it alone.              |
+| D-DX4 | One properties-panel host (`PropertiesPanelHost`) for any selection: registered sections portal into `.panelColumn` (top/bottom slots) or a docked island; it bridges Ctrl/Cmd keys             | Generalises D-X3 without new DOM dependencies. Portals sit outside Excalidraw's React tree, so its shortcuts are re-dispatched.     |
+| D-DX7 | Elbow-arrow anchors pin bound ends with Excalidraw's own `fixedPoint` bindings (n/e/s/w; "center" = side facing the other end when set) and let its router re-route                             | 0.18.1 binds elbows by fixedPoint natively; no custom routing. Lines can't bind, so they're out of scope.                           |
 
 ## 8. Risks & mitigations
 

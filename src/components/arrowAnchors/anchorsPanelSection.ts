@@ -1,5 +1,5 @@
 /**
- * "Anchors" properties-panel section (docs/plan.md D-DX3): pin a bound elbow arrow's ends to a
+ * "Anchors" properties-panel section (docs/plan.md D-DX7): pin a bound elbow arrow's ends to a
  * side of their shapes.
  */
 import { isElbowArrow, sideOf, type Side } from "../../lib/elbowAnchors";
