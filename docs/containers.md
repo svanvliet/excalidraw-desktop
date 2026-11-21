@@ -89,9 +89,9 @@ and its re-flow are one undo step. It flushes the reactor first and refuses in v
 
 **Command registration.** `commands.ts` (`CONTAINER_COMMANDS`, `runContainerMenuCommand`,
 `registerContainerActions`) is the single place that registers the container commands. Menu
-ids are `excalidraw:layout:makeContainer` and `excalidraw:layout:removeContainer`. They're meant
-for the top-level **Layout** menu and toolbar dropdown (Tidy arrows lane). Until that lands, only
-the shortcut is wired.
+ids are `excalidraw:layout:makeContainer` and `excalidraw:layout:removeContainer`. They're listed in
+the top-level **Layout** menu and the toolbar's Layout dropdown via the shared
+`src/layout/commands.json`; `src/layout/commands.ts` delegates to `run` here.
 
 ## 5. Agent tools
 
