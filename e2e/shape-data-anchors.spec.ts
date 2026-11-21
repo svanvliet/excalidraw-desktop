@@ -69,7 +69,9 @@ const dataOf = (page: Page, id: string) =>
     id,
   );
 
-const undo = (page: Page) => page.getByRole("button", { name: "Undo" }).first().click();
+/** Keyboard undo: the panel sections must hand Ctrl/Cmd+Z back to Excalidraw. */
+const undo = (page: Page) => page.keyboard.press("ControlOrMeta+z");
+const undoButton = (page: Page) => page.getByRole("button", { name: "Undo" }).first().click();
 
 function expectOrthogonal(points: [number, number][]) {
   for (let i = 1; i < points.length; i++) {
@@ -91,7 +93,7 @@ const A_RIGHT: [number, number] = [225, 140];
 const B_TOP: [number, number] = [510, 295];
 const B_LEFT: [number, number] = [445, 340];
 
-test("edits shape data from the native panel, one undo step per change", async ({ page }) => {
+test("edits shape data from the native panel; Ctrl/Cmd+Z undoes each change", async ({ page }) => {
   await open(page);
   await seed(page);
   await select(page, "A", "B");
@@ -102,6 +104,13 @@ test("edits shape data from the native panel, one undo step per change", async (
   await section.getByLabel("New value").fill("ann");
   await section.getByLabel("New value").press("Enter");
   await expect.poll(() => dataOf(page, "B")).toEqual([["owner", "ann"]]);
+  expect(await dataOf(page, "A")).toEqual([["owner", "ann"]]);
+
+  // A focused text input keeps its own text undo; the scene is untouched.
+  const newKey = section.getByLabel("New key");
+  await newKey.pressSequentially("tmp");
+  await undo(page);
+  await expect(newKey).toHaveValue("");
   expect(await dataOf(page, "A")).toEqual([["owner", "ann"]]);
 
   const value = section.getByLabel("Value of owner");
@@ -182,8 +191,8 @@ test("agent connect and set_arrow_anchors route through Excalidraw as one step e
   expectNear(moved.points[0], A_RIGHT);
   expectOrthogonal(moved.points);
 
-  await undo(page);
+  await undoButton(page);
   expectNear((await elbow(page, res.id))!.points[0], A_BOTTOM);
-  await undo(page);
+  await undoButton(page);
   expect(await elbow(page, res.id)).toBeNull();
 });

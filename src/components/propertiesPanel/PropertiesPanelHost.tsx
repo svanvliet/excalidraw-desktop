@@ -9,7 +9,8 @@
  * panel is in the DOM (e.g. the mobile layout with its properties sheet closed) the sections show
  * in a small docked island instead.
  *
- * The DOM contract (PANEL_SELECTOR) is pinned by e2e/extensions.spec.ts.
+ * Being outside Excalidraw's React tree, the sections would swallow its shortcuts; keyboard.ts
+ * bridges them back. The DOM contract (PANEL_SELECTOR) is pinned by e2e/extensions.spec.ts.
  */
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -20,6 +21,7 @@ import {
   type PanelApi,
   type Views,
 } from "./panel";
+import { bridgePanelKeys, PANEL_HOST_ATTR } from "./keyboard";
 
 /**
  * Keeps one host node per visible section in the native panel, in registration order. Returns
@@ -36,6 +38,7 @@ function usePanelHosts(
       const el = document.createElement("div");
       el.className = `props-section ${s.testId}`;
       el.dataset.testid = `${s.testId}-native`;
+      el.setAttribute(PANEL_HOST_ATTR, "");
       map.set(s.id, el);
     }
     return map;
@@ -121,6 +124,7 @@ export function PropertiesPanelHost({
   }, [container, visibleKey]);
 
   const hosts = usePanelHosts(root, sections, visibleKey);
+  useEffect(() => (root ? bridgePanelKeys(root) : undefined), [root]);
 
   if (!shown.length || !root) return null;
   const render = ({ Component, id }: AnyPanelSection) => <Component view={views[id]} api={api} />;
@@ -130,7 +134,7 @@ export function PropertiesPanelHost({
     ...shown.filter((s) => s.slot !== "top"),
   ];
   return createPortal(
-    <div className="Island props-dock" data-testid="props-dock">
+    <div className="Island props-dock" data-testid="props-dock" {...{ [PANEL_HOST_ATTR]: "" }}>
       {docked.map((s) => (
         <div
           key={s.id}
