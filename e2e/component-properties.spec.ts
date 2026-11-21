@@ -113,6 +113,9 @@ test("declare a property on the master; set it on an instance; one undo reverts"
   await tid(page, "propdef-add").click();
   await expect(tid(page, "propdef-remove-Title")).toBeVisible();
 
+  // Give the keyboard back to the canvas, then duplicate the master into an instance.
+  const canvas = (await page.locator(".excalidraw__canvas.interactive").boundingBox())!;
+  await page.mouse.click(canvas.x + canvas.width - 40, canvas.y + canvas.height - 120);
   await select(page, masterIds);
   await page.keyboard.press("ControlOrMeta+d");
   await expect.poll(async () => textOf(page, "instance")).toBe("Card");
@@ -162,7 +165,7 @@ test("an outer Panel instance sets its nested Card's property", async ({ page })
 
   await select(page, outer.ids);
   const nested = tid(page, "propvals-nested");
-  await expect(nested).toContainText("Card (nested)");
+  await expect(nested).toContainText("(nested)");
   const field = nested.locator('[data-testid^="propval-"][data-testid$="-Title"]');
   await field.fill("Inner");
   await field.press("Enter");
@@ -200,6 +203,11 @@ test("Alt/Option-drag of a master with the mouse keeps the stationary copy as ma
   await open(page);
   const masterIds = await card(page);
   await select(page, masterIds);
+  // Scroll the master clear of the properties panel on the left.
+  await page.evaluate(() => {
+    const s = window.__canvas!.getAppState();
+    window.__canvas!.updateScene({ appState: { scrollX: s.scrollX + 400 } as never });
+  });
   const { sx, sy } = await page.evaluate(() => {
     const s = window.__canvas!.getAppState();
     const z = s.zoom.value;

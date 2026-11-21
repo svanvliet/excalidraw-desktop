@@ -445,6 +445,10 @@ describe("orphans and duplicates", () => {
     const moved = copies.map((e) => ({ ...e, x: e.x + 10 })) as El[];
     for (const e of componentsOnDuplicate([...tagged, ...moved], tagged)!)
       expect(tagOf(e)!.role).toBe(e.id.endsWith("-copy") ? "instance" : "master");
+    // Real Alt-drag: the originals have already moved and sit after the copies in z-order.
+    const dragged = tagged.map((e) => ({ ...e, x: e.x + 30, y: e.y + 40 })) as El[];
+    for (const e of componentsOnDuplicate([...copies, ...dragged], dragged)!)
+      expect(tagOf(e)!.role).toBe(e.id.endsWith("-copy") ? "master" : "instance");
   });
 });
 
