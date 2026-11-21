@@ -12,12 +12,8 @@ import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/tran
 import type { BinaryFileData, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, type El } from "../../agent/scene/draft";
 import { createComponent, insertInstance, setOverrides } from "../../extensions/components/actions";
-import {
-  installComponents,
-  runComponentCommand,
-  uninstallComponents,
-} from "../../extensions/components/host";
-import { COMPONENT_NS, groupOf, listComponents, tagOf } from "../../extensions/components/model";
+import { installComponents, uninstallComponents } from "../../extensions/components/host";
+import { groupOf, listComponents, tagOf } from "../../extensions/components/model";
 import {
   __resetMyComponentsForTest,
   getMyComponents,
@@ -29,14 +25,14 @@ import {
 import { ComponentSection } from "./ComponentSection";
 import { componentView } from "./componentPanelSection";
 import { placeMyComponent } from "./insert";
-import { insertMyComponent, librarySourceOf, masterToEntry } from "./libraryCodec";
+import { librarySourceOf, masterToEntry } from "./libraryCodec";
 import {
   __clearMasterEdit,
   __setLibraryMasterEngineForTest,
   cancelMasterEdit,
   finishMasterEdit,
+  libraryMasterEngine,
   masterEditOf,
-  type LibraryMasterEngine,
 } from "./libraryMasters";
 
 type Api = ExcalidrawImperativeAPI;
@@ -131,58 +127,6 @@ function panel(api: Api, groupId: string) {
   return render(<ComponentSection view={view!} api={api} />);
 }
 
-/**
- * Stand-in for the engine lane's library-master primitives (coordinator contract): each is one
- * undo step; dematerialize marks the remaining instances library-backed.
- */
-const fakeEngine: LibraryMasterEngine = {
-  materializeMaster(api, instanceGroupId) {
-    const inst = children(api, instanceGroupId);
-    const entry = getMyComponents().find((c) => c.id === librarySourceOf(inst[0])?.libraryId);
-    if (!entry) return null;
-    const right = Math.max(...inst.map((e) => e.x + e.width)) + 80;
-    return runComponentCommand(api, (d) => {
-      const out = insertMyComponent(d, entry, { x: right, y: inst[0].y });
-      for (const id of out.instance.ids) d.update(id, { isDeleted: true });
-      return out.masterGroupId;
-    });
-  },
-  dematerializeMaster(api, masterGroupId) {
-    return runComponentCommand(api, (d) => {
-      const master = d.live().filter((e) => e.groupIds.includes(masterGroupId));
-      const componentId = tagOf(master[0])!.componentId;
-      for (const e of master) d.update(e.id, { isDeleted: true });
-      for (const e of d.live()) {
-        const t = tagOf(e);
-        if (t?.role !== "instance" || t.componentId !== componentId) continue;
-        d.update(e.id, {
-          customData: {
-            ...e.customData,
-            [COMPONENT_NS]: { ...t, source: "library", libraryId: componentId },
-          },
-        });
-      }
-      return { componentId };
-    });
-  },
-  adoptInstanceAsMaster(api, instanceGroupId) {
-    return runComponentCommand(api, (d) => {
-      for (const e of children(api, instanceGroupId)) {
-        const {
-          overrides: _o,
-          source: _s,
-          libraryId: _l,
-          ...t
-        } = tagOf(e)! as unknown as Record<string, unknown>;
-        d.update(e.id, {
-          customData: { ...e.customData, [COMPONENT_NS]: { ...t, role: "master", slot: e.id } },
-        });
-      }
-      return instanceGroupId;
-    });
-  },
-};
-
 describe("placing a saved component", () => {
   it("adds its image and places master + instance as one undo step (no library masters)", async () => {
     __setLibraryMasterEngineForTest(null);
@@ -244,10 +188,13 @@ describe("Component panel section", () => {
 
 describe("library-backed masters", () => {
   async function placed() {
-    __setLibraryMasterEngineForTest(fakeEngine);
+    __setLibraryMasterEngineForTest(undefined); // the real engine (host.ts)
     const entry = personEntry();
     await putMyComponent(entry);
+    expect(libraryMasterEngine()).not.toBeNull();
     const api = await mount();
+    installed.push(api);
+    installComponents(api, { schedule: () => () => {} });
     let res: ReturnType<typeof placeMyComponent> = null;
     act(() => {
       res = placeMyComponent(api, entry, { x: 100, y: 100 });

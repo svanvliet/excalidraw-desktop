@@ -20,10 +20,11 @@ import { Draft, newId, ToolError, type El } from "../../agent/scene/draft";
 import { componentsOf, createComponent, insertInstance } from "../../extensions/components/actions";
 import { componentMembers } from "../../extensions/components/sync";
 import {
-  COMPONENT_NS,
   listComponents,
   tagOf,
+  tagsOf,
   withTag,
+  writeTags,
   type ComponentInfo,
 } from "../../extensions/components/model";
 import type { MyComponent } from "../../lib/componentLibraryStore";
@@ -102,22 +103,29 @@ function masterOf(
   return { info, els: elements.filter((e) => ids.has(e.id) && !e.isDeleted) };
 }
 
-/** Library-backed tag fields (the engine's contract; `withTag` doesn't know them in v1). */
+/** Library-backed tag fields (docs/components.md § Library). */
 export interface LibrarySource {
   source?: "library";
   libraryId?: string;
 }
 
 export function librarySourceOf(el: El | undefined): LibrarySource | null {
-  const t = tagOf(el) as (LibrarySource & object) | null;
+  const t = tagOf(el);
   return t?.source === "library" ? { source: "library", libraryId: t.libraryId } : null;
 }
 
-function withLibrarySource(el: El, libraryId: string): Record<string, unknown> {
-  return {
-    ...(el.customData ?? {}),
-    [COMPONENT_NS]: { ...tagOf(el)!, source: "library", libraryId },
-  };
+/** `customData` with the tag for `componentId` marked library-backed (other tags kept). */
+function withLibrarySource(
+  el: El,
+  componentId: string,
+  libraryId: string,
+): Record<string, unknown> {
+  return writeTags(
+    el,
+    tagsOf(el).map((t) =>
+      t.componentId === componentId ? { ...t, source: "library" as const, libraryId } : t,
+    ),
+  );
 }
 
 /** Snapshot a document's master for the personal library. */
@@ -222,7 +230,7 @@ export function insertMyComponent(
     for (const id of placed.masterIds) draft.update(id, { isDeleted: true });
     for (const id of instance.ids) {
       const el = draft.get(id)!;
-      draft.update(id, { customData: withLibrarySource(el, entry.id) });
+      draft.update(id, { customData: withLibrarySource(el, entry.id, entry.id) });
     }
     return {
       componentId: entry.id,

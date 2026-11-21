@@ -3,8 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 /**
  * Components UI smoke (docs/components.md § UI, FR-55): make a component with the shortcut, save
  * it to My components from the properties panel, and place it in another drawing from the
- * Components tab. With the engine's library-master primitives, also: insert places only an
- * instance, Edit master… → Done updates the instance and takes the master away again.
+ * Components tab. With library-backed masters, insert places only an instance, Edit master… → Done updates the instance and takes the master away again.
  */
 
 const NS = "excalidrawDesktop.component";
@@ -122,10 +121,7 @@ test("save a component to My components and place it in another drawing", async 
 
 test("library master: insert, Edit master…, Done updates the instance", async ({ page }) => {
   await open(page);
-  test.skip(
-    !(await page.evaluate(() => window.__e2e!.libraryMasters)),
-    "engine library-master primitives (materializeMaster…) not present yet",
-  );
+  expect(await page.evaluate(() => window.__e2e!.libraryMasters)).toBe(true);
   const componentId = await makeCard(page);
   const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
   await select(page, masterIds);
