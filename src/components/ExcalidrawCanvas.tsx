@@ -94,6 +94,8 @@ declare global {
     __e2e?: {
       convertToExcalidrawElements: typeof convertToExcalidrawElements;
       runSceneTool: typeof import("../agent/sceneTools").runSceneTool;
+      /** Whether the engine's library-backed master primitives are present (docs/components.md). */
+      libraryMasters: boolean;
     };
   }
 }
@@ -105,9 +107,15 @@ function exposeForE2e(api: ExcalidrawImperativeAPI): void {
   try {
     if (localStorage.getItem(E2E_FLAG_KEY) !== "1") return;
     window.__canvas = api;
-    void import("../agent/sceneTools").then(({ runSceneTool }) => {
-      window.__e2e = { convertToExcalidrawElements, runSceneTool };
-    });
+    void Promise.all([import("../agent/sceneTools"), import("./componentsUi/libraryMasters")]).then(
+      ([{ runSceneTool }, { libraryMasterEngine }]) => {
+        window.__e2e = {
+          convertToExcalidrawElements,
+          runSceneTool,
+          libraryMasters: libraryMasterEngine() !== null,
+        };
+      },
+    );
   } catch {
     // storage unavailable
   }
