@@ -8,6 +8,7 @@ import { beginTurn, canRevertTurn, endTurn, revertTurn, runSceneTool } from "./s
 import { resetTurns } from "./scene/turns";
 import ElkBundled from "elkjs/lib/elk.bundled.js";
 import { setElkFactory } from "../layout/elk";
+import { pathCrossesBox } from "../layout/route";
 import type { ToolContent } from "./types";
 
 vi.mock("@excalidraw/excalidraw", async (orig) => ({
@@ -759,6 +760,57 @@ describe("auto_layout", () => {
     // Only the layout commit after the user's edit; the stale first attempt was dropped.
     expect(api.calls.map((c) => c.captureUpdate)).toEqual(["IMMEDIATELY"]);
     expect(api.byId("ceo").y).toBeLessThan(api.byId("cto").y);
+  });
+});
+
+describe("tidy_arrows", () => {
+  // A straight arrow from "top" to "bot" runs straight through "mid".
+  const stack = () =>
+    scene([
+      { type: "rectangle", id: "top", x: 0, y: 0, width: 120, height: 60 },
+      { type: "rectangle", id: "mid", x: 0, y: 200, width: 120, height: 60 },
+      { type: "rectangle", id: "bot", x: 0, y: 400, width: 120, height: 60 },
+      { type: "arrow", id: "a1", x: 0, y: 0, start: { id: "top" }, end: { id: "bot" } },
+    ]);
+  const absolute = (id: string) => {
+    const el = api.byId(id) as unknown as { x: number; y: number; points: [number, number][] };
+    return el.points.map(([x, y]) => [el.x + x, el.y + y] as [number, number]);
+  };
+  const midBox = { minX: 0, minY: 200, maxX: 120, maxY: 260 };
+
+  it("routes around shapes as one undo step, converting when asked", async () => {
+    setup(stack());
+    const before = absolute("a1");
+    await expect(runSceneTool("tidy_arrows", {}, TAB)).rejects.toThrow(/No elbow arrows/);
+    const res = await call("tidy_arrows", { convert: true });
+    expect(res).toMatchObject({ routed: ["a1"], skipped: [], converted: ["a1"] });
+    expect(api.byId("a1")).toMatchObject({ elbowed: true });
+    expect(pathCrossesBox(absolute("a1"), midBox)).toBe(false);
+    expect(api.byId("mid")).toMatchObject({ x: 0, y: 200 });
+    // A seeding commit (fields that were undefined, e.g. fixedSegments), then one undo step.
+    expect(api.undoStack).toHaveLength(1);
+    api.undo();
+    expect(api.byId("a1")).toMatchObject({ elbowed: false });
+    expect(absolute("a1")).toEqual(before);
+  });
+
+  it("validates convert", async () => {
+    setup(stack());
+    await expect(runSceneTool("tidy_arrows", { convert: "yes" }, TAB)).rejects.toThrow(/convert/);
+  });
+
+  it("works inside apply_ops", async () => {
+    setup(stack().filter((e) => e.id !== "a1"));
+    const res = await call("apply_ops", {
+      ops: [
+        { tool: "connect", args: { from: "top", to: "bot" } },
+        { tool: "tidy_arrows", args: { convert: true } },
+      ],
+    });
+    expect(res.results[1].routed).toHaveLength(1);
+    const arrow = api.elements.find((e) => e.type === "arrow" && !e.isDeleted)!;
+    expect(pathCrossesBox(absolute(arrow.id), midBox)).toBe(false);
+    expect(api.undoStack).toHaveLength(1);
   });
 });
 

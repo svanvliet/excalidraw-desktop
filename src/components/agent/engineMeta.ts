@@ -114,6 +114,7 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   duplicate_elements: "Duplicated elements",
   set_canvas: "Changed the canvas settings",
   auto_layout: "Laid out the diagram",
+  tidy_arrows: "Tidied arrows",
   apply_ops: "Edited the canvas",
   list_layers: "Read the layers",
   update_layer: "Updated a layer",

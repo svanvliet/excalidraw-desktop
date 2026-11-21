@@ -2,9 +2,8 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, ToolError, revisionOf } from "../agent/scene/draft";
 import { commitDraftUndoable } from "../agent/scene/turns";
 import { log } from "../lib/logger";
-import { isElbowArrow } from "../lib/elbowAnchors";
 import { autoLayoutDraft, type AutoLayoutOptions } from "./apply";
-import { tidyArrowsDraft, type TidyOptions } from "./tidy";
+import { tidyAfterLayout, tidyArrowsDraft, type TidyOptions } from "./tidy";
 
 export type CanvasLayoutPreset = "down" | "right" | "tree";
 
@@ -60,23 +59,6 @@ export async function autoLayoutCanvas(
     return false;
   } finally {
     running = false;
-  }
-}
-
-/**
- * Route the elbow arrows auto-layout left for Excalidraw around the other shapes too (keeping
- * the along-flow sides it pinned). Any the router can't fit stay on Excalidraw's re-route.
- */
-function tidyAfterLayout(draft: Draft): void {
-  const ids = [...draft.reroute].filter((id) => {
-    const el = draft.get(id);
-    return !!el && isElbowArrow(el);
-  });
-  if (!ids.length) return;
-  try {
-    tidyArrowsDraft(draft, { ids });
-  } catch (err) {
-    if (!(err instanceof ToolError)) log.warn("auto-layout: tidying elbow arrows failed", err);
   }
 }
 

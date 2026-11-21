@@ -21,6 +21,7 @@ import {
   type LinearEl,
 } from "../agent/scene/draft";
 import { anchorPoint, fixedPointFor, sideOf, SIDES } from "../lib/elbowAnchors";
+import { log } from "../lib/logger";
 import { extractGraph, layoutTargets } from "./graph";
 import { routeArrows, type Obstacle, type Port, type RouteEnd, type RouteRequest } from "./route";
 
@@ -42,6 +43,23 @@ type Binding = NonNullable<LinearEl["startBinding"]>;
 
 const isFrame = (el: El) => el.type === "frame" || el.type === "magicframe";
 const isElbow = (el: El) => (el as { elbowed?: boolean }).elbowed === true;
+
+/**
+ * Route the elbow arrows auto-layout left for Excalidraw around the other shapes too (keeping
+ * the along-flow sides it pinned). Any the router can't fit stay on Excalidraw's re-route.
+ */
+export function tidyAfterLayout(draft: Draft): void {
+  const ids = [...draft.reroute].filter((id) => {
+    const el = draft.get(id);
+    return !!el && isElbow(el);
+  });
+  if (!ids.length) return;
+  try {
+    tidyArrowsDraft(draft, { ids });
+  } catch (err) {
+    if (!(err instanceof ToolError)) log.warn("auto-layout: tidying elbow arrows failed", err);
+  }
+}
 
 /** Tidy the arrows in `draft` in place. Throws ToolError when there's nothing to tidy. */
 export function tidyArrowsDraft(draft: Draft, opts: TidyOptions = {}): TidySummary {

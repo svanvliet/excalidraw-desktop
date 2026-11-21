@@ -61,6 +61,7 @@ import { extensionStateOf } from "../extensions/stack";
 import { applyLayerEdit, buildLayerTree, flattenLayers } from "../layers/layers";
 import { commitDraft } from "./scene/turns";
 import { autoLayoutDraft } from "../layout/apply";
+import { tidyAfterLayout, tidyArrowsDraft } from "../layout/tidy";
 import {
   componentsOf,
   createComponent,
@@ -112,6 +113,7 @@ const EDIT_TOOLS = new Set([
   "move_elements",
   "duplicate_elements",
   "auto_layout",
+  "tidy_arrows",
   "update_layer",
   "apply_extension",
   "remove_extension",
@@ -1203,7 +1205,16 @@ async function autoLayout(draft: Draft, args: Args): Promise<unknown> {
   }
   const ids = strArray(args, "ids");
   const summary = await autoLayoutDraft(draft, { ids, algorithm, direction, spacing });
+  tidyAfterLayout(draft);
   return { laidOut: summary.nodes, edges: summary.edges, moved: summary.moved.length };
+}
+
+function tidyArrows(draft: Draft, args: Args): unknown {
+  if (args.convert != null && typeof args.convert !== "boolean") {
+    throw new ToolError(`"convert" must be a boolean`);
+  }
+  const summary = tidyArrowsDraft(draft, { ids: strArray(args, "ids"), convert: !!args.convert });
+  return summary;
 }
 
 function duplicate(draft: Draft, args: Args): unknown {
@@ -1639,6 +1650,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return duplicate(draft, args);
     case "auto_layout":
       return autoLayout(draft, args);
+    case "tidy_arrows":
+      return tidyArrows(draft, args);
     case "update_layer":
       return updateLayer(draft, args);
     case "set_shape_data":
