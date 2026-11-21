@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Layers tab smoke (docs/requirements.md FR-LAYERS): the tab lives in Excalidraw's own default
+ * Layers tab smoke (docs/requirements.md FR-50): the tab lives in Excalidraw's own default
  * sidebar next to Search / Library, lists frames → groups → elements, selects + reveals on click,
  * renames into customData (one undo step) and toggles locks.
  */

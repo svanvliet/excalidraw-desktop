@@ -360,6 +360,14 @@ Contract: `docs/ai-integration.md` (engine matrix, sandbox flags, MCP tool contr
 
 Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types.ts` contract, `registry.ts`, `runner.ts`, `groups.ts`, `tools.ts`, one folder per extension: `mask/`, `border/`). Image extensions are stages of one pipeline (`stack.ts`, `pipeline.ts`, `raster.ts`): an element carries an ordered chain of intents (shape stages before decorations) in `customData.excalidrawDesktop` (stack format v2; v1 single intents migrate on read), and every change re-renders the original through the whole chain into one PNG. Output is standard elements + files. The same definition drives the image controls injected into Excalidraw's properties panel (`ImagePropertiesPanel`, D-X3) and the generated `apply_extension` / `remove_extension` MCP tools. No new capability or CSP change.
 
+### DX — Library persistence and Layers (Wave 1)
+
+- **Library** (`src/lib/libraryStore.ts`): `onLibraryChange` saves to `<appData>/library.json` through `tauri-plugin-store` (per-profile file name via `storeFile.ts`) and fans changes out to the other open tabs with `updateLibrary`. Canvases opt in with `persistLibrary`; collab guest tabs and the browser guest app pass false. Saving is gated until the stored library has loaded.
+- **Sidebar tab host** (`src/components/sidebar/SidebarTabs.tsx`, D-DX4): one component renders extra `DefaultSidebar.TabTriggers` and `Sidebar.Tab`s from a list of `{ tab, title, icon, render }`, so later tabs (Components, Styles) only add a list entry.
+- **Layers** (`src/layers/layers.ts` model, `src/components/sidebar/LayersPanel.tsx` UI): the tree is rebuilt from the scene on change; edits go through the agent `Draft` and `commitUndoable` (one undo step), the same path as the `update_layer` tool. Names live in `customData["excalidrawDesktop.layer"]` (`{ v: 1, name?, groups?: { [groupId]: name } }`, D-DX2); group names are stored on every member so they survive partial deletes.
+- **Undo of first `customData` writes**: Excalidraw applies undo with `newElementWith`, which skips `undefined`, so undoing a write to an element with no `customData` was a no-op. `commitUndoable` (and turn collapse in `turns.ts`) seed `{}` into the store snapshot first.
+- No new capability or CSP change; nothing makes a network call.
+
 ## 7. Decisions log
 
 | #     | Decision                                                                                                                                                                                        | Why                                                                                                                                 |
@@ -392,6 +400,9 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 | D-X1  | Desktop extensions store intent in `customData` and always write standard output; built-in only                                                                                                 | Adds features without forking Excalidraw or changing the file format; files still render everywhere; no third-party code loading.   |
 | D-X2  | Image extensions stack: ordered chain per element (stage, then id), one original + one output, re-rendered from the original on every change                                                    | Decorations (Border) must follow the current shape; re-rendering from the original avoids compounding loss and keeps one undo step. |
 | D-X3  | Image controls are portaled into Excalidraw's properties panel (`.panelColumn`), falling back to a docked island; image border mirrors native stroke (picker, width, style, roughjs sloppiness) | 0.18.1 has no panel API; a floating strip was unwieldy. The DOM contract is guarded by e2e, and no fork or patch is needed.         |
+| D-DX2 | Layer names stored in `customData["excalidrawDesktop.layer"]`; frames keep their native `name`                                                                                                  | Sibling key to the extension stack; documents still open in stock Excalidraw; one source of truth for frames.                       |
+| D-DX4 | Extra sidebar tabs through one `SidebarTabs` host on `DefaultSidebar.TabTriggers` / `Sidebar.Tab`                                                                                               | Uses Excalidraw's own sidebar, styling and docking; later waves add tabs without touching the editor wiring.                        |
+| D-DX7 | Personal library persisted to app data per profile; guests never write                                                                                                                          | Fixes the library being lost between launches without network or new capabilities.                                                  |
 
 ## 8. Risks & mitigations
 

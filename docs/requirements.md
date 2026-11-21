@@ -118,6 +118,11 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
 - **FR-39** **Border** for images, with the same treatment as native shape strokes: a colour picker matching the native one (top picks, palette, shades, hex; transparent removes the border), stroke width (thin / bold / extra bold), stroke style (solid / dashed / dotted) and sloppiness (architect / artist / cartoonist). Drawn inside the current outline (the mask shape when masked), so bounds never change; dashes and sloppiness follow that outline and re-render identically. Works with or without a mask; older borders keep loading.
 - **FR-40** Image controls MUST appear in Excalidraw's own properties panel when images are selected (including the mobile properties sheet), and fall back to a compact docked panel when that panel isn't available — never a long floating strip. Each change is one undo step and keyboard focus stays on the canvas.
 
+### 4.11 Library & layers
+
+- **FR-49** The personal Excalidraw library ("My library") MUST persist across launches in app data (`library.json`, or `library-<profile>.json` under `--profile`) and load as each editor's initial library. Adds, removes and `.excalidrawlib` imports save immediately and appear in every open tab. Nothing is saved before the stored library has loaded, so a failed or slow load can never wipe it. Live-collab guest tabs and the browser guest app never write to it.
+- **FR-50** Excalidraw's own sidebar MUST gain a **Layers** tab, next to Search and Library, that lists the scene as a tree: frames, then groups (outer groups containing inner ones), then elements, topmost first. Clicking a row selects it and scrolls it into view. Each row has a lock toggle (a group locks all its members). Double-click renames: groups and elements store the name in `customData["excalidrawDesktop.layer"]`; frames use their native `name`. Every rename or lock is one undo step and syncs to collab peers. It follows the light/dark theme with Excalidraw's own styling. The agent gets `list_layers` and `update_layer`. Hiding layers is deferred.
+
 ## 5. Non-Functional Requirements
 
 - **NFR-1** Cold launch under 2 seconds on a 2020-class machine.
