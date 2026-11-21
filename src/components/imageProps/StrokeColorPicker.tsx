@@ -24,6 +24,8 @@ export interface StrokeColorPickerProps {
   value: string | null;
   label: string;
   disabled?: boolean;
+  /** Prefix for the test ids (one picker per extension). */
+  testIdPrefix?: string;
   onChange(color: string): void;
 }
 
@@ -33,7 +35,13 @@ const cls = (...parts: (string | false | undefined)[]) => parts.filter(Boolean).
 /** Keeps Excalidraw's canvas focused (so its shortcuts and undo keep working) on clicks. */
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
 
-export function StrokeColorPicker({ value, label, disabled, onChange }: StrokeColorPickerProps) {
+export function StrokeColorPicker({
+  value,
+  label,
+  disabled,
+  testIdPrefix = "image-stroke",
+  onChange,
+}: StrokeColorPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const current = value ?? TRANSPARENT;
@@ -52,7 +60,7 @@ export function StrokeColorPicker({ value, label, disabled, onChange }: StrokeCo
               title={color}
               aria-label={`${label} ${color}`}
               aria-pressed={value === color}
-              data-testid={`image-stroke-top-pick-${color}`}
+              data-testid={`${testIdPrefix}-top-pick-${color}`}
               disabled={disabled}
               onMouseDown={keepFocus}
               onClick={() => onChange(color)}
@@ -73,7 +81,7 @@ export function StrokeColorPicker({ value, label, disabled, onChange }: StrokeCo
           title={`Show ${label.toLowerCase()} colour picker`}
           aria-label={`Show ${label.toLowerCase()} colour picker`}
           aria-expanded={open}
-          data-testid="image-stroke-trigger"
+          data-testid={`${testIdPrefix}-trigger`}
           disabled={disabled}
           onMouseDown={keepFocus}
           onClick={() => setOpen((o) => !o)}
@@ -86,6 +94,7 @@ export function StrokeColorPicker({ value, label, disabled, onChange }: StrokeCo
           anchor={triggerRef.current}
           value={current}
           label={label}
+          testId={`${testIdPrefix}-popover`}
           onChange={onChange}
           onClose={() => setOpen(false)}
         />
@@ -98,6 +107,7 @@ interface PopoverProps {
   anchor: HTMLElement;
   value: string;
   label: string;
+  testId: string;
   onChange(color: string): void;
   onClose(): void;
 }
@@ -109,7 +119,7 @@ function placement(anchor: HTMLElement, root: HTMLElement): CSSProperties {
   return { left: a.right - r.left + 20, top: Math.max(8, a.top - r.top - 16) };
 }
 
-function PickerPopover({ anchor, value, label, onChange, onClose }: PopoverProps) {
+function PickerPopover({ anchor, value, label, testId, onChange, onClose }: PopoverProps) {
   const root = anchor.closest<HTMLElement>(".excalidraw") ?? document.body;
   const ref = useRef<HTMLDivElement>(null);
   const hit = findInPalette(value);
@@ -177,7 +187,7 @@ function PickerPopover({ anchor, value, label, onChange, onClose }: PopoverProps
       className="image-props__popover"
       style={placement(anchor, root)}
       onKeyDown={onKeyDown}
-      data-testid="image-stroke-popover"
+      data-testid={testId}
     >
       <div className="Island image-props__popover-island">
         <div role="dialog" aria-label={`${label} colour picker`}>

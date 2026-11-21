@@ -10,7 +10,7 @@
  */
 import type { ExcalidrawElement, FileId, ImageCrop } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
-import type { ImagePlan } from "./pipeline";
+import type { ImagePlan, Insets } from "./pipeline";
 
 /** `element.customData[EXT_KEY]` holds the {@link ExtensionStack}. */
 export const EXT_KEY = "excalidrawDesktop";
@@ -19,10 +19,11 @@ export const EXT_KEY = "excalidrawDesktop";
 export const STACK_VERSION = 2;
 
 /**
- * Canonical chain order: links run by ascending `stage`. Shape stages change the outline (and
- * possibly bounds) that decorations then trace.
+ * Canonical chain order: links run by ascending `stage`. Colour stages adjust the source pixels
+ * first, shape stages change the outline (and possibly bounds) that decorations then trace, and
+ * effect stages draw outside the finished image (growing the bitmap through `ImagePlan.pad`).
  */
-export const STAGE = { shape: 100, decoration: 200 } as const;
+export const STAGE = { color: 50, shape: 100, decoration: 200, effect: 300 } as const;
 
 /** One applied extension within a chain. */
 export type ExtensionLink = {
@@ -45,6 +46,11 @@ export type StackSource = {
   /** Element size right after rendering; used to carry later resizes back on restore. */
   appliedWidth: number;
   appliedHeight: number;
+  /**
+   * Margin of the output bitmap around the content (e.g. a shadow), in scene units at the applied
+   * size and bitmap orientation. Absent = none (every stack written before effects existed).
+   */
+  inset?: Insets;
 };
 
 export type ExtensionStack = {
@@ -92,6 +98,13 @@ export interface ExtensionChoices {
 /** Canvas API stages may draw with (a CanvasRenderingContext2D). */
 export type RenderTarget = CanvasRenderingContext2D;
 
+/** RGBA pixels, row-major, unpremultiplied (an `ImageData` satisfies it). */
+export interface PixelBuffer {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
 export interface DesktopExtension<P = Record<string, unknown>> {
   id: string;
   /** Schema version written to each link's `v`; links with a newer `v` are unreadable. */
@@ -121,6 +134,18 @@ export interface DesktopExtension<P = Record<string, unknown>> {
    * clips the result to `plan.outline` afterwards, so drawing past the outline is fine.
    */
   render?(ctx: RenderTarget, plan: ImagePlan, params: P): void;
+  /**
+   * Edit the output pixels in place, in chain order with `render` steps (colour stages). Pure
+   * pixel maths: no `ctx.filter`, which WKWebView lacks.
+   */
+  pixels?(img: PixelBuffer, plan: ImagePlan, params: P): void;
+  /**
+   * Paint beneath the finished, clipped content (effects such as a shadow). `out` is the padded
+   * bitmap (`paddedSize(plan)`, the content sits at `plan.pad.left/top`), transparent or holding
+   * earlier effects, so composite over it; `content` is the finished content bitmap. Reserve
+   * the room in `plan` via `pad`.
+   */
+  renderBehind?(out: PixelBuffer, content: PixelBuffer, plan: ImagePlan, params: P): void;
 }
 
 /** Registry-erased form (params are validated against `paramsSchema` before use). */

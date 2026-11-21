@@ -208,6 +208,84 @@ describe("ImagePropertiesPanel", () => {
   });
 });
 
+describe("effect sections", () => {
+  async function open() {
+    menu.append(nativePanel());
+    renderPanel();
+    api.select("i1");
+    return screen.findByTestId("image-props-native");
+  }
+  const slide = async (testId: string, value: number) => {
+    const input = await screen.findByTestId(testId);
+    await waitFor(() => expect(input).not.toHaveAttribute("aria-disabled"));
+    fireEvent.change(input, { target: { value: String(value) } });
+    fireEvent.pointerUp(input);
+  };
+
+  it("grayscale commits once on release; 0 removes it", async () => {
+    await open();
+    const input = screen.getByTestId("image-grayscale");
+    expect(input).toHaveValue("0");
+    fireEvent.change(input, { target: { value: "40" } });
+    fireEvent.change(input, { target: { value: "80" } });
+    expect(api.undoStack).toHaveLength(0);
+    fireEvent.pointerUp(input);
+    await waitFor(() =>
+      expect(chain()).toEqual([{ ext: "grayscale", v: 1, params: { amount: 80 } }]),
+    );
+    await waitFor(() => expect(screen.getByTestId("image-grayscale")).toHaveValue("80"));
+    expect(api.undoStack).toHaveLength(1);
+
+    await slide("image-grayscale", 0);
+    await waitFor(() => expect(api.byId("i1")!.customData?.[EXT_KEY]).toBeUndefined());
+    expect(api.undoStack).toHaveLength(2);
+  });
+
+  it("arrow keys on a slider stay with the slider", async () => {
+    await open();
+    const onDocKey = vi.fn();
+    document.addEventListener("keydown", onDocKey);
+    try {
+      fireEvent.keyDown(screen.getByTestId("image-grayscale"), { key: "ArrowRight" });
+      expect(onDocKey).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("keydown", onDocKey);
+    }
+  });
+
+  it("tint: a colour applies it, then strength edits keep the colour", async () => {
+    await open();
+    expect(screen.queryByTestId("image-tint-strength")).toBeNull();
+    fireEvent.click(screen.getByTestId("image-tint-top-pick-#1971c2"));
+    await waitFor(() => expect(chain()[0]!.params).toEqual({ color: "#1971c2", strength: 50 }));
+    await screen.findByTestId("image-tint-strength");
+    await slide("image-tint-strength", 75);
+    await waitFor(() => expect(chain()[0]!.params).toEqual({ color: "#1971c2", strength: 75 }));
+  });
+
+  it("shadow: a colour applies the default, sliders tune it, opacity 0 removes it", async () => {
+    await open();
+    fireEvent.click(screen.getByTestId("image-shadow-top-pick-#1e1e1e"));
+    await waitFor(() =>
+      expect(chain()[0]!.params).toEqual({
+        offsetX: 6,
+        offsetY: 6,
+        blur: 8,
+        color: "#1e1e1e",
+        opacity: 35,
+      }),
+    );
+    await screen.findByTestId("image-shadow-blur");
+    await slide("image-shadow-blur", 20);
+    await waitFor(() => expect(chain()[0]!.params).toMatchObject({ blur: 20, color: "#1e1e1e" }));
+    await slide("image-shadow-x", -10);
+    await waitFor(() => expect(chain()[0]!.params).toMatchObject({ offsetX: -10, blur: 20 }));
+    await slide("image-shadow-opacity", 0);
+    await waitFor(() => expect(api.byId("i1")!.customData?.[EXT_KEY]).toBeUndefined());
+    expect(api.undoStack).toHaveLength(4);
+  });
+});
+
 describe("StrokeColorPicker popover", () => {
   async function openPicker() {
     menu.append(nativePanel());

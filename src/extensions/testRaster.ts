@@ -13,7 +13,10 @@ export type { LoadedSource, RenderStep } from "./raster";
 export interface RenderCall {
   source: string;
   plan: ImagePlan;
-  /** Canvas calls / property writes made by the steps, e.g. `stroke()` or `lineWidth=8`. */
+  /**
+   * Canvas calls / property writes made by the draw steps, e.g. `stroke()` or `lineWidth=8`, and
+   * `pixels` / `behind` markers for the pixel steps (tested directly on buffers).
+   */
   ops: string[];
 }
 
@@ -43,9 +46,13 @@ export async function loadSource(file: BinaryFileData): Promise<LoadedSource> {
     async render(plan: ImagePlan, steps: readonly RenderStep[]) {
       const ops: string[] = [];
       const ctx = recordingContext(ops);
-      for (const step of steps) step(ctx, plan);
+      for (const step of steps) {
+        if (step.kind === "draw") step.run(ctx, plan);
+        else ops.push(step.kind);
+      }
       renders.push({ source: file.id, plan, ops });
-      return `data:image/png;base64,${plan.outline.kind}-${plan.outWidth}x${plan.outHeight}-${steps.length}`;
+      const pad = plan.pad ? `-pad${Object.values(plan.pad).join(",")}` : "";
+      return `data:image/png;base64,${plan.outline.kind}-${plan.outWidth}x${plan.outHeight}-${steps.length}${pad}`;
     },
   };
 }

@@ -3,7 +3,8 @@
  *
  * Excalidraw 0.18.1 has no API to add panel sections, and its panel hides stroke controls for
  * images. So while images are selected this portals native-looking sections (stroke colour /
- * width / style / sloppiness for the border extension, and the mask shape) into the panel's
+ * width / style / sloppiness for the border extension, the mask shape, and the grayscale / tint /
+ * shadow effects) into the panel's
  * `.panelColumn`, right after its first slot — where Stroke sits for shapes. React only moves its
  * own nodes, so a foreign node there survives panel re-renders; a MutationObserver re-attaches
  * it when the panel remounts. When no panel is in the DOM (e.g. the mobile layout with its
@@ -33,6 +34,7 @@ import {
   StrokeWidthExtraBoldIcon,
   StrokeWidthThinIcon,
 } from "../icons";
+import { EffectsSection } from "./EffectsSection";
 import { StrokeColorPicker } from "./StrokeColorPicker";
 import { TRANSPARENT } from "./palette";
 
@@ -69,6 +71,9 @@ function isBusy(s: AppState): boolean {
 interface View {
   border?: ExtensionGroup;
   mask?: ExtensionGroup;
+  grayscale?: ExtensionGroup;
+  tint?: ExtensionGroup;
+  shadow?: ExtensionGroup;
   /** Every selected element is an image (labels can drop the "Image" prefix). */
   onlyImages: boolean;
 }
@@ -80,10 +85,24 @@ function computeView(api: ImagePanelApi): View | null {
     .getSceneElements()
     .filter((el) => appState.selectedElementIds[el.id] && !el.isDeleted);
   const groups = extensionGroups(selected);
-  const border = groups.find((g) => g.id === "border");
-  const mask = groups.find((g) => g.id === "mask");
-  if (!border && !mask) return null;
-  return { border, mask, onlyImages: selected.every((el) => el.type === "image") };
+  const group = (id: string) => groups.find((g) => g.id === id);
+  const view: View = {
+    border: group("border"),
+    mask: group("mask"),
+    grayscale: group("grayscale"),
+    tint: group("tint"),
+    shadow: group("shadow"),
+    onlyImages: selected.every((el) => el.type === "image"),
+  };
+  const { onlyImages: _, ...sections } = view;
+  if (!Object.values(sections).some(Boolean)) return null;
+  return view;
+}
+
+/** The effect groups of a view, keyed by extension id like the panel host's `groups`. */
+function effectGroups({ grayscale, tint, shadow }: View) {
+  const entries = Object.entries({ grayscale, tint, shadow });
+  return new Map(entries.filter((e): e is [string, ExtensionGroup] => !!e[1]));
 }
 
 const viewKey = (v: View | null) => JSON.stringify(v);
@@ -344,6 +363,13 @@ function Sections({
           ))}
         </ButtonRow>
       )}
+      <EffectsSection
+        groups={effectGroups(view)}
+        onlyImages={view.onlyImages}
+        busy={busy}
+        label={label}
+        run={run}
+      />
       {error && (
         <div className="image-props__error" role="alert">
           {error}

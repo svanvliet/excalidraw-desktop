@@ -394,6 +394,7 @@ Contract: `docs/extensions.md`. Built-in modules under `src/extensions/` (`types
 | D-X3  | Image controls are portaled into Excalidraw's properties panel (`.panelColumn`), falling back to a docked island; image border mirrors native stroke (picker, width, style, roughjs sloppiness) | 0.18.1 has no panel API; a floating strip was unwieldy. The DOM contract is guarded by e2e, and no fork or patch is needed.         |
 | D-L1  | Auto-layout: bundled elkjs (EPL-2.0) in a lazy, same-origin worker; one `Draft` commit; UI = Edit ▸ Auto-layout menu + Alt/Option+Shift+L                                                       | ELK: layered + tree, orthogonal routing; its worker needs no `eval`, so the CSP is unchanged. Avoids the properties-panel host.     |
 | D-DX1 | Derived sync "reactor": `onChange` version diffs, then `updateScene(NEVER)` in place via `mutateElement`; collab applies tagged by wrapping the `CollabSession` api (docs/reactor-spike.md)     | Spike: one undo step per edit, no redo loss, no collab echo; in-place apply keeps rough.js shapes: 990 targets drag at ~10 ms p95.  |
+| D-X4  | Image effects are chain stages: colour (50) before mask, shadow (300) after border; bounds grow via `plan.pad`/`source.inset`                                                                   | Image stays put; v2 ids unchanged; manual pixel maths (WKWebView lacks `ctx.filter`).                                               |
 
 ## 8. Risks & mitigations
 
