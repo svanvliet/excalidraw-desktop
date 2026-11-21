@@ -456,7 +456,7 @@ describe("key-level rules run in order and chain", () => {
           : el.id === "T1"
             ? [{ role: "target", key: "a" }]
             : [],
-      reconcile: (key, change, ctx) => {
+      reconcile: (_key, change, ctx) => {
         calls.push(`first:${[...change.targets].join(",")}:${change.sourceChanged}`);
         if (change.sourceChanged) ctx.patch("T1", { strokeColor: "#ff0000" });
       },
@@ -469,7 +469,7 @@ describe("key-level rules run in order and chain", () => {
           : el.id === "T2"
             ? [{ role: "target", key: "b" }]
             : [],
-      reconcile: (key, change, ctx) => {
+      reconcile: (_key, change, ctx) => {
         calls.push(`second:${change.sourceChanged}`);
         if (change.sourceChanged) ctx.patch("T2", { strokeColor: ctx.get("T1")!.strokeColor });
       },
@@ -495,7 +495,7 @@ describe("key-level rules run in order and chain", () => {
     calls.length = 0;
     const back: ReactorRule = {
       ...second,
-      reconcile: (key, change, ctx) => {
+      reconcile: (_key, _change, ctx) => {
         calls.push("back");
         ctx.patch("S", { strokeColor: "#00ff00" });
       },

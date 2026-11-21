@@ -32,6 +32,7 @@ import {
   type ComponentInfo,
   type ElementComponentInfo,
 } from "./model";
+import { createStyleRule } from "../styles/rule";
 import { createComponentRule } from "./rule";
 
 type Api = ExcalidrawImperativeAPI;
@@ -47,7 +48,9 @@ export function installComponents(
   if (!reactor) {
     reactor = createReactor({
       api,
-      rules: [createComponentRule()],
+      // Styles first: a style writes master children, which components then copy to
+      // instances in the same flush (D-DX12, docs/styles.md § "Rule order").
+      rules: [createStyleRule(), createComponentRule()],
       apply: "mutate",
       ...(opts.schedule ? { schedule: opts.schedule } : {}),
     });
