@@ -171,6 +171,9 @@ export const CANVAS_TOOL_NAMES = [
   "set_overrides",
   "reset_overrides",
   "detach_instance",
+  "define_property",
+  "remove_property",
+  "set_properties",
 ] as const;
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
 
