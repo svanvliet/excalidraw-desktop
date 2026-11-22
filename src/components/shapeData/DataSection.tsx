@@ -72,7 +72,7 @@ export function DataSection({ view, api }: { view: DataView; api: PanelApi }) {
   const multi = view.ids.length > 1;
   return (
     <fieldset className="shape-data__fieldset">
-      <legend>{multi ? `Data (${view.ids.length} elements)` : "Data"}</legend>
+      {multi && <legend>{`${view.ids.length} elements`}</legend>}
       <div className="shape-data__rows" role="list">
         {view.rows.map((row) => (
           <div

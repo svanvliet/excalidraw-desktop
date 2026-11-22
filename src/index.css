@@ -98,6 +98,118 @@ button {
   row-gap: 0.75rem;
 }
 
+/*
+ * The strip (FR-63): one compact row per "top" section at the head of the panel, so our
+ * concepts are reachable without scrolling. Each host node is a row; one row is open at a time.
+ */
+.excalidraw .props-strip__row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.excalidraw .props-strip__row--last {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--default-border-color);
+}
+
+.excalidraw .props-strip__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.excalidraw .props-strip__toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 1.75rem;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--border-radius-md, var(--radius-sm));
+  background: transparent;
+  color: var(--text-primary-color);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.excalidraw .props-strip__toggle:hover {
+  background: var(--button-gray-1);
+}
+
+.excalidraw .props-strip__toggle:focus-visible,
+.excalidraw .props-strip__primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.excalidraw .props-strip__icon,
+.excalidraw .props-strip__chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-muted-darker, var(--fg-muted));
+}
+
+.excalidraw .props-strip__icon svg,
+.excalidraw .props-strip__chevron svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.excalidraw .props-strip__chevron {
+  margin-left: auto;
+  transition: transform 120ms ease;
+}
+
+.excalidraw .props-strip__toggle[aria-expanded="true"] .props-strip__chevron {
+  transform: rotate(90deg);
+}
+
+.excalidraw .props-strip__title {
+  flex: none;
+  font-weight: 600;
+}
+
+.excalidraw .props-strip__summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted-darker, var(--fg-muted));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excalidraw .props-strip__primary {
+  flex: none;
+  height: 1.5rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--default-border-color);
+  border-radius: var(--border-radius-md, var(--radius-sm));
+  background: var(--button-gray-1);
+  color: var(--text-primary-color);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.excalidraw .props-strip__primary:hover:not(:disabled) {
+  background: var(--button-gray-2);
+}
+
+.excalidraw .props-strip__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.excalidraw .props-strip__body {
+  padding: var(--space-2) 0 var(--space-2) var(--space-1);
+}
+
 /* Fallback when the native panel is not in the DOM (e.g. Excalidraw's mobile layout). */
 .excalidraw .Island.props-dock {
   display: flex;

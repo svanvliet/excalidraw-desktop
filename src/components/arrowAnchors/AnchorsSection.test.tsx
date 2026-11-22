@@ -10,7 +10,7 @@ import type {
 import type { PanelApi } from "../propertiesPanel/panel";
 import { anchorsPanelSection, type AnchorsView } from "./anchorsPanelSection";
 
-const AnchorsSection = anchorsPanelSection.Component;
+const AnchorsSection = anchorsPanelSection.Component!;
 afterEach(cleanup);
 
 function setup(arrow: Record<string, unknown>) {

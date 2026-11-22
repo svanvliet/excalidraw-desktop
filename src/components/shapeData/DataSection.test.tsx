@@ -8,7 +8,7 @@ import { DATA_KEY, readData } from "../../lib/shapeData";
 import type { PanelApi } from "../propertiesPanel/panel";
 import { dataPanelSection, type DataView } from "./dataPanelSection";
 
-const DataSection = dataPanelSection.Component;
+const DataSection = dataPanelSection.Component!;
 
 let api: FakeApi;
 beforeEach(() => {
@@ -109,7 +109,7 @@ describe("Data section", () => {
   it("puts data on the container, not its selected label", () => {
     const label = api.elements.find((e) => e.type === "text")!;
     renderFor("a", label.id);
-    expect(screen.getByRole("group")).toHaveTextContent("Data");
+    expect(screen.getByRole("group")).toBeInTheDocument();
     addRow("k", "v");
     expect(dataOf("a")).toEqual([["k", "v"]]);
     expect(readData(label as ExcalidrawElement).entries).toEqual([]);
@@ -135,7 +135,7 @@ describe("Data section", () => {
           : e,
     );
     renderFor("a", "b");
-    expect(screen.getByText("Data (2 elements)")).toBeInTheDocument();
+    expect(screen.getByText("2 elements")).toBeInTheDocument();
     expect(screen.getAllByTestId("shape-data-row")).toHaveLength(1);
     expect(screen.getByText("+1 key not shared")).toBeInTheDocument();
     const value = screen.getByLabelText("Value of k");

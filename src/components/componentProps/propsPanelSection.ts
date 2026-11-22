@@ -19,6 +19,7 @@ import {
   type PropDef,
   type PropValues,
 } from "../../extensions/components/model";
+import { PropertiesIcon } from "../icons";
 import type { PanelSection } from "../propertiesPanel/panel";
 import { PropsSection } from "./PropsSection";
 
@@ -107,8 +108,17 @@ export function propsView(
 
 export const propsPanelSection: PanelSection<PropsView> = {
   id: "componentProps",
-  slot: "bottom",
+  slot: "top",
   testId: "component-propvals",
+  title: "Properties",
+  icon: PropertiesIcon,
+  summary: (v) => {
+    const names =
+      v.kind === "master"
+        ? v.props.map((p) => p.name)
+        : v.targets.flatMap((t) => t.props.map((p) => p.name));
+    return names.length ? names.join(", ") : "None declared";
+  },
   view: ({ api, selected }) => propsView(selected, api.getSceneElements()),
   Component: PropsSection,
 };

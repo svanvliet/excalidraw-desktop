@@ -5,6 +5,7 @@
  */
 import { isElbowArrow, type Anchor } from "../../lib/elbowAnchors";
 import { endAnchors, isArrow } from "../../lib/lineAnchors";
+import { AnchorCenterIcon } from "../icons";
 import type { PanelSection } from "../propertiesPanel/panel";
 import { AnchorsSection } from "./AnchorsSection";
 
@@ -22,10 +23,28 @@ export interface AnchorsView {
   end: EndView;
 }
 
+const ANCHOR_NAMES: Record<Anchor | "free", string> = {
+  n: "top",
+  e: "right",
+  s: "bottom",
+  w: "left",
+  center: "centre",
+  free: "free",
+};
+
 export const anchorsPanelSection: PanelSection<AnchorsView> = {
   id: "anchors",
-  slot: "bottom",
+  slot: "top",
   testId: "arrow-anchors",
+  title: "Anchors",
+  icon: AnchorCenterIcon,
+  summary: ({ start, end }) =>
+    [
+      start.bound && `start: ${ANCHOR_NAMES[start.anchor ?? "free"]}`,
+      end.bound && `end: ${ANCHOR_NAMES[end.anchor ?? "free"]}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
   view({ selected }) {
     if (selected.length !== 1) return null;
     const arrow = selected[0];

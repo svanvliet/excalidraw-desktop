@@ -10,7 +10,7 @@ import { extractGraph, layoutTargets } from "../../layout/graph";
 import type { PanelApi } from "../propertiesPanel/panel";
 import { containerPanelSection } from "./containerPanelSection";
 
-const Section = containerPanelSection.Component;
+const Section = containerPanelSection.Component!;
 afterEach(cleanup);
 
 function setup() {

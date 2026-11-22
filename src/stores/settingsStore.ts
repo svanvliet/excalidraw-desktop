@@ -70,6 +70,8 @@ export interface EditorSettings {
   autosave: boolean;
   /** Snap dragged arrow ends to shape face midpoints / centres and pin them (FR-61). */
   snapArrowAnchors: boolean;
+  /** The open row of the properties-panel strip (FR-63), by section id; null = all collapsed. */
+  panelStripOpen: string | null;
 }
 
 export interface UpdateSettings {
@@ -105,6 +107,8 @@ export interface SettingsState extends AllSettings {
   setAutosave: (value: boolean) => Promise<void>;
   /** Turn face-centre snapping of arrow ends on or off. */
   setSnapArrowAnchors: (value: boolean) => Promise<void>;
+  /** Remember which properties-panel strip row is open (see stores/panelStripStore). */
+  setPanelStripOpen: (value: string | null) => Promise<void>;
   /** Reset every toggle/secret to its default. Useful for tests + "Reset" UI. */
   resetAll: () => Promise<void>;
 }
@@ -138,6 +142,7 @@ export const SETTINGS_DEFAULTS = {
   collabPort: DEFAULT_COLLAB_PORT,
   autosave: true,
   snapArrowAnchors: true,
+  panelStripOpen: null,
   autoUpdate: null,
 } as const satisfies AllSettings;
 const DEFAULTS: AllSettings = SETTINGS_DEFAULTS;
@@ -216,6 +221,10 @@ export function sanitize(raw: unknown): AllSettings {
     autosave: typeof r.autosave === "boolean" ? r.autosave : DEFAULTS.autosave,
     snapArrowAnchors:
       typeof r.snapArrowAnchors === "boolean" ? r.snapArrowAnchors : DEFAULTS.snapArrowAnchors,
+    panelStripOpen:
+      typeof r.panelStripOpen === "string" && /^[\w-]{1,64}$/.test(r.panelStripOpen)
+        ? r.panelStripOpen
+        : DEFAULTS.panelStripOpen,
     autoUpdate: typeof r.autoUpdate === "boolean" ? r.autoUpdate : DEFAULTS.autoUpdate,
   };
 }
@@ -234,6 +243,7 @@ function snapshot(s: AllSettings): AllSettings {
     collabPort: s.collabPort,
     autosave: s.autosave,
     snapArrowAnchors: s.snapArrowAnchors,
+    panelStripOpen: s.panelStripOpen,
     autoUpdate: s.autoUpdate,
   };
 }
@@ -309,6 +319,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   async setSnapArrowAnchors(value) {
     set({ snapArrowAnchors: value });
+    await persist(snapshot(get()));
+  },
+
+  async setPanelStripOpen(value) {
+    set({ panelStripOpen: value });
     await persist(snapshot(get()));
   },
 

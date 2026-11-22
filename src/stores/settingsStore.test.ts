@@ -75,6 +75,19 @@ describe("settingsStore", () => {
     expect(sanitize({ autosave: false }).autosave).toBe(false);
   });
 
+  it("remembers the open panel-strip row across reloads and the strip store follows (FR-63)", async () => {
+    const { usePanelStripStore } = await import("./panelStripStore");
+    await useSettingsStore.getState().load();
+    usePanelStripStore.getState().toggle("style");
+    expect(useSettingsStore.getState().panelStripOpen).toBe("style");
+    useSettingsStore.setState({ panelStripOpen: null, loaded: false });
+    expect(usePanelStripStore.getState().open).toBeNull();
+    await useSettingsStore.getState().load();
+    expect(usePanelStripStore.getState().open).toBe("style");
+    expect(sanitize({ panelStripOpen: "../x" }).panelStripOpen).toBeNull();
+    expect(sanitize({ panelStripOpen: 3 }).panelStripOpen).toBeNull();
+  });
+
   it("load() marks loaded=true even when the store has no prior data", async () => {
     await useSettingsStore.getState().load();
     const s = useSettingsStore.getState();

@@ -11,6 +11,9 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { El } from "../../agent/scene/draft";
 import { groupOf, listComponents, tagOf } from "../../extensions/components/model";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { createComponentFromSelection } from "../../extensions/components/host";
+import { ComponentsIcon } from "../icons";
 import type { PanelSection } from "../propertiesPanel/panel";
 import { ComponentSection } from "./ComponentSection";
 import { librarySourceOf } from "./libraryCodec";
@@ -118,8 +121,26 @@ export function componentView(
 
 export const componentPanelSection: PanelSection<ComponentView> = {
   id: "component",
-  slot: "bottom",
+  slot: "top",
   testId: "component-props",
+  title: "Component",
+  icon: ComponentsIcon,
+  summary: (v) => {
+    if (v.kind === "create") return "Not a component";
+    if (v.kind === "master") {
+      return `${v.name} · master · ${v.instances} instance${v.instances === 1 ? "" : "s"}`;
+    }
+    const n = v.overrides.length;
+    return n ? `${v.name} · ${n} override${n === 1 ? "" : "s"}` : v.name;
+  },
+  primary: (v) =>
+    v.kind === "create"
+      ? {
+          label: "Create",
+          title: "Create component (Alt/Option + Cmd/Ctrl + K)",
+          run: (api) => createComponentFromSelection(api as ExcalidrawImperativeAPI),
+        }
+      : null,
   view: ({ api, selected }) => componentView(selected, api.getSceneElements()),
   Component: ComponentSection,
 };

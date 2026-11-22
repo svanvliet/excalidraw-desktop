@@ -262,13 +262,8 @@ function DeclareForm({
   );
 }
 
-function Fieldset({ legend, children }: { legend: string; children: ReactNode }) {
-  return (
-    <fieldset className="cmp-propvals">
-      <legend>{legend}</legend>
-      {children}
-    </fieldset>
-  );
+function Fieldset({ children }: { children: ReactNode }) {
+  return <fieldset className="cmp-propvals">{children}</fieldset>;
 }
 
 export function PropsSection({ view, api: panelApi }: { view: PropsView; api: PanelApi }) {
@@ -277,7 +272,7 @@ export function PropsSection({ view, api: panelApi }: { view: PropsView; api: Pa
 
   if (view.kind === "master") {
     return (
-      <Fieldset legend="Properties">
+      <Fieldset>
         {view.props.length ? (
           <div className="cmp-propvals__rows" role="list">
             {view.props.map((p) => (
@@ -304,7 +299,7 @@ export function PropsSection({ view, api: panelApi }: { view: PropsView; api: Pa
   }
 
   return (
-    <Fieldset legend="Properties">
+    <Fieldset>
       {view.targets.map((t) => (
         <div key={t.nested ?? "own"} data-testid={`propvals-${t.nested ? "nested" : "own"}`}>
           {(t.nested || view.targets.length > 1) && (

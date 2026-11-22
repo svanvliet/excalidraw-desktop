@@ -5,13 +5,22 @@
  */
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { containerPanelView, type ContainerPanelView } from "../../layout/containers/host";
+import { StackVerticalIcon } from "../icons";
 import type { PanelSection } from "../propertiesPanel/panel";
 import { ContainerSection } from "./ContainerSection";
 
 export const containerPanelSection: PanelSection<ContainerPanelView> = {
   id: "container",
-  slot: "bottom",
+  slot: "top",
   testId: "container-section",
+  title: "Container",
+  icon: StackVerticalIcon,
+  summary: (v) =>
+    v.mode === "make"
+      ? "Not in a container"
+      : v.mode === "child"
+        ? `Item ${v.index + 1} of ${v.count}`
+        : `${v.def?.direction ?? "vertical"} · gap ${v.def?.gap ?? 0}`,
   view({ api, selected }) {
     if (!selected.length) return null;
     const scene = api.getSceneElementsIncludingDeleted() as readonly ExcalidrawElement[];

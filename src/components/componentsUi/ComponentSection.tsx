@@ -60,7 +60,6 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
   if (view.kind === "create") {
     return (
       <fieldset className="component-props">
-        <legend>Component</legend>
         <div className="component-props__actions">
           <Action
             testId="component-create"
@@ -79,7 +78,6 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
     const saved = mine.some((m) => m.id === view.componentId);
     return (
       <fieldset className="component-props">
-        <legend>Component master</legend>
         <div className="component-props__summary" data-testid="component-props-summary">
           <strong>{view.name}</strong> · {n} instance{n === 1 ? "" : "s"}
         </div>
@@ -116,7 +114,6 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
   const libraryOnly = view.libraryBacked && !view.hasMaster;
   return (
     <fieldset className="component-props">
-      <legend>Component instance</legend>
       <div className="component-props__summary" data-testid="component-props-summary">
         <strong>{view.name}</strong>
         {libraryOnly && " · from My components"}

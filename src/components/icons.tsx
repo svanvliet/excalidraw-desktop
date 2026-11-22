@@ -344,6 +344,32 @@ export const ComponentsIcon = () => (
   </NativeIcon>
 );
 
+/** Properties-panel strip: an image row (FR-63). */
+export const ImageIcon = () => (
+  <NativeIcon grid={24}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="9" cy="10" r="2" />
+    <path d="m21 16-5-5-9 9" />
+  </NativeIcon>
+);
+
+/** Properties-panel strip: key/value shape data. */
+export const DataIcon = () => (
+  <NativeIcon grid={24}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M3 10h18M3 15h18M10 4v16" />
+  </NativeIcon>
+);
+
+/** Properties-panel strip: component property values (sliders). */
+export const PropertiesIcon = () => (
+  <NativeIcon grid={24}>
+    <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+    <circle cx="16" cy="7" r="2" />
+    <circle cx="10" cy="17" r="2" />
+  </NativeIcon>
+);
+
 export const LockIcon = () => (
   <NativeIcon grid={24}>
     <rect x="5" y="11" width="14" height="10" rx="2" />
