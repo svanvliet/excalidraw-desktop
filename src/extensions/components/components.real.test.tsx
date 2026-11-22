@@ -1607,15 +1607,11 @@ describe("masterless components (FR-64)", () => {
       call(() => setInstanceProperties(api, initials, { Avatar: "photo" }));
       clock.frame();
       const saved = persistedElements(all(api));
-      expect(saved.filter((e) => e.isDeleted).map((e) => tagFor(e, cid)!.slot)).toEqual([
-        "E",
-        "E",
-      ]);
+      expect(saved.filter((e) => e.isDeleted).map((e) => tagFor(e, cid)!.slot)).toEqual(["E", "E"]);
       const r = await reload(saved);
       for (const act0 of [
         () => resetInstanceOverrides(r.api, photo),
-        () =>
-          applyComponentMasterEdit(r.api, cid, masterSnapshot(all(r.api), cid, photo).elements),
+        () => applyComponentMasterEdit(r.api, cid, masterSnapshot(all(r.api), cid, photo).elements),
       ]) {
         call(() => void act0());
         r.clock.frame();
@@ -1643,20 +1639,18 @@ describe("masterless components (FR-64)", () => {
             ),
           ),
         () =>
-          applyComponentMasterEdit(
-            r.api,
-            cid,
-            masterSnapshot(all(r.api), cid, initials).elements,
-          ),
+          applyComponentMasterEdit(r.api, cid, masterSnapshot(all(r.api), cid, initials).elements),
       ]) {
         call(() => void act0());
         r.clock.frame();
         expect(shows(r.api, photo)).toBe("R");
         expect(shows(r.api, initials)).toBe("E");
       }
-      expect(masterSnapshot(all(r.api), cid, photo).elements.map((e) => e.type).sort()).toEqual(
-        ["ellipse", "rectangle", "text"],
-      );
+      expect(
+        masterSnapshot(all(r.api), cid, photo)
+          .elements.map((e) => e.type)
+          .sort(),
+      ).toEqual(["ellipse", "rectangle", "text"]);
       expect(child(r.api, photo, "R").width).toBe(240);
       call(() => setInstanceProperties(r.api, photo, { Avatar: "initials" }));
       r.clock.frame();

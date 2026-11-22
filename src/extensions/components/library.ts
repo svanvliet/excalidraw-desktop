@@ -321,7 +321,10 @@ function masterSources(draft: Draft, cid: string, group: string) {
   }
   type Source = { c: El; t: ReturnType<typeof instanceTransform>; canon: Map<string, string> };
   const sourceOf = (els: El[]) => {
-    const t = instanceTransform(els.filter((c) => !c.isDeleted), cid);
+    const t = instanceTransform(
+      els.filter((c) => !c.isDeleted),
+      cid,
+    );
     const canon = canonicalInner(els, cid);
     return els.map((c): Source => ({ c, t, canon }));
   };
