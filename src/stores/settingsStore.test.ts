@@ -88,6 +88,15 @@ describe("settingsStore", () => {
     expect(sanitize({ panelStripOpen: 3 }).panelStripOpen).toBeNull();
   });
 
+  it("remembers the last default-sidebar tab across reloads (FR-68)", async () => {
+    await useSettingsStore.getState().load();
+    await useSettingsStore.getState().setSidebarTab("components");
+    useSettingsStore.setState({ sidebarTab: null, loaded: false });
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().sidebarTab).toBe("components");
+    expect(sanitize({ sidebarTab: "../x" }).sidebarTab).toBeNull();
+  });
+
   it("load() marks loaded=true even when the store has no prior data", async () => {
     await useSettingsStore.getState().load();
     const s = useSettingsStore.getState();

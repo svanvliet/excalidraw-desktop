@@ -21,6 +21,7 @@ import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
 import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { installSidebarRestore, SIDEBAR_UI_OPTIONS } from "./sidebar/sidebarRestore";
+import { installSidebarTabMemory } from "./sidebar/sidebarTabMemory";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
@@ -211,6 +212,14 @@ export function ExcalidrawCanvas({
           if (s.panelOpen !== prev.panelOpen) cb(s.panelOpen);
         }),
       editorWidth: () => canvasRef.current?.getBoundingClientRect().width ?? Infinity,
+    });
+  }, [api]);
+
+  // Remember the sidebar's last tab so the Library button reopens it there (FR-68).
+  useEffect(() => {
+    if (!api) return;
+    return installSidebarTabMemory(api, (tab) => {
+      void useSettingsStore.getState().setSidebarTab(tab);
     });
   }, [api]);
 
