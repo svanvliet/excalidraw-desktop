@@ -12,7 +12,14 @@ import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/tran
 import type { BinaryFileData, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, type El } from "../../agent/scene/draft";
 import { createComponent, insertInstance, setOverrides } from "../../extensions/components/actions";
-import { installComponents, uninstallComponents } from "../../extensions/components/host";
+import {
+  createComponentFromSelection,
+  defineComponentProperty,
+  insertComponentInstance,
+  installComponents,
+  setInstanceProperties,
+  uninstallComponents,
+} from "../../extensions/components/host";
 import { groupOf, listComponents, tagOf } from "../../extensions/components/model";
 import {
   __resetMyComponentsForTest,
@@ -325,5 +332,84 @@ describe("library-backed masters", () => {
     await flush();
     expect(textOf(children(api, inst.groupId))).toBe("Grace");
     expect(getMyComponents()).toHaveLength(0);
+  });
+});
+
+describe("slots hidden by a property (FR-69)", () => {
+  /** A masterless Card (rectangle R + ellipse E) whose Avatar choice shows R for photo and E for
+   * initials, with two instances both on photo: E is hidden in every instance. */
+  async function avatarCards() {
+    __setLibraryMasterEngineForTest(undefined);
+    const api = await mount(
+      convertToExcalidrawElements(
+        [
+          { type: "rectangle", id: "R", x: 0, y: 0, width: 200, height: 80, label: { text: "Hi" } },
+          { type: "ellipse", id: "E", x: 220, y: 20, width: 40, height: 40 },
+        ] as ExcalidrawElementSkeleton[],
+        { regenerateIds: false },
+      ),
+    );
+    installed.push(api);
+    installComponents(api, { schedule: () => () => {} });
+    act(() => api.updateScene({ appState: { selectedElementIds: { R: true, E: true } } as never }));
+    let first: ReturnType<typeof createComponentFromSelection> = null;
+    act(() => void (first = createComponentFromSelection(api, "Card")));
+    const cid = first!.componentId;
+    let second: ReturnType<typeof insertComponentInstance> = null;
+    act(() => {
+      second = insertComponentInstance(api, cid, { x: 0, y: 300 });
+      defineComponentProperty(api, cid, {
+        id: "avatar",
+        name: "Avatar",
+        type: "choice",
+        options: ["photo", "initials"],
+        default: "photo",
+        bindings: [
+          { elementId: "R", key: "visible", map: { photo: true, initials: false } },
+          { elementId: "E", key: "visible", map: { photo: false, initials: true } },
+        ],
+      });
+    });
+    const groups = [first!.groupId, second!.groupId];
+    for (const g0 of groups) expect(slots(api, g0)).toEqual(["R"]);
+    return { api, cid, groups };
+  }
+  const slots = (api: Api, groupId: string) =>
+    children(api, groupId)
+      .filter((e) => e.type !== "text")
+      .map((e) => tagOf(e)!.slot)
+      .sort();
+  const toInitials = (api: Api, groupId: string) =>
+    act(() => void setInstanceProperties(api, groupId, { Avatar: "initials" }));
+
+  it("Done from an instance that hides a slot keeps it in the master", async () => {
+    const { api, groups } = await avatarCards();
+    panel(api, groups[0]);
+    act(() => void fireEvent.click(screen.getByTestId("component-edit-master")));
+    render(<MasterEditorHost api={api} />);
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+    const overlay = window.__masterEditor as unknown as Api;
+    const master = live(overlay).filter((e) => !e.customData?.[CTX_KEY]);
+    expect(master.map((e) => e.type).sort()).toEqual(["ellipse", "rectangle", "text"]);
+    const text = master.find((e) => e.type === "text")!;
+    userEdit(overlay, text.id, { text: "Bye", originalText: "Bye" });
+    act(() => void fireEvent.click(screen.getByTestId("master-edit-done")));
+    await act(async () => void (await new Promise((r) => setTimeout(r, 0))));
+    expect(textOf(children(api, groups[1]))).toBe("Bye");
+    toInitials(api, groups[1]);
+    expect(slots(api, groups[1])).toEqual(["E"]);
+  });
+
+  it("Save to My components from such an instance keeps the hidden slot", async () => {
+    const { api, cid, groups } = await avatarCards();
+    panel(api, groups[0]);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("component-save"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const saved = getMyComponents().find((c) => c.id === cid)!;
+    expect(saved.elements.map((e) => e.type).sort()).toEqual(["ellipse", "rectangle", "text"]);
+    toInitials(api, groups[0]);
+    expect(slots(api, groups[0])).toEqual(["E"]);
   });
 });
