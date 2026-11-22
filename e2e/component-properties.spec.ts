@@ -110,7 +110,7 @@ test("declare a property on the master; set it on an instance; one undo reverts"
   await open(page);
   const masterIds = await card(page);
   await select(page, masterIds);
-  await openStripRow(page, "component-propvals");
+  await openStripRow(page, "component-props");
   await tid(page, "propdef-name").fill("Title");
   await tid(page, "propdef-add").click();
   await expect(tid(page, "propdef-remove-Title")).toBeVisible();
@@ -166,7 +166,7 @@ test("an outer Panel instance sets its nested Card's property", async ({ page })
   });
 
   await select(page, outer.ids);
-  await openStripRow(page, "component-propvals");
+  await openStripRow(page, "component-props");
   const nested = tid(page, "propvals-nested");
   await expect(nested).toContainText("(nested)");
   const field = nested.locator('[data-testid^="propval-"][data-testid$="-Title"]');

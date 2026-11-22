@@ -2,7 +2,7 @@
  * Host for the app's extra tabs in Excalidraw's own default sidebar (plan D-DX4). Each tab adds a
  * trigger next to the built-in Search / Library triggers and a panel rendered by Excalidraw's
  * `Sidebar.Tab`, so it docks, themes and closes exactly like the native tabs. Later features
- * (Components, Styles) register here by adding a {@link SidebarTabDef}.
+ * (e.g. Components) register here by adding a {@link SidebarTabDef}.
  */
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import type { ReactNode } from "react";

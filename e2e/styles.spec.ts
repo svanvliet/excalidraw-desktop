@@ -1,11 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openStripRow } from "./fixtures/strip";
+import { revealStripRow } from "./fixtures/strip";
 
 /**
- * Named styles smoke (docs/styles.md, FR-58), against the real Excalidraw editor: make a style
- * from the selection in the properties panel's Style picker, edit it from the Styles tab and
- * from the agent's update_style tool, and watch every linked element follow; one undo reverts
- * the whole edit. A local edit becomes an override that the style no longer touches.
+ * Named styles smoke (docs/styles.md, FR-58, FR-65), against the real Excalidraw editor: reveal
+ * the Style row from the strip's "+", make a style from the selection, rename it, edit it by
+ * pushing one element's local change ("Update style") and from the agent's update_style tool, and
+ * watch every linked element follow; one undo reverts the whole edit. A local edit becomes an
+ * override that the style no longer touches.
  */
 
 const STYLE_NS = "excalidrawDesktop.style";
@@ -63,8 +64,9 @@ test("a named style updates its linked elements live; one undo reverts", async (
   });
   await select(page, ["A", "B"]);
 
-  // Properties panel: new style from the selection links both.
-  await openStripRow(page, "style-section");
+  // No style yet: the Style row waits behind "+"; a new style from the selection links both.
+  await expect(page.getByTestId("style-section-toggle")).toHaveCount(0);
+  await revealStripRow(page, "style-section");
   const picker = page.getByTestId("style-section-picker");
   await expect(picker).toBeVisible();
   await picker.selectOption("__new__");
@@ -73,24 +75,31 @@ test("a named style updates its linked elements live; one undo reverts", async (
   expect((await strokes(page)).C.style).toBeNull();
   await expect(picker).not.toHaveValue("");
 
-  // Styles tab: edit the stroke; both linked rectangles follow, C does not.
-  await page.locator(".excalidraw .sidebar-trigger").first().click();
-  await page.getByTestId("sidebar-tab-styles").click();
-  await page.getByTestId("sidebar-dock").click();
-  const panel = page.getByTestId("styles-panel");
-  await expect(panel.getByTestId("styles-row")).toHaveCount(1);
-  await panel.getByTestId("styles-row").click();
-  const stroke = panel.getByTestId("styles-prop-strokeColor").getByRole("textbox");
-  await stroke.fill("#e03131");
-  await stroke.press("Enter");
-  await expect.poll(async () => (await strokes(page)).A.stroke).toBe("#e03131");
-  expect((await strokes(page)).B.stroke).toBe("#e03131");
-  expect((await strokes(page)).C.stroke).toBe("#1e1e1e");
+  // Rename it in place.
+  await page.getByTestId("style-section-rename").click();
+  const name = page.getByTestId("style-section-name");
+  await name.fill("Brand");
+  await name.press("Enter");
+  await expect.poll(async () => (await strokes(page)).A.style).toBe("Brand");
 
-  // One undo reverts the whole style edit.
-  await page.getByRole("button", { name: "Undo" }).first().click();
-  await expect.poll(async () => (await strokes(page)).A.stroke).toBe("#1e1e1e");
+  // Edit A's stroke locally, then push it into the style: B follows, C does not.
+  await select(page, ["A"]);
+  await page.getByTestId("color-top-pick-#e03131").first().click();
+  await expect(page.getByTestId("style-section-overrides")).toBeVisible();
   expect((await strokes(page)).B.stroke).toBe("#1e1e1e");
+  await page.getByRole("button", { name: "Update style" }).click();
+  await expect.poll(async () => (await strokes(page)).B.stroke).toBe("#e03131");
+  expect((await strokes(page)).A.stroke).toBe("#e03131");
+  expect((await strokes(page)).C.stroke).toBe("#1e1e1e");
+  await expect(page.getByTestId("style-section-overrides")).toHaveCount(0);
+
+  // One undo reverts the whole style edit (B), a second A's local change.
+  const undo = () => page.getByRole("button", { name: "Undo" }).first().click();
+  await undo();
+  await expect.poll(async () => (await strokes(page)).B.stroke).toBe("#1e1e1e");
+  expect((await strokes(page)).A.stroke).toBe("#e03131");
+  await undo();
+  await expect.poll(async () => (await strokes(page)).A.stroke).toBe("#1e1e1e");
 
   // A local edit on B becomes an override; the agent's update_style then skips B.
   await select(page, ["B"]);
@@ -98,7 +107,7 @@ test("a named style updates its linked elements live; one undo reverts", async (
   await expect(page.getByTestId("style-section-overrides")).toBeVisible();
   const out = await page.evaluate(async () => {
     const r = await window.__e2e!.runSceneTool("update_style", {
-      style: "Style 1",
+      style: "Brand",
       props: { strokeColor: "#1971c2" },
     });
     return JSON.parse((r[0] as { text: string }).text) as { elementIds: string[] };

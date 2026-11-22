@@ -203,7 +203,7 @@ test("toolbar Layout ▸ Tidy Arrows routes arrows around cards, as one undo ste
   await page.getByTestId("toolbar-layout").click();
   const menu = page.getByTestId("layout-menu-list");
   await expect(menu.getByRole("menuitem", { name: "Tidy Arrows", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: /Make Container/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /Make Stack/ })).toBeVisible();
   await menu.getByRole("menuitem", { name: /Convert Straight Arrows/ }).click();
   await expect(menu).toBeHidden();
   await refocusEditor(page);
