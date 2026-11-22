@@ -36,6 +36,7 @@
 | DX-7 | DX wave 2: Tidy arrows + Layout menu                                                          | ✅     | Layout ▸ Tidy Arrows (selection or all, one undo step, optional convert) with an orthogonal obstacle-avoiding router and org-chart trunks; top-level Layout menu + toolbar Layout dropdown from one command list (auto-layout, tidy, containers); `tidy_arrows` MCP tool (FR-60, D-DX14). Vitest + `e2e/tidy-arrows.spec.ts` green.                                                                                                                               |
 | DX-4 | DX wave 2: Component properties + nested components                                           | ✅     | Typed properties bound to slots (instance values = overrides), Properties panel section, nested components (cycles rejected, cascade sync, overrides at both levels), 3 MCP tools (FR-56, FR-57, D-DX11). Real-Excalidraw + collab vitest and `e2e/component-properties.spec.ts` (incl. real Alt-drag) green.                                                                                                                                                     |
 | DX-8 | DX wave 2: Line anchors (face-centre snap)                                                    | ✅     | Snap dots at face midpoints + centre while dragging an arrow end; release within 12px snaps, binds and pins the end so it follows move/resize/rotate (straight, curved, elbow; Cmd/Ctrl bypass; setting). Anchors panel + `set_arrow_anchors`/`connect` pin straight ends (FR-61, D-DX15). Vitest + `e2e/line-anchors.spec.ts` green.                                                                                                                             |
+| DX-9 | UX: Pinned sidebar survives the AI panel                                                      | ✅     | A pinned Library or app tab stays docked when the AI panel opens and closes (docking breakpoint 760px); narrow windows reopen it when the panel closes (FR-62, D-DX16). Vitest + `e2e/sidebar-ai.spec.ts` green.                                                                                                                                                                                                                                                  |
 
 ## Acceptance checks (per milestone)
 
@@ -195,6 +196,11 @@
 - [x] `set_arrow_anchors` (incl. `free`, inside `apply_ops`), `connect` `elbow: false` anchors, summary anchors, tool moves keep pins (Vitest `sceneTools`).
 - [x] Drag end onto a dot, shape drag follows, undo; Cmd/Ctrl bypass; arrow-tool creation; panel pin/free (Playwright `line-anchors.spec.ts`).
 
+### UX — Pinned sidebar and the AI panel (DX-9)
+
+- [x] A docked sidebar that closes as an overlay while the AI panel is open reopens (same tab) when the panel closes; one the user closes while docked stays closed (Vitest `sidebarRestore.test.ts`).
+- [x] At 1440×900, pinned Library and pinned Layers stay docked through open AI → click inside → close AI; at 1110px the pinned Library comes back when AI closes (Playwright `sidebar-ai.spec.ts`).
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -221,3 +227,4 @@
 | 2026-11-21 | DX-7       | — → ✅    | Tidy Arrows + Layout menu/toolbar (FR-60, D-DX14).                                                                                     |
 | 2026-11-22 | DX-4       | ⬜ → ✅   | Component properties and nested components (FR-56, FR-57, D-DX11).                                                                     |
 | 2026-11-22 | DX-8       | — → ✅    | Line anchors / face-centre snap (FR-61, D-DX15).                                                                                       |
+| 2026-11-21 | DX-9       | — → ✅    | Pinned sidebar survives the AI panel (FR-62, D-DX16).                                                                                  |
