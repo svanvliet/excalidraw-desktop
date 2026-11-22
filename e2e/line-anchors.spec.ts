@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow } from "./fixtures/strip";
 
 /**
  * Line anchors smoke (docs/plan.md D-DX15, FR-61) against the real Excalidraw 0.18.1 editor:
@@ -225,6 +226,7 @@ test("the Anchors panel pins a straight arrow's end and frees it again", async (
   );
   const section = page.locator(".App-menu__left .panelColumn > [data-testid=arrow-anchors-native]");
   await expect(section).toBeVisible();
+  await openStripRow(page, "arrow-anchors");
   await section.getByRole("button", { name: "End: Left" }).click();
   await expect.poll(async () => (await arrowState(page, "a"))?.pin?.end?.anchor).toBe("w");
   expectNear(lastPoint((await arrowState(page, "a"))!), [795, 390]);

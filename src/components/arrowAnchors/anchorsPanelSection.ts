@@ -24,12 +24,12 @@ export interface AnchorsView {
 }
 
 const ANCHOR_NAMES: Record<Anchor | "free", string> = {
-  n: "top",
-  e: "right",
-  s: "bottom",
-  w: "left",
-  center: "centre",
-  free: "free",
+  n: "Top",
+  e: "Right",
+  s: "Bottom",
+  w: "Left",
+  center: "Centre",
+  free: "Free",
 };
 
 export const anchorsPanelSection: PanelSection<AnchorsView> = {
@@ -38,13 +38,9 @@ export const anchorsPanelSection: PanelSection<AnchorsView> = {
   testId: "arrow-anchors",
   title: "Anchors",
   icon: AnchorCenterIcon,
+  // Start → end, e.g. "Top → Free"; "–" for an unbound end.
   summary: ({ start, end }) =>
-    [
-      start.bound && `start: ${ANCHOR_NAMES[start.anchor ?? "free"]}`,
-      end.bound && `end: ${ANCHOR_NAMES[end.anchor ?? "free"]}`,
-    ]
-      .filter(Boolean)
-      .join(" · "),
+    [start, end].map((e) => (e.bound ? ANCHOR_NAMES[e.anchor ?? "free"] : "–")).join(" → "),
   view({ selected }) {
     if (selected.length !== 1) return null;
     const arrow = selected[0];

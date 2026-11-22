@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow } from "./fixtures/strip";
 
 /**
  * Components UI smoke (docs/components.md § UI, FR-55): make a component with the shortcut, save
@@ -102,6 +103,7 @@ test("save a component to My components and place it in another drawing", async 
   const componentId = await makeCard(page);
   const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
   await select(page, masterIds);
+  await openStripRow(page, "component-props");
   await page.getByTestId("component-save").click();
   await expect(page.getByTestId("component-save")).toHaveText("Update in My components");
 
@@ -125,6 +127,7 @@ test("library master: insert, Edit master…, Done updates the instance", async 
   const componentId = await makeCard(page);
   const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
   await select(page, masterIds);
+  await openStripRow(page, "component-props");
   await page.getByTestId("component-move-to-library").click();
   await expect.poll(async () => (await tagged(page)).filter((e) => e.role).length).toBe(0);
 
