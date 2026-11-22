@@ -72,6 +72,8 @@ export interface EditorSettings {
   snapArrowAnchors: boolean;
   /** The open row of the properties-panel strip (FR-63), by section id; null = all collapsed. */
   panelStripOpen: string | null;
+  /** The default sidebar's last tab (FR-68), reopened by the Library button; null = Library. */
+  sidebarTab: string | null;
 }
 
 export interface UpdateSettings {
@@ -109,6 +111,8 @@ export interface SettingsState extends AllSettings {
   setSnapArrowAnchors: (value: boolean) => Promise<void>;
   /** Remember which properties-panel strip row is open (see stores/panelStripStore). */
   setPanelStripOpen: (value: string | null) => Promise<void>;
+  /** Remember the default sidebar's last tab (see components/sidebar/sidebarTabMemory). */
+  setSidebarTab: (value: string) => Promise<void>;
   /** Reset every toggle/secret to its default. Useful for tests + "Reset" UI. */
   resetAll: () => Promise<void>;
 }
@@ -143,6 +147,7 @@ export const SETTINGS_DEFAULTS = {
   autosave: true,
   snapArrowAnchors: true,
   panelStripOpen: null,
+  sidebarTab: null,
   autoUpdate: null,
 } as const satisfies AllSettings;
 const DEFAULTS: AllSettings = SETTINGS_DEFAULTS;
@@ -225,6 +230,10 @@ export function sanitize(raw: unknown): AllSettings {
       typeof r.panelStripOpen === "string" && /^[\w-]{1,64}$/.test(r.panelStripOpen)
         ? r.panelStripOpen
         : DEFAULTS.panelStripOpen,
+    sidebarTab:
+      typeof r.sidebarTab === "string" && /^[\w-]{1,64}$/.test(r.sidebarTab)
+        ? r.sidebarTab
+        : DEFAULTS.sidebarTab,
     autoUpdate: typeof r.autoUpdate === "boolean" ? r.autoUpdate : DEFAULTS.autoUpdate,
   };
 }
@@ -244,6 +253,7 @@ function snapshot(s: AllSettings): AllSettings {
     autosave: s.autosave,
     snapArrowAnchors: s.snapArrowAnchors,
     panelStripOpen: s.panelStripOpen,
+    sidebarTab: s.sidebarTab,
     autoUpdate: s.autoUpdate,
   };
 }
@@ -324,6 +334,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   async setPanelStripOpen(value) {
     set({ panelStripOpen: value });
+    await persist(snapshot(get()));
+  },
+
+  async setSidebarTab(value) {
+    if (get().sidebarTab === value) return;
+    set({ sidebarTab: value });
     await persist(snapshot(get()));
   },
 
