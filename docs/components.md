@@ -305,12 +305,15 @@ Code lives in `src/components/componentsUi/`, and the personal store in `src/lib
   - When the library-master engine is missing, the master is placed beside the instance instead.
 - **Panel section** (`ComponentSection.tsx`, in `PANEL_SECTIONS`) appears when the selection is a component.
   - Plain shapes: **Create component**.
-  - Master (legacy, while editing): **Save to / Update in My components**, and **Move to My components**, which saves it and dematerializes the master.
-  - Instance: **Go to master**, **Reset overrides**, **Detach**, and a per-slot override list with a reset for each slot.
-  - Off-canvas master: **Edit master…** and **Save to / Update in My components** (saved from `masterSnapshot`; no master is placed).
-- **Edit master…** materializes the master and shows a banner (`MasterEditBanner.tsx`) with **Done** and **Cancel**.
-  - **Done** dematerializes it; when the component is in My components, it saves the master, with its images, there first.
-  - **Cancel** removes the master and restores the instances as one undo step.
+  - Master (legacy drawings, or inside the master editor): **Save to / Update in My components**.
+  - Instance: **Edit master…**, **Save to / Update in My components**, **Reset overrides**, **Detach**, and a per-slot override list with a reset for each slot.
+- **Edit master…** (FR-66, D-DX20), from the Component row or the pencil on an **In this drawing** row, opens the master editor (`MasterEditor.tsx`): a temporary second `<Excalidraw>` laid over the drawing.
+  - An accent header names the component and its instance count, with **Cancel** and **Done**.
+  - The master is placed on the instance it was opened from, at the same viewport; the rest of the drawing around it shows as dimmed, locked copies for context (`masterEditScene.ts`). The drawing itself never holds the master.
+  - **Done** (or Cmd/Ctrl+Enter) applies the edit with `applyComponentMasterEdit`: every instance updates, overrides survive, one undo step and one collab update. An unchanged edit closes without an undo step.
+  - When the component is linked to My components, a checked **Also update in My components** box saves the edited master there as well.
+  - **Cancel** changes nothing. Esc is layered: Excalidraw's own uses first, then leaving group edit, then deselecting, then Cancel.
+  - Limits: a scaled or rotated instance shows the master at its own size and angle, centred on the instance; bindings to context copies are dropped; context covers the viewport plus one viewport around it.
 - **Create** is available from Alt/Option+Cmd/Ctrl+K, the panel, and **Edit → Create Component** in the native menu (`excalidraw:edit:createComponent`, no accelerator because the shortcut is handled in the webview).
 
 ## 8. Agent tools
