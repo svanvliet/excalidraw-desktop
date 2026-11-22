@@ -200,9 +200,11 @@ tools accept `expectedRevision` and are rejected if the scene changed since that
 | `set_shape_data`        | Sets / removes key/value data on elements (`set`, `replace`) as one undo step (D-DX2)                           |
 | `get_shape_data`        | Returns elements' key/value data as JSON or CSV                                                                 |
 | `set_arrow_anchors`     | Pins bound arrow ends to n/e/s/w/center (elbow sides or face midpoints; `free` unpins; D-DX8, D-DX15)           |
-| `create_component`      | Turns `ids` (or a group) into a component master (D-DX9, `docs/components.md`)                                  |
+| `create_component`      | Turns `ids` (or a group) into a component; they become its first instance (FR-64, `docs/components.md`)         |
 | `insert_instance`       | Places an instance of a component (`x`, `y`, `scale`, `angle` in degrees)                                       |
-| `list_components`       | Masters and instances with slots and overrides; no undo step                                                    |
+| `list_components`       | Components and their instances with slots and overrides; no undo step                                           |
+| `get_component_master`  | The off-canvas master by slot, positions relative to its top-left; no undo step                                 |
+| `edit_component_master` | Updates, adds or removes master parts by slot; every instance follows (one step)                                |
 | `list_my_components`    | The personal My components library (id, name, element and image counts); no tab, no undo step                   |
 | `insert_my_component`   | Places a My components entry by id or name (with its images) as a library-backed instance; one undo step        |
 | `set_overrides`         | Per-slot instance overrides: text, colours, opacity, link, image (`null` clears)                                |
