@@ -12,14 +12,13 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "@excalidraw/excalidraw/index.css";
-import { ComponentsIcon, LayersIcon, StylesIcon } from "./icons";
+import { ComponentsIcon, LayersIcon } from "./icons";
 import { ComponentsPanel } from "./componentsUi/ComponentsPanel";
 import { handleComponentDragOver, handleComponentDrop } from "./componentsUi/insert";
 import { MasterEditBanner } from "./componentsUi/MasterEditBanner";
 import { PropertiesPanelHost } from "./propertiesPanel/PropertiesPanelHost";
 import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
-import { StylesPanel } from "./sidebar/StylesPanel";
 import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
 import { installSidebarRestore, SIDEBAR_UI_OPTIONS } from "./sidebar/sidebarRestore";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
@@ -280,12 +279,6 @@ export function ExcalidrawCanvas({
         title: "Layers",
         icon: <LayersIcon />,
         render: () => api && <LayersPanel api={api} readOnly={viewOnly} />,
-      },
-      {
-        tab: "styles",
-        title: "Styles",
-        icon: <StylesIcon />,
-        render: () => api && <StylesPanel api={api} readOnly={viewOnly} />,
       },
       {
         tab: "components",
