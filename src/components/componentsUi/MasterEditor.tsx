@@ -79,7 +79,8 @@ export function MasterEditor({ session, theme, onPointerUpdate }: MasterEditorPr
   const scene = useMemo(
     () =>
       buildMasterEditScene(
-        mainApi.getSceneElements() as readonly El[],
+        // Including slots hidden by a property, so the master keeps them (FR-69).
+        mainApi.getSceneElementsIncludingDeleted() as readonly El[],
         mainApi.getFiles(),
         session.instanceGroupId,
         {
@@ -187,7 +188,11 @@ export function MasterEditor({ session, theme, onPointerUpdate }: MasterEditorPr
       message = `"${scene.name}" changed while you were editing; your edit replaced it`;
     if (linkedId && updateLibrary) {
       const entry = {
-        ...masterToEntry(mainApi.getSceneElements() as readonly El[], mainApi.getFiles(), cid),
+        ...masterToEntry(
+          mainApi.getSceneElementsIncludingDeleted() as readonly El[],
+          mainApi.getFiles(),
+          cid,
+        ),
         id: linkedId,
       };
       void putMyComponent(entry)

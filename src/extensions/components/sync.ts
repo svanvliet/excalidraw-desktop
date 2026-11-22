@@ -746,7 +746,8 @@ export function syncComponent(
       let c = bySlot.get(slot);
       if (!c) {
         const existing = access.get(ic.idOf.get(slot)!);
-        if (existing && T(existing)) c = existing;
+        // Ours, or a slot removed earlier (untagged) that the master has again (undo).
+        if (existing && (T(existing) || existing.isDeleted)) c = existing;
       }
       current.set(slot, c);
       explicit.set(slot, { ...((c && T(c)?.overrides) ?? {}) });
@@ -804,7 +805,10 @@ export function syncComponent(
       last = id;
     }
     for (const [slot, c] of bySlot) {
-      if (!mc.bySlot.has(slot) && !c.isDeleted) access.patch(c.id, { isDeleted: true });
+      // A slot the master no longer has leaves the component (untagged), so rebuilding the
+      // master from instances can't bring it back (FR-69); hidden slots keep their tags.
+      if (!mc.bySlot.has(slot))
+        access.patch(c.id, { isDeleted: true, customData: withoutTag(c, componentId) });
     }
     if (written.size > writesBefore)
       for (const t of outerTags(anyLive, anyTag)) next.add(t.componentId);

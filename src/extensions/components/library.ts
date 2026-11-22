@@ -304,9 +304,54 @@ function masterFontSizes(draft: Draft, cid: string): Map<string, number> {
 }
 
 /**
+ * Children to rebuild `cid`'s master from: every child of `group` (hidden slots included), plus
+ * any slot it lacks taken from another free instance (FR-69). Files saved by older builds kept
+ * only each instance's visible slots, so a slot one instance hides may live only in another.
+ * Each child comes with its own instance's transform and canonical inner groups.
+ */
+function masterSources(draft: Draft, cid: string, group: string) {
+  const groups = new Map<string, El[]>();
+  for (const el of draft.toArray()) {
+    const t = tagFor(el, cid);
+    const g = t?.role === "instance" && !isOwned(el, cid) ? groupOf(el, t) : null;
+    if (!g) continue;
+    const list = groups.get(g);
+    if (list) list.push(el);
+    else groups.set(g, [el]);
+  }
+  type Source = { c: El; t: ReturnType<typeof instanceTransform>; canon: Map<string, string> };
+  const sourceOf = (els: El[]) => {
+    const t = instanceTransform(
+      els.filter((c) => !c.isDeleted),
+      cid,
+    );
+    const canon = canonicalInner(els, cid);
+    return els.map((c): Source => ({ c, t, canon }));
+  };
+  const own = instanceChildren(draft, cid, group);
+  const out = sourceOf(own);
+  const slots = new Set(own.map((c) => tagFor(c, cid)!.slot));
+  for (const [g, els] of groups) {
+    if (g === group || !els.some((c) => !c.isDeleted)) continue;
+    let after = -1;
+    for (const s of sourceOf(els)) {
+      const slot = tagFor(s.c, cid)!.slot;
+      if (slots.has(slot)) {
+        after = out.findIndex((o) => tagFor(o.c, cid)!.slot === slot);
+        continue;
+      }
+      out.splice(++after, 0, s);
+      slots.add(slot);
+    }
+  }
+  return out;
+}
+
+/**
  * Put a library component's master back on the canvas, next to `instance`: rebuilt from the
- * instance's own children at the master's geometry (its base) without the instance's overrides
- * and property values. Returns the new master group id.
+ * instance's own children (hidden slots included, slots it lacks taken from other instances) at
+ * the master's geometry (its base), without the instance's overrides and property values.
+ * Returns the new master group id.
  */
 export function materialize(draft: Draft, instance: unknown): string {
   const inst = resolveInstance(draft, instance);
@@ -314,22 +359,21 @@ export function materialize(draft: Draft, instance: unknown): string {
   mustHaveNoMaster(draft, cid);
   rekeyNested(draft, cid);
   const fonts = masterFontSizes(draft, cid);
-  const children = instanceChildren(draft, cid, inst.groupId);
-  const canon = canonicalInner(children, cid);
-  const live = children.filter((c) => !c.isDeleted);
-  const t = instanceTransform(live, cid);
+  const sources = masterSources(draft, cid, inst.groupId);
+  const children = sources.map((s) => s.c);
+  const live = instanceChildren(draft, cid, inst.groupId).filter((c) => !c.isDeleted);
   const box = unionBounds(live)!;
   const place = translation({ x: box.maxX + GAP, y: box.minY });
-  const scale = Math.min(t.sx, t.sy) || 1;
 
   const group = newId();
   const innerMap = new Map<string, string>();
   const idMap = new Map(children.map((c) => [c.id, newId()]));
   const added: string[] = [];
-  for (const c of children) {
+  for (const { c, t, canon } of sources) {
     const tag = tagFor(c, cid)!;
     const base = tag.base;
     if (!base) continue;
+    const scale = Math.min(t.sx, t.sy) || 1;
     const r = c as unknown as Record<string, unknown>;
     const unscaled = isPointy(c)
       ? ({

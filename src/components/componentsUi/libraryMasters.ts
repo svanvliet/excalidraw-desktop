@@ -72,7 +72,8 @@ export async function adoptLibraryInstance(api: Api, instanceGroupId: string): P
   const master = els.find((e) => e.groupIds.includes(masterGroupId) && tagOf(e));
   const tag = tagOf(master);
   if (!tag) return false;
-  const ok = await putMyComponent(masterToEntry(els, api.getFiles(), tag.componentId));
+  const all = api.getSceneElementsIncludingDeleted() as readonly El[];
+  const ok = await putMyComponent(masterToEntry(all, api.getFiles(), tag.componentId));
   api.setToast({
     message: ok
       ? `Added "${tag.name ?? "Component"}" to My components`

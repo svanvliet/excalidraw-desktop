@@ -2,6 +2,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { ReactNode } from "react";
 import {
   createComponentFromSelection,
+  demoteLegacyMasters,
   detachComponentInstance,
   resetInstanceOverrides,
 } from "../../extensions/components/host";
@@ -71,7 +72,8 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
   }
 
   if (view.kind === "master") {
-    // Masters only exist in the master editor (FR-66), or in drawings from older builds.
+    // Masters only exist in the master editor (FR-66), or in drawings from older builds that
+    // reached the canvas without load-time demotion (Excalidraw's Open, paste, library items).
     const n = view.instances;
     const inEditor = isMasterEditorApi(api);
     const saved = !!linkedEntryId(
@@ -90,6 +92,18 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
           </div>
         ) : (
           <div className="component-props__actions">
+            <Action
+              testId="component-edit-master"
+              title="Edits the component in a temporary canvas; Done updates every instance"
+              onClick={() => {
+                // A master an older build left here (FR-64) becomes an instance in place (same
+                // group), as opening the drawing would have done; then it's edited like any other.
+                demoteLegacyMasters(api);
+                openMasterEditor(api, view.groupId);
+              }}
+            >
+              Edit master…
+            </Action>
             <Action
               testId="component-save"
               disabled={!canSave}

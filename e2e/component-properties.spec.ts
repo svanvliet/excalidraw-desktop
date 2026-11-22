@@ -293,3 +293,75 @@ test("Alt/Option-drag of an instance with the mouse places another instance", as
     )
     .toEqual(["#e03131", "#e03131"]);
 });
+
+test("a slot a choice hides in every instance survives Edit master… Done (FR-69)", async ({
+  page,
+}) => {
+  await open(page);
+  await page.evaluate(() => {
+    const els = window.__e2e!.convertToExcalidrawElements(
+      [
+        { type: "rectangle", id: "M", x: 120, y: 120, width: 160, height: 80 },
+        { type: "ellipse", id: "E", x: 300, y: 140, width: 40, height: 40 },
+      ] as never,
+      { regenerateIds: false },
+    );
+    window.__canvas!.updateScene({ elements: els, captureUpdate: "IMMEDIATELY" as never });
+  });
+  const created = await tool<{ componentId: string; groupId: string }>(page, "create_component", {
+    ids: ["M", "E"],
+    name: "Avatar card",
+  });
+  const cid = created.componentId;
+  await tool(page, "define_property", {
+    component: cid,
+    property: {
+      name: "Avatar",
+      type: "choice",
+      options: ["photo", "initials"],
+      default: "photo",
+      bindings: [{ elementId: "E", key: "visible", map: { photo: false, initials: true } }],
+    },
+  });
+  const other = await tool<{ groupId: string; ids: string[] }>(page, "insert_instance", {
+    component: cid,
+    x: 120,
+    y: 320,
+  });
+  const ellipses = async () => (await tagged(page)).filter((e) => e.type === "ellipse");
+  await expect.poll(async () => (await ellipses()).length).toBe(0);
+
+  const first = (await tagged(page)).filter((e) => e.role && !other.ids.includes(e.id));
+  await select(
+    page,
+    first.map((e) => e.id),
+  );
+  await openStripRow(page, "component-props");
+  await tid(page, "component-edit-master").click();
+  await expect(tid(page, "master-edit-header")).toBeVisible();
+  await page.waitForFunction(() => window.__masterEditor);
+  // The overlay's master has the slot no instance shows; recolor the card and apply.
+  expect(
+    await page.evaluate((ns) => {
+      const api = window.__masterEditor!;
+      const master = api.getSceneElements().filter((e) => e.customData?.[ns]);
+      api.updateScene({
+        elements: api
+          .getSceneElementsIncludingDeleted()
+          .map((e) =>
+            master.includes(e) && e.type === "rectangle"
+              ? { ...e, backgroundColor: "#a5d8ff", version: e.version + 1 }
+              : e,
+          ),
+        captureUpdate: "IMMEDIATELY" as never,
+      });
+      return master.map((e) => e.type).sort();
+    }, NS),
+  ).toEqual(["ellipse", "rectangle"]);
+  await tid(page, "master-edit-done").click();
+  await expect(tid(page, "master-edit-header")).toHaveCount(0);
+
+  await tool(page, "set_properties", { instance: other.groupId, values: { Avatar: "initials" } });
+  await expect.poll(async () => (await ellipses()).length).toBe(1);
+  expect((await ellipses())[0].groupIds).toContain(other.groupId);
+});

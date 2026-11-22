@@ -231,6 +231,21 @@ master and its default.
   value (text field, colour, checkbox, select) with a reset button, then the values of nested
   components that declare properties.
 
+### Hidden slots (FR-69, D-DX23)
+
+A slot hidden by a property (e.g. a `visible` binding on a choice) stays in the scene as a
+tagged, soft-deleted element. Saving keeps it (`persistedElements` in `persist.ts` writes
+tagged deleted elements alongside live ones), and every master rebuild (`materialize`) unions
+the slots of all instances, deleted ones included, so a slot hidden in the acting instance, or in
+every instance, is never dropped. Callers that snapshot a master (`masterSnapshot`,
+`masterToEntry`, the Edit master… overlay, Save to My components) pass
+`getSceneElementsIncludingDeleted()`. A slot that a master edit really removes is untagged in
+each instance so the union cannot bring it back. Caveat: PNG export embeds only live elements.
+
+Load-time demotion only covers tab `initialData`; a legacy on-canvas master that arrives
+another way (Excalidraw's Open, file drop, paste, a library item) shows **Edit master…** in its
+Component row, which runs `demoteLegacyMasters` and then opens the overlay.
+
 ## 4c. Nested components (FR-57)
 
 A master can hold instances of other components: select whole instances (with or without other

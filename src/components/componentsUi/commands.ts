@@ -60,7 +60,8 @@ export function goToComponent(api: Api, componentId: string) {
 export async function saveToMyComponents(api: Api, componentId: string): Promise<boolean> {
   try {
     const entry = masterToEntry(
-      api.getSceneElements() as readonly El[],
+      // Including slots hidden by a property, so the entry keeps them (FR-69).
+      api.getSceneElementsIncludingDeleted() as readonly El[],
       api.getFiles(),
       componentId,
     );
