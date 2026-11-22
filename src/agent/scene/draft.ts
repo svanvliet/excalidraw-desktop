@@ -142,6 +142,18 @@ export class Draft {
     this.changed.add(el.id);
   }
 
+  /**
+   * Forget an element this draft added (it never reaches the canvas, not even as a tombstone).
+   * Elements that were on the canvas before can only be soft-deleted.
+   */
+  discard(id: string): void {
+    if (this.original.has(id)) throw new ToolError(`Element "${id}" can't be discarded`);
+    if (!this.map.delete(id)) return;
+    this.order = this.order.filter((x) => x !== id);
+    this.changed.delete(id);
+    this.reroute.delete(id);
+  }
+
   /** Move ids (keeping their relative order) to the front (top) or back of the z-order. */
   reorder(ids: ReadonlySet<string>, where: "front" | "back"): void {
     const moved = this.order.filter((id) => ids.has(id));

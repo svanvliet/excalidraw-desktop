@@ -1,14 +1,15 @@
 # Components v1
 
-Reusable components in the style of Sketch and Figma. A **master** lives on the canvas, and
+Reusable components in the style of Sketch and Figma. A **master** defines the component, and
 **instances** are live copies of it. When you edit the master, every instance updates in the
 same undo step. Each instance keeps its own position, scale and rotation, plus any per-slot
-**overrides**.
+**overrides**. The master lives off-canvas (FR-64, §4a): creating a component turns the
+selection into its first instance, and the master only appears while it is being edited.
 
 Status: engine, wiring, agent tools and tests are done (FR-54, D-DX1…D-DX3, D-DX9), with the
 Components UI (FR-55, §7a), properties (FR-56, §4b) and nested components (FR-57, §4c).
 **Alt/Option + Cmd/Ctrl + K** creates a component from the selection, and **Cmd/Ctrl + D**
-(or copy/paste, or Alt-drag) on a master places an instance.
+(or copy/paste, or Alt-drag) on an instance places another one.
 
 Code: `src/extensions/components/`, built on the reactor in `src/extensions/reactor/`. See
 `docs/reactor-spike.md` for the reactor itself.
@@ -130,7 +131,13 @@ masters exist, the non-promoted one with the smallest group id wins.
 We chose promote over detach-all because a deleted master shouldn't silently break every
 instance, and undo restores the exact previous state.
 
-## 4a. Library-backed masters
+## 4a. Library-backed (off-canvas) masters
+
+This is the default model (FR-64, D-DX18). `createComponentFromSelection` creates the component
+and immediately demotes its master (`demoteMaster`), so the selection becomes the first
+instance. Drawings saved with on-canvas masters are demoted when they open (`demoteMastersIn`
+in the editor's `initialData`, `demoteLegacyMasters(api)` for a loaded editor). A demoted
+instance keeps its slots, so nested copies and property bindings still resolve.
 
 A master can live in the library instead of on the canvas. Its tag then carries
 `source: "library"` and `libraryId`. When such a component has no live master, its instances
@@ -148,6 +155,22 @@ Helpers in `host.ts` each run as one undo step through `runComponentCommand`. Th
 | `dematerializeMaster(api, masterGroupId)`     | Tags every element of the component (`source:"library"`, `libraryId` = existing or `componentId`), syncs so instances record `mv`, then removes the master (and unbinds arrows from it). Returns a `ComponentDefinition` `{ componentId, libraryId, name?, elements, files }` to save. |
 | `materializeMaster(api, instanceGroupId)`     | Rebuilds the master next to that instance (40 px to its right) from the instance's own elements, with the instance transform undone and its overrides replaced by `mv`. Fails if a master is already on the canvas. Returns the new master group id.                                   |
 | `adoptInstanceAsMaster(api, instanceGroupId)` | Turns the instance into the master in place, restoring master values from `mv` (for a machine whose library lacks the component). Returns its group id.                                                                                                                                |
+
+Masterless edits go through `library.ts`:
+
+- `withMaster(draft, cid, fn, instance?)` rebuilds the master in the draft, runs `fn`, syncs and
+  takes the master away again, so it never commits. Commands that need a master (insert,
+  properties, nesting) are wrapped in it; `materialize` gives master elements new ids each time,
+  so address them by **slot**.
+- `applyMasterEdit(draft, cid, edited)` replaces the master's elements with `edited` (as
+  returned by `masterSnapshot`, then edited) and updates every instance. The host wrapper
+  `applyComponentMasterEdit(api, cid, edited, files?)` adds the files and commits it all as one
+  undo step and one collab update. This is the master-edit overlay's Done (FR-66).
+- `masterSnapshot(elements, cid, instance?)` returns the master rebuilt from an instance (fresh
+  ids each call), for thumbnails, save to My components and the overlay.
+- A library instance records the master's look (`ms`: fill style, stroke width and style,
+  sloppiness, edges, font, alignment, arrowheads). These keys can't be overridden, so a direct
+  edit to them reverts to `ms`, and `materialize` rebuilds the master with them.
 
 The definition's `elements` are clones of the master after tagging, so instances inserted
 from it already carry `source: "library"`. `files` lists the image `fileId`s they use. While a
@@ -240,7 +263,8 @@ Use `host.ts`, re-exported from `index.ts`:
 | `installComponents(api)` / `uninstallComponents`   | Start or stop live sync for an editor. The editors call these on mount. |
 | `reseedComponents(api)`                            | Re-index after a file is loaded into an existing editor                 |
 | `remoteApi(api)`                                   | The API to hand to `CollabSession`                                      |
-| `createComponentFromSelection(api, name?)`         | Create from the selection and select the new master                     |
+| `createComponentFromSelection(api, name?)`         | Create from the selection; it becomes the first instance and selected   |
+| `applyComponentMasterEdit(api, id, els, files?)`   | Replace the off-canvas master and update instances (one undo step, §4a) |
 | `insertComponentInstance(api, componentId, opts?)` | Place an instance (`x`, `y`, `scale`, `angle` in radians)               |
 | `setInstanceOverrides` / `resetInstanceOverrides`  | Overrides                                                               |
 | `detachComponentInstance(api, instance)`           | Detach                                                                  |
@@ -263,7 +287,7 @@ actions match, and its hyperlink action matches every Ctrl/Cmd+K, with or withou
 Code lives in `src/components/componentsUi/`, and the personal store in `src/lib/componentLibraryStore.ts`.
 
 - **Components tab** (`ComponentsPanel.tsx`) is a `SidebarTabs` tab next to Layers. It has three lists, each with `exportToSvg` thumbnails:
-  - **In this drawing**: the masters on this canvas.
+  - **In this drawing**: this drawing's components (thumbnails from the off-canvas master).
   - **My components**: the personal cross-document library.
   - **From your library**: Excalidraw library items, each with a **Make component** action.
   - Click a row to place an instance at the viewport centre, or drag it onto the canvas. Either way it's one undo step.
@@ -276,23 +300,24 @@ Code lives in `src/components/componentsUi/`, and the personal store in `src/lib
   - Each entry is a snapshot of the master's elements plus the `BinaryFiles` they reference, so image components work. Excalidraw's own library rejects images. On insert the files go through `api.addFiles` first.
   - `.excalidrawlib` can't carry files, so export drops images, with a warning.
 - **Inserting** a My components entry:
-  - If the drawing already has the master, it places an instance.
+  - If the drawing already has the component, it places an instance of its own design.
   - Otherwise it places only an instance tagged `source:"library"` (§4a): the master stays in My components.
   - When the library-master engine is missing, the master is placed beside the instance instead.
 - **Panel section** (`ComponentSection.tsx`, in `PANEL_SECTIONS`) appears when the selection is a component.
   - Plain shapes: **Create component**.
-  - Master: **Save to / Update in My components**, and **Move to My components**, which saves it and dematerializes the master.
+  - Master (legacy, while editing): **Save to / Update in My components**, and **Move to My components**, which saves it and dematerializes the master.
   - Instance: **Go to master**, **Reset overrides**, **Detach**, and a per-slot override list with a reset for each slot.
-  - Library-backed instance: **Edit master…**, or **Add to my components** if this machine's library lacks the `libraryId` (`adoptInstanceAsMaster` plus a save).
+  - Off-canvas master: **Edit master…** and **Save to / Update in My components** (saved from `masterSnapshot`; no master is placed).
 - **Edit master…** materializes the master and shows a banner (`MasterEditBanner.tsx`) with **Done** and **Cancel**.
-  - **Done** saves the master, with its images, to My components, then dematerializes it.
+  - **Done** dematerializes it; when the component is in My components, it saves the master, with its images, there first.
   - **Cancel** removes the master and restores the instances as one undo step.
 - **Create** is available from Alt/Option+Cmd/Ctrl+K, the panel, and **Edit → Create Component** in the native menu (`excalidraw:edit:createComponent`, no accelerator because the shortcut is handled in the webview).
 
 ## 8. Agent tools
 
-`create_component`, `insert_instance` (`into` nests it in another master), `list_components`,
-`set_overrides`, `reset_overrides`, `detach_instance`, `define_property`, `remove_property` and
+`create_component` (the selection becomes the first instance), `insert_instance` (`into` nests
+it in another component), `list_components`, `get_component_master` and `edit_component_master`
+(read and edit the off-canvas master by slot, positions relative to its top-left), `set_overrides`, `reset_overrides`, `detach_instance`, `define_property`, `remove_property` and
 `set_properties` (`nested` targets a nested instance) are described in `docs/ai-integration.md`, along with
 `list_my_components` and `insert_my_component` for My components (§7a). All of the edit tools
 work inside `apply_ops`.

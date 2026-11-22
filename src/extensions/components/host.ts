@@ -12,9 +12,10 @@
  * turn tracker and the collab engine compare element versions (which `mutateElement` bumps), not
  * object identity; fontRefresh caches by a WeakMap it only reads. None hold stale references.
  */
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { CaptureUpdateAction } from "@excalidraw/excalidraw";
+import type { BinaryFileData, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useEffect, useState } from "react";
-import { Draft, ToolError } from "../../agent/scene/draft";
+import { Draft, ToolError, type El } from "../../agent/scene/draft";
 import { commitUndoable } from "../../agent/scene/turns";
 import { log } from "../../lib/logger";
 import { createReactor, type Reactor } from "../reactor/reactor";
@@ -25,6 +26,7 @@ import {
   insertInstance,
   removeProperty,
   resetOverrides,
+  resolveInstance,
   setOverrides,
   setProperties,
   type InsertOptions,
@@ -39,7 +41,16 @@ import {
 } from "./model";
 import { createAnchorRule, type AnchorRule } from "../anchors/rule";
 import { createStyleRule } from "../styles/rule";
-import { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
+import {
+  adoptAsMaster,
+  applyMasterEdit,
+  demoteMaster,
+  dematerialize,
+  liveMasterGroup,
+  materialize,
+  withMaster,
+  type ComponentDefinition,
+} from "./library";
 import { createComponentRule } from "./rule";
 import { createContainerRule, createHoldTracker } from "../../layout/containers/rule";
 
@@ -151,13 +162,19 @@ export function runComponentCommand<T>(api: Api, action: (draft: Draft) => T): T
   }
 }
 
-/** Make the selection a component and select its master. */
+/**
+ * Make the selection a component and select it: the selection becomes the component's first
+ * instance, and the master lives off-canvas (FR-64, D-DX18).
+ */
 export function createComponentFromSelection(api: Api, name?: string) {
-  const res = runComponentCommand(api, (d) => createComponent(d, selectedIds(api), name));
+  const res = runComponentCommand(api, (d) => {
+    const c = createComponent(d, selectedIds(api), name);
+    return { ...c, groupId: demoteMaster(d, c.masterGroupId) };
+  });
   if (res) {
     api.updateScene({
       appState: {
-        selectedGroupIds: { [res.masterGroupId]: true },
+        selectedGroupIds: { [res.groupId]: true },
         selectedElementIds: Object.fromEntries(res.ids.map((id) => [id, true])),
       } as never,
     });
@@ -166,15 +183,98 @@ export function createComponentFromSelection(api: Api, name?: string) {
   return res;
 }
 
+/** Run `fn` with the instance's component master present (rebuilt for the draft when needed). */
+const onInstance =
+  <T>(instance: string, fn: (d: Draft) => T) =>
+  (d: Draft) =>
+    withMaster(d, resolveInstance(d, instance).componentId, () => fn(d), instance);
+const onComponent =
+  <T>(componentId: string, fn: (d: Draft) => T) =>
+  (d: Draft) =>
+    withMaster(d, componentId, () => fn(d));
+
+/**
+ * Replace a component's master with `edited` (the master-edit canvas's elements) and update
+ * every instance, as one undo step (FR-64). `files` are the images the edited master uses. When
+ * the master lives off-canvas it stays off-canvas. No change, no undo step.
+ */
+export function applyComponentMasterEdit(
+  api: Api,
+  componentId: string,
+  edited: readonly El[],
+  files: readonly BinaryFileData[] = [],
+): boolean {
+  if (api.getAppState().viewModeEnabled) return false;
+  if (files.length) api.addFiles([...files]);
+  return runComponentCommand(api, (d) => (applyMasterEdit(d, componentId, edited), true)) ?? false;
+}
+
+/** Demote every live master in `draft` (see `demoteLegacyMasters`). Returns how many. */
+function demoteAll(draft: Draft): number {
+  let n = 0;
+  for (const c of listComponents(draft.toArray())) {
+    const group = liveMasterGroup(draft, c.componentId);
+    if (!group) continue;
+    demoteMaster(draft, group);
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Turn masters left on the canvas by older builds into instances (FR-64): the master moves
+ * off-canvas and its elements stay where they are. For a drawing about to be loaded; returns
+ * the same array when there's nothing to migrate (or migrating fails).
+ */
+export function demoteMastersIn<T extends readonly El[]>(elements: T): T {
+  try {
+    const draft = new Draft(elements);
+    const n = demoteAll(draft);
+    if (!n) return elements;
+    log.info(`components: moved ${n} on-canvas master(s) off-canvas`);
+    return draft.toArray() as unknown as T;
+  } catch (err) {
+    log.error("components: demoting legacy masters failed", err);
+    return elements;
+  }
+}
+
+/** `demoteMastersIn` on a live editor, not as an undo step. Returns how many. */
+export function demoteLegacyMasters(api: Api): number {
+  if (api.getAppState().viewModeEnabled) return 0;
+  engines.get(api)?.flush();
+  const draft = new Draft(api.getSceneElementsIncludingDeleted());
+  let n = 0;
+  try {
+    n = demoteAll(draft);
+  } catch (err) {
+    log.error("components: demoting legacy masters failed", err);
+    return 0;
+  }
+  if (draft.changed.size)
+    api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
+  return n;
+}
+
 export const insertComponentInstance = (api: Api, componentId: string, opts?: InsertOptions) =>
-  runComponentCommand(api, (d) => insertInstance(d, componentId, opts));
+  runComponentCommand(
+    api,
+    onComponent(componentId, (d) => insertInstance(d, componentId, opts)),
+  );
 export const setInstanceOverrides = (api: Api, instance: string, entries: OverrideEntry[]) =>
-  runComponentCommand(api, (d) => setOverrides(d, instance, entries));
+  runComponentCommand(
+    api,
+    onInstance(instance, (d) => setOverrides(d, instance, entries)),
+  );
 export const resetInstanceOverrides = (
   api: Api,
   instance: string,
   opts?: Parameters<typeof resetOverrides>[2],
-) => runComponentCommand(api, (d) => resetOverrides(d, instance, opts));
+) =>
+  runComponentCommand(
+    api,
+    onInstance(instance, (d) => resetOverrides(d, instance, opts)),
+  );
 export const detachComponentInstance = (api: Api, instance: string) =>
   runComponentCommand(api, (d) => detachInstance(d, instance));
 
@@ -190,15 +290,25 @@ export const adoptInstanceAsMaster = (api: Api, instanceGroupId: string): string
   runComponentCommand(api, (d) => adoptAsMaster(d, instanceGroupId));
 
 export const defineComponentProperty = (api: Api, componentId: string, input: PropertyInput) =>
-  runComponentCommand(api, (d) => defineProperty(d, componentId, input));
+  runComponentCommand(
+    api,
+    onComponent(componentId, (d) => defineProperty(d, componentId, input)),
+  );
 export const removeComponentProperty = (api: Api, componentId: string, prop: string) =>
-  runComponentCommand(api, (d) => removeProperty(d, componentId, prop));
+  runComponentCommand(
+    api,
+    onComponent(componentId, (d) => removeProperty(d, componentId, prop)),
+  );
 export const setInstanceProperties = (
   api: Api,
   instance: string,
   values: Record<string, unknown>,
   opts?: { nested?: string },
-) => runComponentCommand(api, (d) => setProperties(d, instance, values, opts));
+) =>
+  runComponentCommand(
+    api,
+    onInstance(instance, (d) => setProperties(d, instance, values, opts)),
+  );
 
 export function sceneComponents(api: Api): ComponentInfo[] {
   return listComponents(api.getSceneElementsIncludingDeleted());

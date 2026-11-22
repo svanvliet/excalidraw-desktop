@@ -12,7 +12,11 @@ import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/tran
 import type { BinaryFileData, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, type El } from "../../agent/scene/draft";
 import { createComponent, insertInstance, setOverrides } from "../../extensions/components/actions";
-import { installComponents, uninstallComponents } from "../../extensions/components/host";
+import {
+  installComponents,
+  runComponentCommand,
+  uninstallComponents,
+} from "../../extensions/components/host";
 import { groupOf, listComponents, tagOf } from "../../extensions/components/model";
 import {
   __resetMyComponentsForTest,
@@ -251,15 +255,33 @@ describe("library-backed masters", () => {
     expect(live(api).find((e) => e.id === rect.id)!.x).toBe(rect.x + 50);
   });
 
-  it("offers Add to my components when this machine doesn't have the definition", async () => {
+  it("offers Save when this machine doesn't have the definition, with no master placed", async () => {
     const { api, entry, inst } = await placed();
     await act(async () => void (await removeMyComponent(entry.id)));
     panel(api, inst.groupId);
-    expect(screen.queryByTestId("component-edit-master")).toBeNull();
+    expect(screen.getByTestId("component-edit-master")).toBeTruthy();
+    expect(screen.getByTestId("component-save").textContent).toBe("Save to My components");
     await act(async () => {
-      fireEvent.click(screen.getByTestId("component-adopt"));
+      fireEvent.click(screen.getByTestId("component-save"));
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(getMyComponents().map((c) => c.id)).toEqual([entry.id]);
+    expect(listComponents(live(api))[0].masterGroupId).toBeNull();
+  });
+
+  it("Edit master… → Done on a drawing-only component keeps it out of My components", async () => {
+    const { api, entry, inst } = await placed();
+    await act(async () => void (await removeMyComponent(entry.id)));
+    panel(api, inst.groupId);
+    act(() => void fireEvent.click(screen.getByTestId("component-edit-master")));
+    const edit = masterEditOf(api)!;
+    const text = children(api, edit.masterGroupId).find((e) => e.type === "text")!;
+    runComponentCommand(api, () => {}); // a frame: the engine settles before the user edits
+    userEdit(api, text.id, { text: "Grace", originalText: "Grace" });
+    await act(async () => void (await finishMasterEdit(api)));
+    expect(masterEditOf(api)).toBeNull();
+    expect(listComponents(live(api))[0].masterGroupId).toBeNull();
+    expect(textOf(children(api, inst.groupId))).toBe("Grace");
+    expect(getMyComponents()).toHaveLength(0);
   });
 });

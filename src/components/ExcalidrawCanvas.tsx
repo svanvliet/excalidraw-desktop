@@ -37,6 +37,7 @@ import {
   componentsOnDuplicate,
   installComponents,
   handleComponentShortcut,
+  demoteMastersIn,
   reseedComponents,
   uninstallComponents,
 } from "../extensions/components";
@@ -168,6 +169,14 @@ export function ExcalidrawCanvas({
   // versions, attached files, or the background color. The first callback
   // after a (re)load sets the baseline.
   const contentKeyRef = useRef<string | null>(null);
+  // Older drawings keep component masters on the canvas; open them masterless (FR-64).
+  const editorData = useMemo(
+    () =>
+      initialData?.elements
+        ? { ...initialData, elements: demoteMastersIn(initialData.elements as never) }
+        : (initialData ?? undefined),
+    [initialData],
+  );
   useEffect(() => {
     contentKeyRef.current = null;
   }, [initialData]);
@@ -307,7 +316,7 @@ export function ExcalidrawCanvas({
       onDropCapture={(e) => handleComponentDrop(apiRef.current, e)}
     >
       <Excalidraw
-        initialData={initialData ?? undefined}
+        initialData={editorData}
         excalidrawAPI={handleApi}
         onChange={handleChange}
         onLibraryChange={handleLibraryChange}

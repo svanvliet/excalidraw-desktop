@@ -22,7 +22,9 @@ import {
   setOverrides,
   setProperties,
 } from "./actions";
+import { demoteMaster, masterSnapshot, withMaster } from "./library";
 import {
+  applyComponentMasterEdit,
   dematerializeMaster,
   installComponents,
   materializeMaster,
@@ -275,6 +277,51 @@ it("library masters: dematerialize/materialize on A reach B without promotion or
     backgroundColor: "#a5d8ff",
   });
   expect(sceneUpdates(b)).toBe(0);
+  expect(stamps(b)).toEqual(stamps(a));
+});
+
+it("a masterless master edit (Done) sends one update and B applies it with no echo", async () => {
+  const relay = new MemoryRelay();
+  const a = await peer(relay, true, fixture());
+  let cid = "";
+  act(() => {
+    runComponentCommand(a.api, (d) => {
+      const c = createComponent(d, ["R"]);
+      cid = c.componentId;
+      demoteMaster(d, c.masterGroupId);
+      withMaster(d, cid, () => insertInstance(d, cid, { x: 400, y: 0 }));
+    });
+  });
+  await settle(relay);
+  const b = await peer(relay, false);
+  await settle(relay);
+  const rects = (p: Peer) =>
+    p.api.getSceneElements().filter((e) => e.type === "rectangle" && tagOf(e));
+  expect(rects(b)).toHaveLength(2);
+
+  a.sent.length = 0;
+  b.sent.length = 0;
+  const snap = masterSnapshot(a.api.getSceneElements() as readonly El[], cid);
+  const edited = snap.elements.map((e) =>
+    e.type === "rectangle" ? { ...e, backgroundColor: "#ffc9c9", height: 120 } : e,
+  );
+  let ok = false;
+  act(() => {
+    ok = applyComponentMasterEdit(a.api, cid, edited);
+  });
+  expect(ok).toBe(true);
+  await settle(relay, 150);
+  expect(sceneUpdates(a)).toBe(1);
+  expect(sceneUpdates(b)).toBe(0);
+  for (const p of [a, b]) {
+    expect(rects(p)).toHaveLength(2);
+    for (const r of rects(p)) {
+      expect(r).toMatchObject({ backgroundColor: "#ffc9c9", height: 120 });
+      expect(tagOf(r)).toMatchObject({ role: "instance", source: "library" });
+    }
+    expect(p.api.getSceneElements().some((e) => tagOf(e)?.role === "master")).toBe(false);
+  }
+  expect(look(b)).toEqual(look(a));
   expect(stamps(b)).toEqual(stamps(a));
 });
 

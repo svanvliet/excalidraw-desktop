@@ -152,6 +152,7 @@ Design contract: `docs/ai-integration.md`. Manual validation: `docs/ai-testing.m
   - The agent gets `list_my_components` and `insert_my_component`.
 - **FR-56** **Component properties**: a master declares typed properties (text, colour, boolean visibility, choice) bound to its slots. Each instance sets its own values, which act as overrides; unset values follow the master's defaults. A **Properties** panel section declares properties on a master and edits values on an instance (with reset). The agent gets `define_property`, `remove_property` and `set_properties`.
 - **FR-57** **Nested components**: a master can contain instances of other components; the outer component's instances hold copies that still follow the inner master. Cycles are rejected. Overrides and property values work at both levels, and duplicate/paste, orphan promotion, one-step undo and collab (no echo) behave as for single-level components. `insert_instance` takes `into` to nest.
+- **FR-64** **Masterless components**: making a component MUST turn the selection into the component's **first instance**; no master is left on the canvas. The master lives off-canvas (rebuilt from an instance) and only appears while it is being edited; a master edit updates every instance as **one undo step** and one collab update. Drawings with on-canvas masters from earlier versions open with them demoted to instances. Agent tools work without a master on the canvas (`get_component_master`, `edit_component_master`).
 
 ### 4.15 Named styles (DX wave 2)
 

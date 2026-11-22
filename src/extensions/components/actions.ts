@@ -7,6 +7,7 @@ import { Draft, newId, ToolError, type El } from "../../agent/scene/draft";
 import { effectivePatch } from "../reactor/reactor";
 import { baseOf, isBoundText, originOf, placeGeometry, type Transform } from "./geometry";
 import {
+  canonicalInner,
   groupOf,
   innerTags,
   isReadable,
@@ -529,8 +530,12 @@ export function defineProperty(draft: Draft, componentId: unknown, input: Proper
   if (!Array.isArray(input.bindings) || !input.bindings.length)
     throw new ToolError("property needs at least one binding (elementId/slot + key)");
   for (const b of input.bindings) {
+    // An instance child's id names its slot (the master may only exist while this runs).
+    const viaInstance = b.elementId ? tagFor(draft.get(b.elementId), cid) : null;
+    const bySlot =
+      viaInstance?.role === "instance" ? viaInstance.slot : b.elementId ? null : b.slot;
     let el = els.find((e) =>
-      b.elementId ? e.id === b.elementId : tagFor(e, cid)!.slot === b.slot,
+      bySlot === null ? e.id === b.elementId : tagFor(e, cid)!.slot === bySlot,
     );
     if (!el) throw new ToolError(`No master element ${b.elementId ?? b.slot} in this component`);
     const key = (b.key ?? DEFAULT_KEY[type]) as OverrideKey;
@@ -639,11 +644,15 @@ export function instanceProperties(draft: Draft, instance: unknown): PropertyTar
   ];
   const master = componentsOf(draft).find((c) => c.componentId === cid);
   const seen = new Set<string>();
-  for (const id of master?.masterIds ?? []) {
-    const m = draft.get(id)!;
+  // Without a master on the canvas, nested instances are keyed by their content-addressed id.
+  const masterIds = master?.masterIds ?? [];
+  const canon = masterIds.length ? null : canonicalInner(inst.children, cid);
+  const sources = masterIds.length ? masterIds.map((id) => draft.get(id)!) : inst.children;
+  for (const m of sources) {
     const mt = tagFor(m, cid)!;
     const d = innerTags(m, mt).pop();
-    const g = d && groupOf(m, d);
+    const h = d && groupOf(m, d);
+    const g = h && canon ? canon.get(h) : h;
     if (!d || !g || seen.has(g) || !d.props?.length) continue;
     seen.add(g);
     out.push({

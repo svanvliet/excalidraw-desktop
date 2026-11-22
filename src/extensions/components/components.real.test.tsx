@@ -27,12 +27,20 @@ import {
 import { componentsOnDuplicate } from "./duplicate";
 import {
   adoptInstanceAsMaster,
+  applyComponentMasterEdit,
+  createComponentFromSelection,
+  defineComponentProperty,
   dematerializeMaster,
+  demoteLegacyMasters,
+  demoteMastersIn,
+  insertComponentInstance,
   installComponents,
   materializeMaster,
   runComponentCommand,
+  setInstanceProperties,
   uninstallComponents,
 } from "./host";
+import { masterSnapshot } from "./library";
 import { groupOf, listComponents, tagFor, tagOf, tagsOf, withTag } from "./model";
 import type { Draft } from "../../agent/scene/draft";
 
@@ -1024,5 +1032,335 @@ describe("rotated instances", () => {
     expect(near(r.angle, Math.PI / 6)).toBe(true);
     expect(Math.abs(label.x + label.width / 2 - (r.x + r.width / 2))).toBeLessThan(0.5);
     expect(Math.abs(label.y + label.height / 2 - (r.y + r.height / 2))).toBeLessThan(0.5);
+  });
+});
+
+describe("masterless components (FR-64)", () => {
+  const masters = (api: Api) =>
+    all(api).filter((e) => !e.isDeleted && tagsOf(e).some((t) => t.role === "master"));
+  const call = <T,>(fn: () => T): T => {
+    let out: T | undefined;
+    act(() => {
+      out = fn();
+    });
+    return out as T;
+  };
+  async function masterless(elements: El[] = base()) {
+    const api = await mount(elements);
+    const clock = manualSchedule();
+    const reactor = installComponents(api, { schedule: clock.schedule });
+    act(() => api.updateScene({ appState: { selectedElementIds: { R: true, E: true } } as never }));
+    const created = call(() => createComponentFromSelection(api, "Card"))!;
+    clock.frame();
+    const cid = created.componentId;
+    const text = labelOf(api, "R").id;
+    const inst = call(() => insertComponentInstance(api, cid, { x: 0, y: 300 }))!;
+    clock.frame();
+    return { api, clock, reactor, created, cid, text, inst };
+  }
+  /** The master snapshot with `patch(el)` applied to each element. */
+  const editedMaster = (api: Api, cid: string, patch: (e: El) => Partial<El> | null) =>
+    masterSnapshot(all(api), cid).elements.map((e) => ({ ...e, ...(patch(e) ?? {}) }) as El);
+
+  it("create makes the selection the first instance, with no master; one undo step", async () => {
+    const { api, clock, created, cid, inst, text } = await masterless();
+    expect(masters(api)).toEqual([]);
+    expect(created.groupId).toBe(created.masterGroupId);
+    for (const id of ["R", "E", text])
+      expect(tagFor(get(api, id), cid)).toMatchObject({ role: "instance", source: "library" });
+    expect(get(api, "R")).toMatchObject({ x: 0, y: 0, width: 200 });
+    expect(api.getAppState().selectedGroupIds).toEqual({ [created.groupId]: true });
+    expect(listComponents(all(api))[0]).toMatchObject({ name: "Card", masterGroupId: null });
+    // Instances placed from it follow the same (off-canvas) master.
+    expect(child(api, inst.groupId, "R")).toMatchObject({ x: 0, y: 300, width: 200 });
+    // Editing the first instance makes overrides, like any instance.
+    userEdit(api, { R: { backgroundColor: "#ffc9c9" } });
+    clock.frame();
+    expect(tagFor(get(api, "R"), cid)!.overrides).toEqual({ backgroundColor: "#ffc9c9" });
+    expect(child(api, inst.groupId, "R").backgroundColor).not.toBe("#ffc9c9");
+    click("Undo");
+    click("Undo");
+    clock.frame();
+    click("Undo");
+    clock.frame();
+    expect(tagsOf(get(api, "R"))).toEqual([]);
+  });
+
+  it("applyMasterEdit updates every instance in one undo step and leaves no master", async () => {
+    const { api, clock, cid, created, inst, text } = await masterless();
+    userEdit(api, { R: { backgroundColor: "#ffc9c9" } });
+    clock.frame();
+    const before = all(api).length;
+    const edited = editedMaster(api, cid, (e) =>
+      e.type === "rectangle"
+        ? { width: 260 }
+        : e.type === "text"
+          ? ({ text: "Hi", originalText: "Hi" } as Partial<El>)
+          : null,
+    );
+    expect(call(() => applyComponentMasterEdit(api, cid, edited))).toBe(true);
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    // The temporary master never reaches the scene, not even as deleted elements.
+    expect(all(api)).toHaveLength(before);
+    for (const g of [created.groupId, inst.groupId]) {
+      expect(child(api, g, "R").width).toBe(260);
+      expect((child(api, g, text) as ExcalidrawTextElement).originalText).toBe("Hi");
+    }
+    // Overrides survive the master edit.
+    expect(get(api, "R").backgroundColor).toBe("#ffc9c9");
+    click("Undo");
+    clock.frame();
+    for (const g of [created.groupId, inst.groupId]) {
+      expect(child(api, g, "R").width).toBe(200);
+      expect((child(api, g, text) as ExcalidrawTextElement).originalText).toBe("Hello");
+    }
+    expect(get(api, "R").backgroundColor).toBe("#ffc9c9");
+    click("Redo");
+    clock.frame();
+    expect(child(api, inst.groupId, "R").width).toBe(260);
+  });
+
+  it("an unchanged master edit is not an undo step; added and removed slots apply", async () => {
+    const { api, clock, cid, inst } = await masterless();
+    const versions = all(api).map((e) => e.version);
+    call(() => applyComponentMasterEdit(api, cid, masterSnapshot(all(api), cid).elements));
+    clock.frame();
+    expect(all(api).map((e) => e.version)).toEqual(versions);
+    const snap = masterSnapshot(all(api), cid);
+    const ell = snap.elements.find((e) => e.type === "ellipse")!;
+    const extra = convertToExcalidrawElements(
+      [{ type: "diamond", id: "D", x: ell.x, y: ell.y + 100, width: 30, height: 30 }] as never,
+      { regenerateIds: false },
+    ).map((e) => ({ ...e, groupIds: [snap.masterGroupId] }) as El);
+    call(() =>
+      applyComponentMasterEdit(api, cid, [...snap.elements.filter((e) => e !== ell), ...extra]),
+    );
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    expect(child(api, inst.groupId, "E")).toBeUndefined();
+    expect(child(api, inst.groupId, "D")).toMatchObject({ type: "diamond", width: 30 });
+    expect(get(api, "E").isDeleted).toBe(true);
+  });
+
+  it("properties: define on a masterless component, set values, keep them through an edit", async () => {
+    const { api, clock, cid, inst, text } = await masterless();
+    call(() =>
+      defineComponentProperty(api, cid, {
+        id: "label",
+        name: "Label",
+        type: "text",
+        bindings: [{ elementId: child(api, inst.groupId, "R").id }],
+      }),
+    );
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    call(() => setInstanceProperties(api, inst.groupId, { Label: "Yo" }));
+    clock.frame();
+    expect((child(api, inst.groupId, text) as ExcalidrawTextElement).originalText).toBe("Yo");
+    expect((labelOf(api, "R") as ExcalidrawTextElement).originalText).toBe("Hello");
+    expect(runComponentCommand(api, (d) => instanceProperties(d, inst.groupId))![0]).toMatchObject({
+      values: { label: "Yo" },
+    });
+    const edited = editedMaster(api, cid, (e) => (e.type === "rectangle" ? { width: 300 } : null));
+    call(() => applyComponentMasterEdit(api, cid, edited));
+    clock.frame();
+    expect(child(api, inst.groupId, "R").width).toBe(300);
+    expect((child(api, inst.groupId, text) as ExcalidrawTextElement).originalText).toBe("Yo");
+    expect((labelOf(api, "R") as ExcalidrawTextElement).originalText).toBe("Hello");
+  });
+
+  it("nested: a Card edit reaches the Card copies inside masterless Panel instances", async () => {
+    const els = [
+      ...base(),
+      ...convertToExcalidrawElements(
+        [
+          { type: "rectangle", id: "F", x: -20, y: 280, width: 320, height: 140 },
+        ] as ExcalidrawElementSkeleton[],
+        { regenerateIds: false },
+      ),
+    ];
+    const { api, clock, cid, inst } = await masterless(els);
+    act(() =>
+      api.updateScene({
+        appState: {
+          selectedElementIds: Object.fromEntries([...inst.ids, "F"].map((id) => [id, true])),
+        } as never,
+      }),
+    );
+    const panel = call(() => createComponentFromSelection(api, "Panel"))!;
+    clock.frame();
+    const b = panel.componentId;
+    // A nested property value on the first Panel survives the edit (keyed by its Card copy).
+    const bInst = call(() => insertComponentInstance(api, b, { x: 600, y: 280 }))!;
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    const copyOf = (group: string) => {
+      const c = all(api).find(
+        (e) =>
+          !e.isDeleted &&
+          tagFor(e, b)?.role === "instance" &&
+          groupOf(e, tagFor(e, b)) === group &&
+          tagFor(e, cid)?.slot === "R",
+      )!;
+      return c;
+    };
+    expect(copyOf(bInst.groupId)).toMatchObject({ width: 200, x: 620 });
+    const edited = editedMaster(api, cid, (e) =>
+      e.type === "rectangle" ? { width: 240, backgroundColor: "#a5d8ff" } : null,
+    );
+    call(() => applyComponentMasterEdit(api, cid, edited));
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    for (const g of [panel.groupId, bInst.groupId])
+      expect(copyOf(g)).toMatchObject({ width: 240, backgroundColor: "#a5d8ff" });
+    expect(get(api, "R")).toMatchObject({ width: 240 });
+    click("Undo");
+    clock.frame();
+    for (const g of [panel.groupId, bInst.groupId]) expect(copyOf(g)).toMatchObject({ width: 200 });
+    // Editing the Panel keeps its Card copies following Card.
+    const snap = editedMaster(api, b, (e) =>
+      e.id === "F" || (e.type === "rectangle" && !tagFor(e, cid)) ? { height: 200 } : null,
+    );
+    call(() => applyComponentMasterEdit(api, b, snap));
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    expect(copyOf(bInst.groupId)).toMatchObject({ width: 200, x: 620 });
+  });
+
+  it("nested property values survive master edits of the outer component", async () => {
+    const els = [
+      ...base(),
+      ...convertToExcalidrawElements(
+        [
+          { type: "rectangle", id: "F", x: -20, y: 280, width: 320, height: 140 },
+        ] as ExcalidrawElementSkeleton[],
+        { regenerateIds: false },
+      ),
+    ];
+    const { api, clock, cid, inst, text } = await masterless(els);
+    call(() =>
+      defineComponentProperty(api, cid, {
+        id: "label",
+        name: "Label",
+        type: "text",
+        bindings: [{ elementId: "R" }],
+      }),
+    );
+    clock.frame();
+    act(() =>
+      api.updateScene({
+        appState: {
+          selectedElementIds: Object.fromEntries([...inst.ids, "F"].map((id) => [id, true])),
+        } as never,
+      }),
+    );
+    const panel = call(() => createComponentFromSelection(api, "Panel"))!;
+    clock.frame();
+    const b = panel.componentId;
+    const bInst = call(() => insertComponentInstance(api, b, { x: 600, y: 280 }))!;
+    clock.frame();
+    const props = runComponentCommand(api, (d) => instanceProperties(d, bInst.groupId))!;
+    const nestedKey = props[1]!.nestedKey!;
+    call(() =>
+      setInstanceProperties(api, bInst.groupId, { Label: "Nested" }, { nested: nestedKey }),
+    );
+    clock.frame();
+    const labelIn = (group: string) =>
+      all(api).find(
+        (e) => !e.isDeleted && groupOf(e, tagFor(e, b)) === group && tagFor(e, cid)?.slot === text,
+      ) as ExcalidrawTextElement;
+    expect(labelIn(bInst.groupId).originalText).toBe("Nested");
+    expect(labelIn(panel.groupId).originalText).toBe("Hello");
+    call(() =>
+      applyComponentMasterEdit(
+        api,
+        b,
+        editedMaster(api, b, (e) => (e.id === "F" || !tagFor(e, cid) ? { height: 220 } : null)),
+      ),
+    );
+    clock.frame();
+    expect(labelIn(bInst.groupId).originalText).toBe("Nested");
+    call(() =>
+      applyComponentMasterEdit(
+        api,
+        cid,
+        editedMaster(api, cid, (e) => (e.type === "rectangle" ? { width: 230 } : null)),
+      ),
+    );
+    clock.frame();
+    expect(labelIn(bInst.groupId).originalText).toBe("Nested");
+    expect(masters(api)).toEqual([]);
+  });
+
+  it("images: the edit's files are added and instances show the new image", async () => {
+    const { api, clock, cid, inst } = await masterless();
+    const snap = masterSnapshot(all(api), cid);
+    const img = {
+      ...convertToExcalidrawElements(
+        [{ type: "rectangle", id: "I", x: 0, y: 100, width: 20, height: 20 }] as never,
+        { regenerateIds: false },
+      )[0],
+      type: "image",
+      fileId: "file-1",
+      status: "saved",
+      scale: [1, 1],
+      crop: null,
+      groupIds: [snap.masterGroupId],
+    } as unknown as El;
+    const file = {
+      id: "file-1",
+      mimeType: "image/png",
+      dataURL: "data:image/png;base64,iVBORw0KGgo=",
+      created: 1,
+    } as never;
+    call(() => applyComponentMasterEdit(api, cid, [...snap.elements, img], [file]));
+    clock.frame();
+    expect(api.getFiles()["file-1"]).toBeDefined();
+    expect(child(api, inst.groupId, "I")).toMatchObject({ type: "image", fileId: "file-1" });
+    expect(masterSnapshot(all(api), cid).files).toEqual(["file-1"]);
+  });
+
+  it("migration: legacy on-canvas masters become instances without moving", async () => {
+    const { api, clock, created, inst } = await setup();
+    const cid = created.componentId;
+    run(api, (d) =>
+      defineProperty(d, cid, {
+        id: "fill",
+        name: "Fill",
+        type: "color",
+        bindings: [{ elementId: "R" }],
+      }),
+    );
+    run(api, (d) => setProperties(d, inst.groupId, { fill: "#a5d8ff" }));
+    clock.frame();
+    const look = all(api).map((e) => [e.id, e.x, e.y, e.width, e.backgroundColor]);
+    // On load: the file's elements are migrated before the editor sees them.
+    const saved = all(api);
+    const loaded = demoteMastersIn(saved);
+    expect(loaded.filter((e) => tagsOf(e).some((t) => t.role === "master"))).toEqual([]);
+    expect(loaded.map((e) => [e.id, e.x, e.y, e.width, e.backgroundColor])).toEqual(look);
+    expect(demoteMastersIn(loaded)).toBe(loaded);
+    expect(call(() => demoteLegacyMasters(api))).toBe(1);
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    expect(all(api).map((e) => [e.id, e.x, e.y, e.width, e.backgroundColor])).toEqual(look);
+    expect(tagFor(get(api, "R"), cid)).toMatchObject({ role: "instance", source: "library" });
+    // Not an undo step: undo reverts the property value, not the migration.
+    click("Undo");
+    clock.frame();
+    expect(masters(api)).toEqual([]);
+    // And the component still edits as a whole.
+    call(() =>
+      applyComponentMasterEdit(
+        api,
+        cid,
+        editedMaster(api, cid, (e) => (e.type === "ellipse" ? { width: 60 } : null)),
+      ),
+    );
+    clock.frame();
+    expect(child(api, inst.groupId, "E").width).toBe(60);
+    expect(get(api, "E").width).toBe(60);
+    expect(call(() => demoteLegacyMasters(api))).toBe(0);
   });
 });

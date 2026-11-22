@@ -4,7 +4,9 @@ import { openStripRow } from "./fixtures/strip";
 /**
  * Components UI smoke (docs/components.md § UI, FR-55): make a component with the shortcut, save
  * it to My components from the properties panel, and place it in another drawing from the
- * Components tab. With library-backed masters, insert places only an instance, Edit master… → Done updates the instance and takes the master away again.
+ * Components tab. Making a component leaves no master on the canvas: the selection becomes its
+ * first instance (FR-64). With library-backed masters, insert places only an instance, Edit
+ * master… → Done updates the instance and takes the master away again.
  */
 
 const NS = "excalidrawDesktop.component";
@@ -44,7 +46,8 @@ const tagged = (page: Page) =>
 
 const roles = async (page: Page) => (await tagged(page)).map((e) => e.role ?? "-").sort();
 
-/** A "Card" (rectangle + bound text) turned into a component with Alt/Option+Cmd/Ctrl+K. */
+/** A "Card" (rectangle + bound text) turned into a component with Alt/Option+Cmd/Ctrl+K: the
+ * selection becomes the first instance, with no master on the canvas. */
 async function makeCard(page: Page): Promise<string> {
   const canvas = (await page.locator(".excalidraw__canvas.interactive").boundingBox())!;
   await page.mouse.click(canvas.x + canvas.width - 40, canvas.y + canvas.height - 120);
@@ -72,7 +75,8 @@ async function makeCard(page: Page): Promise<string> {
   await page.keyboard.press("Alt+ControlOrMeta+k");
   await expect
     .poll(async () => (await tagged(page)).find((e) => e.id === "M")?.role)
-    .toBe("master");
+    .toBe("instance");
+  expect(await roles(page)).toEqual(["instance", "instance"]);
   return (await tagged(page)).find((e) => e.id === "M")!.componentId!;
 }
 
@@ -101,11 +105,14 @@ async function newDrawingWithComponentsTab(page: Page) {
 test("save a component to My components and place it in another drawing", async ({ page }) => {
   await open(page);
   const componentId = await makeCard(page);
-  const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
-  await select(page, masterIds);
+  await select(
+    page,
+    (await tagged(page)).map((e) => e.id),
+  );
   await openStripRow(page, "component-props");
   await page.getByTestId("component-save").click();
   await expect(page.getByTestId("component-save")).toHaveText("Update in My components");
+  expect(await roles(page)).toEqual(["instance", "instance"]);
 
   await newDrawingWithComponentsTab(page);
   const libraryMasters = await page.evaluate(() => window.__e2e!.libraryMasters);
@@ -125,11 +132,13 @@ test("library master: insert, Edit master…, Done updates the instance", async 
   await open(page);
   expect(await page.evaluate(() => window.__e2e!.libraryMasters)).toBe(true);
   const componentId = await makeCard(page);
-  const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
-  await select(page, masterIds);
+  await select(
+    page,
+    (await tagged(page)).map((e) => e.id),
+  );
   await openStripRow(page, "component-props");
-  await page.getByTestId("component-move-to-library").click();
-  await expect.poll(async () => (await tagged(page)).filter((e) => e.role).length).toBe(0);
+  await page.getByTestId("component-save").click();
+  await expect(page.getByTestId("component-save")).toHaveText("Update in My components");
 
   await newDrawingWithComponentsTab(page);
   await page.locator(`[data-testid=component-mine-${componentId}]:visible`).click();
@@ -139,8 +148,8 @@ test("library master: insert, Edit master…, Done updates the instance", async 
     page,
     (await tagged(page)).map((e) => e.id),
   );
-  await page.getByTestId("component-edit-master").click();
-  await expect(page.getByTestId("master-edit-banner")).toBeVisible();
+  await page.locator("[data-testid=component-edit-master]:visible").click();
+  await expect(page.locator("[data-testid=master-edit-banner]:visible")).toBeVisible();
   await expect.poll(async () => (await roles(page)).filter((r) => r === "master").length).toBe(2);
 
   // Edit the master's label like a user would; the engine syncs it to the instance.
@@ -156,9 +165,9 @@ test("library master: insert, Edit master…, Done updates the instance", async 
       captureUpdate: "IMMEDIATELY" as never,
     });
   }, NS);
-  await page.getByTestId("master-edit-done").click();
+  await page.locator("[data-testid=master-edit-done]:visible").click();
 
-  await expect(page.getByTestId("master-edit-banner")).toHaveCount(0);
+  await expect(page.locator("[data-testid=master-edit-banner]:visible")).toHaveCount(0);
   await expect.poll(() => roles(page)).toEqual(["instance", "instance"]);
   await expect
     .poll(async () => (await tagged(page)).find((e) => e.type === "text")?.text)

@@ -41,6 +41,7 @@ import {
   groupOf,
   innerTags,
   isOwned,
+  lookOf,
   OVERRIDE_KEYS,
   outerTags,
   readTags,
@@ -401,6 +402,7 @@ function deriveChild(
         masterValue(m, k) ?? null,
       ]),
     );
+    tag.ms = lookOf(m);
   }
   // Inner tags (nested instances) are copies of the master child's, as instances.
   const d = directInner(m, mt);
@@ -589,6 +591,7 @@ export function syncComponent(
           pv: undefined,
           npv: undefined,
           mv: undefined,
+          ms: undefined,
           promoted,
         }),
       });
@@ -868,9 +871,13 @@ function adoptOrphanEdits(
         pvChanged = true;
       } else if (!same(cur, mv[k])) explicit[k] = cur;
     }
+    // Keys an instance can't override snap back to the master's look.
+    const back: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(tag.ms ?? {})) if (!same(rec(c)[k] ?? null, v)) back[k] = v;
     const overrides = Object.keys(explicit).length ? explicit : undefined;
     if (!same(overrides ?? null, tag.overrides ?? null))
-      access.patch(c.id, { customData: withTag(c, { ...tag, overrides }) });
+      access.patch(c.id, { ...back, customData: withTag(c, { ...tag, overrides }) });
+    else if (Object.keys(back).length) access.patch(c.id, back as Patch);
   }
   if (pvChanged)
     for (const c of children) {

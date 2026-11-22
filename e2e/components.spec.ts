@@ -1,10 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Components v1 smoke (docs/components.md, FR-54), against the real Excalidraw 0.18.1 editor:
- * Alt/Option+Cmd/Ctrl+K turns the selection into a component, Cmd/Ctrl+D on the master places
- * an instance, and editing the master — from the native properties panel and from the agent's
- * update_elements tool — updates the instance live; one undo reverts master and instance.
+ * Components v1 smoke (docs/components.md, FR-54, FR-64), against the real Excalidraw 0.18.1
+ * editor: Alt/Option+Cmd/Ctrl+K turns the selection into the component's first instance (the
+ * master lives off-canvas), Cmd/Ctrl+D on an instance places another, an edit to the master
+ * (agent edit_component_master) updates both in one undo step, and a native-panel edit to one
+ * instance stays an override on that instance.
  */
 
 interface Row {
@@ -41,7 +42,18 @@ const byRole = async (page: Page, role: string) => (await rows(page)).find((r) =
 
 const undo = (page: Page) => page.getByRole("button", { name: "Undo" }).first().click();
 
-test("edit a master and its instance follows; one undo reverts both", async ({ page }) => {
+const instances = async (page: Page) => (await rows(page)).filter((r) => r.role === "instance");
+
+const tool = <T>(page: Page, name: string, args: Record<string, unknown>) =>
+  page.evaluate(
+    async ([name, args]) => {
+      const out = await window.__e2e!.runSceneTool(name as string, args as never);
+      return JSON.parse((out[0] as { text: string }).text) as unknown;
+    },
+    [name, args] as const,
+  ) as Promise<T>;
+
+test("edit a master and every instance follows; one undo reverts both", async ({ page }) => {
   await open(page);
   const canvas = (await page.locator(".excalidraw__canvas.interactive").boundingBox())!;
   // Focus the canvas so shortcuts reach Excalidraw.
@@ -68,43 +80,52 @@ test("edit a master and its instance follows; one undo reverts both", async ({ p
     });
   });
 
+  // Create turns the selection into the first instance; no master on the canvas.
   await page.keyboard.press("Alt+ControlOrMeta+k");
-  await expect.poll(async () => (await byRole(page, "master"))?.id).toBe("M");
+  await expect.poll(async () => (await byRole(page, "instance"))?.id).toBe("M");
+  expect(await byRole(page, "master")).toBeUndefined();
 
-  // Duplicating a master creates an instance (onDuplicate), not a second master.
+  // Duplicating an instance places another instance.
   await page.keyboard.press("ControlOrMeta+d");
-  await expect.poll(async () => (await byRole(page, "instance"))?.width).toBe(160);
-  const comps = await page.evaluate(async () => {
-    const out = await window.__e2e!.runSceneTool("list_components", {});
-    return JSON.parse((out[0] as { text: string }).text).components as {
-      instances: unknown[];
-    }[];
-  });
-  expect(comps).toHaveLength(1);
-  expect(comps[0].instances).toHaveLength(1);
+  await expect.poll(async () => (await instances(page)).length).toBe(2);
+  const comps = await tool<{ components: { instances: unknown[] }[] }>(page, "list_components", {});
+  expect(comps.components).toHaveLength(1);
+  expect(comps.components[0].instances).toHaveLength(2);
 
-  // Select the master and change its stroke from the native properties panel.
+  // Edit the off-canvas master by slot: both instances follow in one undo step.
+  const master = await tool<{ onCanvas: boolean; elements: { slot: string; type: string }[] }>(
+    page,
+    "get_component_master",
+    { component: "M" },
+  );
+  expect(master.onCanvas).toBe(false);
+  const slot = master.elements.find((e) => e.type === "rectangle")!.slot;
+  await tool(page, "edit_component_master", {
+    component: "M",
+    updates: [{ slot, patch: { strokeColor: "#e03131", width: 240 } }],
+  });
+  await expect
+    .poll(async () => (await instances(page)).map((r) => [r.strokeColor, r.width]))
+    .toEqual([
+      ["#e03131", 240],
+      ["#e03131", 240],
+    ]);
+  expect(await byRole(page, "master")).toBeUndefined();
+  await undo(page);
+  await expect
+    .poll(async () => (await instances(page)).map((r) => [r.strokeColor, r.width]))
+    .toEqual([
+      ["#1e1e1e", 160],
+      ["#1e1e1e", 160],
+    ]);
+
+  // A native-panel edit on one instance is an override on that instance only.
   await page.evaluate(() =>
     window.__canvas!.updateScene({
       appState: { selectedElementIds: { M: true } } as never,
     }),
   );
   await page.getByTestId("color-top-pick-#e03131").first().click();
-  await expect.poll(async () => (await byRole(page, "master"))?.strokeColor).toBe("#e03131");
   await expect.poll(async () => (await byRole(page, "instance"))?.strokeColor).toBe("#e03131");
-
-  await undo(page);
-  await expect.poll(async () => (await byRole(page, "master"))?.strokeColor).toBe("#1e1e1e");
-  expect((await byRole(page, "instance"))?.strokeColor).toBe("#1e1e1e");
-
-  // The agent path: a generic update_elements on the master syncs the instance in one step.
-  await page.evaluate(() =>
-    window.__e2e!.runSceneTool("update_elements", {
-      updates: [{ id: "M", patch: { width: 240 } }],
-    }),
-  );
-  await expect.poll(async () => (await byRole(page, "instance"))?.width).toBe(240);
-  await undo(page);
-  await expect.poll(async () => (await byRole(page, "master"))?.width).toBe(160);
-  expect((await byRole(page, "instance"))?.width).toBe(160);
+  expect((await instances(page)).map((r) => r.strokeColor).sort()).toEqual(["#1e1e1e", "#e03131"]);
 });

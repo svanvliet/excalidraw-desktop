@@ -1,4 +1,4 @@
-/** Components v1 (docs/components.md): masters on the canvas with live-synced instances. */
+/** Components (docs/components.md): live-synced instances of masters kept off-canvas. */
 export * from "./model";
 export {
   componentsOf,
@@ -19,5 +19,19 @@ export {
   type PropertyTarget,
 } from "./actions";
 export { componentsOnDuplicate } from "./duplicate";
-export { adoptAsMaster, dematerialize, materialize, type ComponentDefinition } from "./library";
+export {
+  adoptAsMaster,
+  applyMasterEdit,
+  closeMaster,
+  dematerialize,
+  demoteMaster,
+  liveMasterGroup,
+  masterSnapshot,
+  materialize,
+  openMaster,
+  withMaster,
+  type ComponentDefinition,
+  type MasterSnapshot,
+  type OpenedMaster,
+} from "./library";
 export * from "./host";

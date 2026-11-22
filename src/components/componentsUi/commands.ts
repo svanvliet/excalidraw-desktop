@@ -31,16 +31,23 @@ export function toast(api: Api, message: string) {
   api.setToast({ message, duration: 3000 });
 }
 
-/** Select a component's master and scroll it into view. */
+/**
+ * Select a component's master and scroll it into view; when its master lives off-canvas
+ * (FR-64), its first top-level instance.
+ */
 export function goToMaster(api: Api, componentId: string) {
   const els = api.getSceneElements() as readonly El[];
   const info = listComponents(els).find((c) => c.componentId === componentId);
-  const ids = new Set(info?.masterIds ?? []);
+  const target = info?.masterGroupId
+    ? { group: info.masterGroupId, ids: info.masterIds }
+    : (info?.instances.find((i) => !i.parent) ?? info?.instances[0]);
+  const group = target && ("group" in target ? target.group : target.groupId);
+  const ids = new Set(target?.ids ?? []);
   const master = els.filter((e) => ids.has(e.id));
-  if (!master.length || !info?.masterGroupId) return;
+  if (!master.length || !group) return;
   api.updateScene({
     appState: {
-      selectedGroupIds: { [info.masterGroupId]: true },
+      selectedGroupIds: { [group]: true },
       selectedElementIds: Object.fromEntries(master.map((e) => [e.id, true as const])),
       editingGroupId: null,
     } as never,

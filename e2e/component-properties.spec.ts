@@ -2,11 +2,11 @@ import { test, expect, type Page } from "@playwright/test";
 import { openStripRow } from "./fixtures/strip";
 
 /**
- * Component properties + nested components smoke (docs/components.md §5–6, FR-56/FR-57), against
- * the real Excalidraw 0.18.1 editor: declare a property on the master and set it on an instance
- * from the "Properties" panel section (one undo step), set a nested Card's property from an outer
- * Panel instance, and an Alt/Option-drag of a master with the real mouse keeps the stationary copy
- * as the master.
+ * Component properties + nested components smoke (docs/components.md §4b–4c, FR-56/FR-57,
+ * FR-64), against the real Excalidraw 0.18.1 editor: declare a property while editing the
+ * off-canvas master and set it on an instance from the Component row (one undo step), set a nested
+ * Card's property from an outer Panel instance, and an Alt/Option-drag of an instance with the real
+ * mouse places another instance that follows master edits.
  */
 
 const NS = "excalidrawDesktop.component";
@@ -89,11 +89,23 @@ async function card(page: Page) {
     });
   });
   await page.keyboard.press("Alt+ControlOrMeta+k");
+  // Create makes the first instance; the master lives off-canvas (FR-64).
   await expect
     .poll(async () => (await tagged(page)).find((e) => e.id === "M")?.role)
-    .toBe("master");
-  return (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
+    .toBe("instance");
+  return (await tagged(page)).filter((e) => e.role === "instance").map((e) => e.id);
 }
+
+const componentIdOf = (page: Page, id: string) =>
+  page.evaluate(
+    ([ns, id]) =>
+      (
+        window.__canvas!.getSceneElements().find((e) => e.id === id)!.customData![ns] as {
+          componentId: string;
+        }
+      ).componentId,
+    [NS, id] as const,
+  );
 
 const tool = <T>(page: Page, name: string, args: Record<string, unknown>) =>
   page.evaluate(
@@ -108,26 +120,29 @@ test("declare a property on the master; set it on an instance; one undo reverts"
   page,
 }) => {
   await open(page);
-  const masterIds = await card(page);
+  const instIds = await card(page);
+  await select(page, instIds);
+  await openStripRow(page, "component-props");
+  await tid(page, "component-edit-master").click();
+  await expect(tid(page, "master-edit-banner")).toBeVisible();
+  const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
+  expect(masterIds).toHaveLength(2);
   await select(page, masterIds);
   await openStripRow(page, "component-props");
   await tid(page, "propdef-name").fill("Title");
   await tid(page, "propdef-add").click();
   await expect(tid(page, "propdef-remove-Title")).toBeVisible();
+  await tid(page, "master-edit-done").click();
+  await expect
+    .poll(async () => (await tagged(page)).filter((e) => e.role === "master"))
+    .toEqual([]);
 
-  // Give the keyboard back to the canvas, then duplicate the master into an instance.
-  const canvas = (await page.locator(".excalidraw__canvas.interactive").boundingBox())!;
-  await page.mouse.click(canvas.x + canvas.width - 40, canvas.y + canvas.height - 120);
-  await select(page, masterIds);
-  await page.keyboard.press("ControlOrMeta+d");
-  await expect.poll(async () => textOf(page, "instance")).toBe("Card");
-  const instIds = (await tagged(page)).filter((e) => e.role === "instance").map((e) => e.id);
   await select(page, instIds);
+  await openStripRow(page, "component-props");
   const field = tid(page, "propval-own-Title");
   await field.fill("Hello");
   await field.press("Enter");
   await expect.poll(async () => textOf(page, "instance")).toBe("Hello");
-  expect(await textOf(page, "master")).toBe("Card");
   await expect(tid(page, "propval-reset-own-Title")).toBeVisible();
 
   await page.getByRole("button", { name: "Undo" }).first().click();
@@ -136,16 +151,8 @@ test("declare a property on the master; set it on an instance; one undo reverts"
 
 test("an outer Panel instance sets its nested Card's property", async ({ page }) => {
   await open(page);
-  const masterIds = await card(page);
-  const cardId = await page.evaluate(
-    ([ns, id]) =>
-      (
-        window.__canvas!.getSceneElements().find((e) => e.id === id)!.customData![ns] as {
-          componentId: string;
-        }
-      ).componentId,
-    [NS, masterIds[0]] as const,
-  );
+  await card(page);
+  const cardId = await componentIdOf(page, "M");
   await tool(page, "define_property", {
     component: cardId,
     property: { name: "Title", type: "text", bindings: [{ elementId: "M" }] },
@@ -181,11 +188,20 @@ test("an outer Panel instance sets its nested Card's property", async ({ page })
     )
     .toEqual(["Card", "Card", "Inner"]);
   // The Card master still drives the nested copy's other keys.
-  await page.evaluate(() =>
-    window.__e2e!.runSceneTool("update_elements", {
-      updates: [{ id: "M", patch: { backgroundColor: "#a5d8ff" } }],
-    }),
+  const master = await tool<{ elements: { slot: string; type: string }[] }>(
+    page,
+    "get_component_master",
+    { component: cardId },
   );
+  await tool(page, "edit_component_master", {
+    component: cardId,
+    updates: [
+      {
+        slot: master.elements.find((e) => e.type === "rectangle")!.slot,
+        patch: { backgroundColor: "#a5d8ff" },
+      },
+    ],
+  });
   await expect
     .poll(() =>
       page.evaluate(
@@ -200,13 +216,11 @@ test("an outer Panel instance sets its nested Card's property", async ({ page })
     .toEqual(["#a5d8ff"]);
 });
 
-test("Alt/Option-drag of a master with the mouse keeps the stationary copy as master", async ({
-  page,
-}) => {
+test("Alt/Option-drag of an instance with the mouse places another instance", async ({ page }) => {
   await open(page);
-  const masterIds = await card(page);
-  await select(page, masterIds);
-  // Scroll the master clear of the properties panel on the left.
+  const instIds = await card(page);
+  await select(page, instIds);
+  // Scroll the instance clear of the properties panel on the left.
   await page.evaluate(() => {
     const s = window.__canvas!.getAppState();
     window.__canvas!.updateScene({ appState: { scrollX: s.scrollX + 400 } as never });
@@ -230,16 +244,25 @@ test("Alt/Option-drag of a master with the mouse keeps the stationary copy as ma
     .poll(async () => (await tagged(page)).filter((e) => e.type === "rectangle").length)
     .toBe(2);
   const rects = (await tagged(page)).filter((e) => e.type === "rectangle");
-  expect(rects.find((e) => e.role === "master")?.x).toBe(120);
-  expect(rects.find((e) => e.role === "instance")?.x).toBeGreaterThan(200);
-  // And the instance follows the stationary master.
-  await page.evaluate(
-    (id) =>
-      window.__e2e!.runSceneTool("update_elements", {
-        updates: [{ id, patch: { strokeColor: "#e03131" } }],
-      }),
-    rects.find((e) => e.role === "master")!.id,
+  expect(rects.every((e) => e.role === "instance")).toBe(true);
+  expect(rects.map((e) => e.x).sort((a, b) => a - b)[0]).toBe(120);
+  expect(rects.some((e) => e.x > 200)).toBe(true);
+  // And both follow a master edit.
+  const cid = await componentIdOf(page, "M");
+  const master = await tool<{ elements: { slot: string; type: string }[] }>(
+    page,
+    "get_component_master",
+    { component: cid },
   );
+  await tool(page, "edit_component_master", {
+    component: cid,
+    updates: [
+      {
+        slot: master.elements.find((e) => e.type === "rectangle")!.slot,
+        patch: { strokeColor: "#e03131" },
+      },
+    ],
+  });
   await expect
     .poll(async () =>
       page.evaluate(() =>

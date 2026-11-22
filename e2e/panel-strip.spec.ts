@@ -108,8 +108,11 @@ test("rows sit at the top of the panel for a rectangle; Create runs inline", asy
 
   // The inline primary acts without opening the row.
   await page.getByTestId("component-props-primary").click();
-  await expect.poll(async () => (await roles(page)).find((e) => e.id === "R")?.role).toBe("master");
-  await expect(page.getByTestId("component-props-native")).toContainText("master");
+  // Create makes the first instance; the master lives off-canvas (FR-64).
+  await expect
+    .poll(async () => (await roles(page)).find((e) => e.id === "R")?.role)
+    .toBe("instance");
+  await expect(page.getByTestId("component-props-native")).toContainText("Component");
   await expect(page.getByTestId("component-props-toggle")).toHaveAttribute(
     "aria-expanded",
     "false",
@@ -121,12 +124,16 @@ test("rows sit at the top of the panel for a component instance", async ({ page 
   await seedRectangle(page);
   await select(page, ["R"]);
   await page.getByTestId("component-props-primary").click();
-  await expect.poll(async () => (await roles(page)).find((e) => e.id === "R")?.role).toBe("master");
+  await expect
+    .poll(async () => (await roles(page)).find((e) => e.id === "R")?.role)
+    .toBe("instance");
   await page.keyboard.press("ControlOrMeta+d");
   await expect
     .poll(async () => (await roles(page)).filter((e) => e.role === "instance").length)
-    .toBe(1);
-  const inst = (await roles(page)).filter((e) => e.role === "instance").map((e) => e.id);
+    .toBe(2);
+  const inst = (await roles(page))
+    .filter((e) => e.role === "instance" && e.id !== "R")
+    .map((e) => e.id);
   await select(page, inst);
   await expectStripOnTop(page, ["component-props-native", "props-strip-more-native"]);
   // Its summary is the component's name (no overrides yet).

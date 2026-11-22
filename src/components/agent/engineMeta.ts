@@ -124,6 +124,8 @@ const CANVAS_TOOL_LABELS: Record<string, string> = {
   create_component: "Created a component",
   insert_instance: "Inserted a component instance",
   list_components: "Read the components",
+  get_component_master: "Read a component design",
+  edit_component_master: "Edited a component design",
   set_overrides: "Overrode instance values",
   reset_overrides: "Reset instance overrides",
   detach_instance: "Detached an instance",

@@ -19,6 +19,7 @@ import type {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { El } from "../../agent/scene/draft";
 import { runComponentCommand } from "../../extensions/components/host";
+import { masterSnapshot } from "../../extensions/components/library";
 import { listComponents, type ComponentInfo } from "../../extensions/components/model";
 import { removeMyComponent, renameMyComponent } from "../../lib/componentLibraryStore";
 import { CloseIcon, ExportIcon, SaveIcon } from "../icons";
@@ -42,7 +43,7 @@ interface DocComponent {
 }
 
 interface DocSnapshot {
-  /** Components with their master on the canvas. */
+  /** The drawing's components; `master` is rebuilt off-canvas when it isn't on the canvas. */
   components: DocComponent[];
   /** Every component in the drawing, library-backed ones included. */
   all: ComponentInfo[];
@@ -50,15 +51,37 @@ interface DocSnapshot {
   dark: boolean;
 }
 
+/** Off-canvas masters rebuilt for thumbnails, reused while the component's elements are unchanged. */
+const rebuilt = new Map<string, { key: string; els: El[] }>();
+
+function offCanvasMaster(elements: readonly El[], info: ComponentInfo, byId: Map<string, El>) {
+  const members = info.instances.flatMap((i) => i.ids.map((id) => byId.get(id)!));
+  const key = String(hashElementsVersion(members));
+  const hit = rebuilt.get(info.componentId);
+  if (hit?.key === key) return hit.els;
+  let els: El[];
+  try {
+    els = masterSnapshot(elements, info.componentId).elements;
+  } catch {
+    els = info.instances[0]?.ids.map((id) => byId.get(id)!) ?? [];
+  }
+  rebuilt.set(info.componentId, { key, els });
+  if (rebuilt.size > 200) rebuilt.delete(rebuilt.keys().next().value!);
+  return els;
+}
+
 function docSnapshot(api: Api): DocSnapshot {
   const elements = api.getSceneElements() as readonly El[];
   const byId = new Map(elements.map((e) => [e.id, e]));
   const all = listComponents(elements);
   const components = all
-    .filter((c) => c.masterGroupId)
+    // Components that only live nested inside others are reached through those.
+    .filter((c) => c.masterGroupId || c.instances.some((i) => !i.parent))
     .map((info) => ({
       info,
-      master: info.masterIds.map((id) => byId.get(id)).filter((e): e is El => !!e),
+      master: info.masterGroupId
+        ? info.masterIds.map((id) => byId.get(id)).filter((e): e is El => !!e)
+        : offCanvasMaster(elements, info, byId),
     }));
   return { components, all, files: api.getFiles(), dark: api.getAppState().theme === "dark" };
 }
@@ -154,7 +177,7 @@ export function ComponentsPanel({
                   }}
                 >
                   <RowButton
-                    label={`Go to the master of ${name}`}
+                    label={c.info.masterGroupId ? `Go to the master of ${name}` : `Go to ${name}`}
                     onClick={() => goToMaster(api, c.info.componentId)}
                   >
                     <TargetIcon />
@@ -167,7 +190,7 @@ export function ComponentsPanel({
                       <SaveIcon size={16} />
                     </RowButton>
                   )}
-                  {save && libraryMasterEngine() && (
+                  {save && libraryMasterEngine() && c.info.masterGroupId && (
                     <RowButton
                       label={`Move the master of ${name} to My components (off the canvas)`}
                       onClick={() => void moveMasterToLibrary(api, c.info.componentId)}

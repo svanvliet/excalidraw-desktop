@@ -11,7 +11,6 @@ import type { PanelApi } from "../propertiesPanel/panel";
 import { goToMaster, saveToMyComponents, useMyComponents } from "./commands";
 import { keyLabel, type ComponentView } from "./componentPanelSection";
 import {
-  adoptLibraryInstance,
   editLibraryMaster,
   libraryMasterEngine,
   moveMasterToLibrary,
@@ -124,7 +123,7 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
             Go to master
           </Action>
         )}
-        {libraryOnly && engine && inLibrary && !editing && (
+        {libraryOnly && engine && !editing && (
           <Action
             testId="component-edit-master"
             disabled={!canSave}
@@ -134,17 +133,7 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
             Edit master…
           </Action>
         )}
-        {libraryOnly && engine && !inLibrary && (
-          <Action
-            testId="component-adopt"
-            disabled={!canSave}
-            title="This drawing came from someone else's My components"
-            onClick={() => void adoptLibraryInstance(api, view.groupId)}
-          >
-            Add to my components
-          </Action>
-        )}
-        {view.hasMaster && (
+        {(view.hasMaster || libraryOnly) && (
           <Action
             testId="component-save"
             disabled={!canSave}
