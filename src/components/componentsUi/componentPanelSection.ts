@@ -51,6 +51,18 @@ export type ComponentView =
       overrides: SlotOverride[];
     };
 
+/**
+ * The My components entry this component is linked to, or null when this machine's My components
+ * doesn't have it. A created or demoted component carries a library link before it is ever saved,
+ * so "from My components" and "Update in My components" must check the entry really exists (the
+ * master editor's "Also update in My components" uses the same rule).
+ */
+export function linkedEntryId(view: ComponentView, entryIds: readonly string[]): string | null {
+  if (view.kind === "create") return null;
+  const id = (view.kind === "instance" && view.libraryId) || view.componentId;
+  return entryIds.includes(id) ? id : null;
+}
+
 const KEY_LABELS: Record<string, string> = {
   text: "text",
   backgroundColor: "fill",

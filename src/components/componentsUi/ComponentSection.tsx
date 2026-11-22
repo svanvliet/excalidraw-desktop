@@ -9,7 +9,7 @@ import { canSaveMyComponents } from "../../lib/componentLibraryStore";
 import { CloseIcon } from "../icons";
 import type { PanelApi } from "../propertiesPanel/panel";
 import { saveToMyComponents, useMyComponents } from "./commands";
-import { keyLabel, type ComponentView } from "./componentPanelSection";
+import { keyLabel, linkedEntryId, type ComponentView } from "./componentPanelSection";
 import { isMasterEditorApi, openMasterEditor } from "./masterEditStore";
 
 /** Keeps Excalidraw's canvas focused so its shortcuts (undo!) keep working after a click. */
@@ -69,7 +69,10 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
     // Masters only exist in the master editor (FR-66), or in drawings from older builds.
     const n = view.instances;
     const inEditor = isMasterEditorApi(api);
-    const saved = mine.some((m) => m.id === view.componentId);
+    const saved = !!linkedEntryId(
+      view,
+      mine.map((m) => m.id),
+    );
     return (
       <fieldset className="component-props">
         <div className="component-props__summary" data-testid="component-props-summary">
@@ -95,8 +98,11 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
     );
   }
 
-  const inLibrary = mine.some((m) => m.id === (view.libraryId ?? view.componentId));
-  const libraryOnly = view.libraryBacked && !view.hasMaster;
+  const inLibrary = !!linkedEntryId(
+    view,
+    mine.map((m) => m.id),
+  );
+  const libraryOnly = inLibrary && view.libraryBacked && !view.hasMaster;
   return (
     <fieldset className="component-props">
       <div className="component-props__summary" data-testid="component-props-summary">

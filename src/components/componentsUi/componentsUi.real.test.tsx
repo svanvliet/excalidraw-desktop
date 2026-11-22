@@ -276,11 +276,19 @@ describe("library-backed masters", () => {
     panel(api, inst.groupId);
     expect(screen.getByTestId("component-edit-master")).toBeTruthy();
     expect(screen.getByTestId("component-save").textContent).toBe("Save to My components");
+    // Still tagged library-backed, but not in My components: don't claim it comes from there.
+    expect(screen.getByTestId("component-props-summary").textContent).not.toContain(
+      "from My components",
+    );
     await act(async () => {
       fireEvent.click(screen.getByTestId("component-save"));
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(getMyComponents().map((c) => c.id)).toEqual([entry.id]);
+    expect(screen.getByTestId("component-save").textContent).toBe("Update in My components");
+    expect(screen.getByTestId("component-props-summary").textContent).toContain(
+      "from My components",
+    );
     expect(listComponents(live(api))[0].masterGroupId).toBeNull();
   });
 
