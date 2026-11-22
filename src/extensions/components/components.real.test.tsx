@@ -43,6 +43,7 @@ import {
   uninstallComponents,
 } from "./host";
 import { masterSnapshot } from "./library";
+import { persistedElements } from "./persist";
 import { groupOf, listComponents, tagFor, tagOf, tagsOf, withTag } from "./model";
 import type { Draft } from "../../agent/scene/draft";
 
@@ -1559,6 +1560,132 @@ describe("masterless components (FR-64)", () => {
       clock.frame();
       expect(font(api, a)).toBe(20);
       expect(font(api, b)).toBe(20);
+    });
+  });
+
+  describe("slots hidden by a property survive (FR-69)", () => {
+    /** Masterless Card with Avatar photo|initials: photo shows R (+ label), initials shows E. */
+    async function avatarCard() {
+      const m = await masterless();
+      const { api, clock, cid, created, inst } = m;
+      call(() =>
+        defineComponentProperty(api, cid, {
+          id: "avatar",
+          name: "Avatar",
+          type: "choice",
+          options: ["photo", "initials"],
+          default: "photo",
+          bindings: [
+            { elementId: "R", key: "visible", map: { photo: true, initials: false } },
+            { elementId: "E", key: "visible", map: { photo: false, initials: true } },
+          ],
+        }),
+      );
+      clock.frame();
+      call(() => setInstanceProperties(api, created.groupId, { Avatar: "initials" }));
+      clock.frame();
+      return { ...m, photo: inst.groupId, initials: created.groupId };
+    }
+    /** Remount `elements` (as a file would load) with components installed. */
+    async function reload(elements: readonly El[]) {
+      const saved = JSON.parse(JSON.stringify(elements));
+      for (const a of mounted.splice(0)) uninstallComponents(a);
+      cleanup();
+      const api = await mount(restoreElements(demoteMastersIn(saved), null) as El[]);
+      const clock = manualSchedule();
+      installComponents(api, { schedule: clock.schedule });
+      clock.frame();
+      return { api, clock };
+    }
+    const shows = (api: Api, group: string) =>
+      ["R", "E"].filter((slot) => child(api, group, slot)).join("");
+
+    it("save keeps a slot every instance hides, so it still shows after reload", async () => {
+      const { api, clock, cid, photo, initials } = await avatarCard();
+      expect(shows(api, photo)).toBe("R");
+      expect(shows(api, initials)).toBe("E");
+      call(() => setInstanceProperties(api, initials, { Avatar: "photo" }));
+      clock.frame();
+      const saved = persistedElements(all(api));
+      expect(saved.filter((e) => e.isDeleted).map((e) => tagFor(e, cid)!.slot)).toEqual([
+        "E",
+        "E",
+      ]);
+      const r = await reload(saved);
+      for (const act0 of [
+        () => resetInstanceOverrides(r.api, photo),
+        () =>
+          applyComponentMasterEdit(r.api, cid, masterSnapshot(all(r.api), cid, photo).elements),
+      ]) {
+        call(() => void act0());
+        r.clock.frame();
+      }
+      call(() => setInstanceProperties(r.api, photo, { Avatar: "initials" }));
+      r.clock.frame();
+      expect(shows(r.api, photo)).toBe("E");
+      expect(shows(r.api, initials)).toBe("R");
+      expect(labelOf(r.api, child(r.api, initials, "R").id).originalText).toBe("Hello");
+    });
+
+    it("files that already lost hidden slots: a slot any instance still has is kept", async () => {
+      const { api, cid, photo, initials } = await avatarCard();
+      // Older builds saved only live elements: each card keeps just what it showed.
+      const r = await reload(all(api).filter((e) => !e.isDeleted));
+      for (const act0 of [
+        () => resetInstanceOverrides(r.api, photo),
+        () => setInstanceProperties(r.api, photo, { Avatar: "photo" }),
+        () =>
+          applyComponentMasterEdit(
+            r.api,
+            cid,
+            masterSnapshot(all(r.api), cid, photo).elements.map((e) =>
+              e.type === "rectangle" ? ({ ...e, width: 240 } as El) : e,
+            ),
+          ),
+        () =>
+          applyComponentMasterEdit(
+            r.api,
+            cid,
+            masterSnapshot(all(r.api), cid, initials).elements,
+          ),
+      ]) {
+        call(() => void act0());
+        r.clock.frame();
+        expect(shows(r.api, photo)).toBe("R");
+        expect(shows(r.api, initials)).toBe("E");
+      }
+      expect(masterSnapshot(all(r.api), cid, photo).elements.map((e) => e.type).sort()).toEqual(
+        ["ellipse", "rectangle", "text"],
+      );
+      expect(child(r.api, photo, "R").width).toBe(240);
+      call(() => setInstanceProperties(r.api, photo, { Avatar: "initials" }));
+      r.clock.frame();
+      call(() => setInstanceProperties(r.api, initials, { Avatar: "photo" }));
+      r.clock.frame();
+      expect(shows(r.api, photo)).toBe("E");
+      expect(shows(r.api, initials)).toBe("R");
+      expect(child(r.api, initials, "R").width).toBe(240);
+    });
+
+    it("a slot removed by a master edit stays removed and isn't saved", async () => {
+      const { api, clock, cid, photo, initials } = await avatarCard();
+      const snap = masterSnapshot(all(api), cid, photo);
+      call(() =>
+        applyComponentMasterEdit(
+          api,
+          cid,
+          snap.elements.filter((e) => e.type !== "ellipse"),
+        ),
+      );
+      clock.frame();
+      call(() => setInstanceProperties(api, photo, { Avatar: "initials" }));
+      clock.frame();
+      call(() => resetInstanceOverrides(api, initials));
+      clock.frame();
+      expect(masterSnapshot(all(api), cid).elements.some((e) => e.type === "ellipse")).toBe(false);
+      expect(child(api, photo, "E")).toBeUndefined();
+      expect(child(api, initials, "E")).toBeUndefined();
+      expect(persistedElements(all(api)).some((e) => e.type === "ellipse")).toBe(false);
     });
   });
 });
