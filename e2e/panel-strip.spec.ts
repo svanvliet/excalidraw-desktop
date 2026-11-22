@@ -91,7 +91,7 @@ test("rows sit at the top of the panel for a rectangle; Create runs inline", asy
     "style-section-native",
     "shape-data-native",
   ]);
-  await expect(page.getByTestId("component-props-native")).toContainText("Not a component");
+  await expect(page.getByTestId("component-props-primary")).toHaveText("Create");
   // The window is short enough that the native controls below the strip overflow.
   expect((await layout(page)).scrollable).toBe(true);
 

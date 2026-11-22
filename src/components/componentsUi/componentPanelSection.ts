@@ -126,7 +126,8 @@ export const componentPanelSection: PanelSection<ComponentView> = {
   title: "Component",
   icon: ComponentsIcon,
   summary: (v) => {
-    if (v.kind === "create") return "Not a component";
+    // The inline Create action says it all.
+    if (v.kind === "create") return "";
     if (v.kind === "master") {
       return `${v.name} · master · ${v.instances} instance${v.instances === 1 ? "" : "s"}`;
     }

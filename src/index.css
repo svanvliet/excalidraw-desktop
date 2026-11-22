@@ -108,6 +108,11 @@ button {
   min-width: 0;
 }
 
+/* Excalidraw's column gap is sized for its own fieldsets; rows sit closer together. */
+.excalidraw .props-strip__row + .props-strip__row {
+  margin-top: calc(var(--space-2) - 0.75rem);
+}
+
 .excalidraw .props-strip__row--last {
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--default-border-color);
