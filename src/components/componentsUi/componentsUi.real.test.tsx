@@ -158,20 +158,42 @@ describe("Component panel section", () => {
     return { api, inst };
   }
 
-  it("lists overrides; Reset overrides is one undo step", async () => {
+  it("lists overrides; Reset overrides resets the look in one undo step and keeps content (FR-67)", async () => {
     const { api, inst } = await withOverride();
+    const card = children(api, inst.groupId).find((e) => e.type === "rectangle")!;
+    const draft = new Draft(live(api));
+    setOverrides(draft, inst.groupId, [
+      { elementId: card.id, values: { backgroundColor: "#ffc9c9" } },
+    ]);
+    act(() =>
+      api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER }),
+    );
     panel(api, inst.groupId);
     expect(screen.getByTestId("component-props-summary").textContent).toContain("Person");
-    expect(screen.getAllByTestId("component-override")).toHaveLength(1);
-    expect(screen.getByTestId("component-override").textContent).toContain('Text "Grace": text');
+    const rows = screen.getAllByTestId("component-override").map((r) => r.textContent);
+    expect(rows).toEqual(expect.arrayContaining(['Text "Grace": text', "Rectangle: fill"]));
     act(() => void fireEvent.click(screen.getByTestId("component-reset")));
+    const after = children(api, inst.groupId);
+    expect(
+      tagOf(after.find((e) => e.type === "rectangle"))?.overrides?.backgroundColor,
+    ).toBeUndefined();
+    expect(textOf(after)).toBe("Grace");
+    expect(tagOf(after.find((e) => e.type === "text"))?.overrides?.text).toBe("Grace");
+    undo();
+    expect(
+      tagOf(children(api, inst.groupId).find((e) => e.type === "rectangle"))?.overrides
+        ?.backgroundColor,
+    ).toBe("#ffc9c9");
+  });
+
+  it("content-only overrides leave Reset overrides disabled; the slot × still clears them", async () => {
+    const { api, inst } = await withOverride();
+    panel(api, inst.groupId);
+    expect((screen.getByTestId("component-reset") as HTMLButtonElement).disabled).toBe(true);
+    act(() => void fireEvent.click(screen.getByLabelText('Reset Text "Grace"')));
     expect(
       tagOf(children(api, inst.groupId).find((e) => e.type === "text"))?.overrides,
     ).toBeFalsy();
-    undo();
-    expect(
-      tagOf(children(api, inst.groupId).find((e) => e.type === "text"))?.overrides,
-    ).toBeTruthy();
   });
 
   it("Detach is one undo step", async () => {

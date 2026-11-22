@@ -12,6 +12,7 @@ import {
   innerTags,
   isReadable,
   listComponents,
+  CONTENT_KEYS,
   OVERRIDE_KEYS,
   isOwned,
   PROP_TYPES,
@@ -404,7 +405,10 @@ export function setOverrides(
 
 /**
  * Clear overrides on an instance: all, or only some slots / keys. A full reset (no filters) also
- * clears property values (`props` defaults to true then).
+ * clears property values (`props` defaults to true then). `content: false` keeps the instance's
+ * content — property values, nested values and the `CONTENT_KEYS` overrides (text, image, link) —
+ * and resets only its look: style overrides, hidden slots and text sizes ("Reset overrides" in
+ * the UI, FR-67). `keys` may include "fontSize" for a text's own size (`fs`).
  */
 export function resetOverrides(
   draft: Draft,
@@ -414,11 +418,15 @@ export function resetOverrides(
     elementIds?: readonly string[];
     keys?: readonly string[];
     props?: boolean;
+    content?: boolean;
   } = {},
 ): void {
   const inst = resolveInstance(draft, instance);
   const filtered = !!(opts.slots?.length || opts.elementIds?.length || opts.keys?.length);
-  const clearProps = opts.props ?? !filtered;
+  const keepContent = opts.content === false;
+  const clearProps = !keepContent && (opts.props ?? !filtered);
+  const picked = (k: string) =>
+    (!opts.keys?.length || opts.keys.includes(k)) && !(keepContent && CONTENT_KEYS.includes(k));
   for (const c of inst.children) {
     const tag = tagFor(c, inst.componentId)!;
     const next: ComponentTag = { ...tag };
@@ -429,10 +437,13 @@ export function resetOverrides(
     const match =
       (!opts.slots?.length || opts.slots.includes(tag.slot)) &&
       (!opts.elementIds?.length || opts.elementIds.includes(c.id));
-    if (match && tag.overrides && (filtered || opts.props !== true)) {
-      const ov: Overrides = { ...tag.overrides };
-      for (const k of OVERRIDE_KEYS) if (!opts.keys?.length || opts.keys.includes(k)) delete ov[k];
-      next.overrides = ov;
+    if (match && (filtered || keepContent || opts.props !== true)) {
+      if (tag.overrides) {
+        const ov: Overrides = { ...tag.overrides };
+        for (const k of OVERRIDE_KEYS) if (picked(k)) delete ov[k];
+        next.overrides = ov;
+      }
+      if (picked("fontSize")) next.fs = undefined;
     }
     draft.update(c.id, { customData: withTag(c, next) });
   }

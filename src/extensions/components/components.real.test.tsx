@@ -36,7 +36,9 @@ import {
   insertComponentInstance,
   installComponents,
   materializeMaster,
+  resetInstanceOverrides,
   runComponentCommand,
+  setInstanceOverrides,
   setInstanceProperties,
   uninstallComponents,
 } from "./host";
@@ -1409,5 +1411,154 @@ describe("masterless components (FR-64)", () => {
     clock2.frame();
     expect(get(api2, "E").isDeleted).toBe(false);
     expect(get(api2, "R").isDeleted).toBe(true);
+  });
+
+  describe("instance-local edits never reach the master (FR-67)", () => {
+    /** Card: rectangle R, free title text T, image I; Title property on T; two more instances. */
+    async function card() {
+      const els = [
+        ...convertToExcalidrawElements(
+          [
+            { type: "rectangle", id: "R", x: 0, y: 0, width: 200, height: 120 },
+            { type: "text", id: "T", x: 10, y: 60, text: "Job title", fontSize: 20 },
+          ] as ExcalidrawElementSkeleton[],
+          { regenerateIds: false },
+        ),
+        {
+          ...convertToExcalidrawElements(
+            [{ type: "rectangle", id: "I", x: 10, y: 10, width: 40, height: 40 }] as never,
+            { regenerateIds: false },
+          )[0],
+          type: "image",
+          fileId: "file-1",
+          status: "saved",
+          scale: [1, 1],
+          crop: null,
+        } as unknown as El,
+      ];
+      const api = await mount(els);
+      act(() =>
+        api.addFiles(
+          ["file-1", "file-2"].map((id) => ({
+            id,
+            mimeType: "image/png",
+            dataURL: "data:image/png;base64,iVBORw0KGgo=",
+            created: 1,
+          })) as never,
+        ),
+      );
+      const clock = manualSchedule();
+      installComponents(api, { schedule: clock.schedule });
+      act(() =>
+        api.updateScene({
+          appState: { selectedElementIds: { R: true, T: true, I: true } } as never,
+        }),
+      );
+      const created = call(() => createComponentFromSelection(api, "Person"))!;
+      clock.frame();
+      const cid = created.componentId;
+      call(() =>
+        defineComponentProperty(api, cid, {
+          id: "title",
+          name: "Title",
+          type: "text",
+          bindings: [{ elementId: "T" }],
+        }),
+      );
+      const a = call(() => insertComponentInstance(api, cid, { x: 0, y: 300 }))!.groupId;
+      const b = call(() => insertComponentInstance(api, cid, { x: 300, y: 300 }))!.groupId;
+      clock.frame();
+      return { api, clock, cid, first: created.groupId, a, b };
+    }
+    const font = (api: Api, group: string) =>
+      (child(api, group, "T") as ExcalidrawTextElement).fontSize;
+    const snapFont = (api: Api, cid: string, instance?: string) =>
+      (
+        masterSnapshot(all(api), cid, instance).elements.find(
+          (e) => e.type === "text",
+        ) as ExcalidrawTextElement
+      ).fontSize;
+
+    it("Reset overrides resets the enlarged font on that instance only and keeps its data", async () => {
+      const { api, clock, cid, first, a, b } = await card();
+      call(() => setInstanceProperties(api, a, { Title: "Studio Head" }));
+      call(() => setInstanceOverrides(api, a, [{ slot: "I", values: { fileId: "file-2" } }]));
+      call(() =>
+        setInstanceOverrides(api, a, [{ slot: "R", values: { backgroundColor: "#ffc9c9" } }]),
+      );
+      clock.frame();
+      // The user makes A's title (and, separately, B's) larger.
+      userEdit(api, { [child(api, a, "T").id]: { fontSize: 40 } });
+      userEdit(api, { [child(api, b, "T").id]: { fontSize: 30 } });
+      clock.frame();
+      expect(font(api, a)).toBe(40);
+      // Rebuilding the master from the edited instance (Edit master… / Save) uses the master's size.
+      expect(snapFont(api, cid, a)).toBe(20);
+
+      call(() => resetInstanceOverrides(api, a, { content: false }));
+      clock.frame();
+      expect(font(api, a)).toBe(20);
+      // Nothing else changed: not the other instances, not the master.
+      expect(font(api, b)).toBe(30);
+      expect(font(api, first)).toBe(20);
+      expect(snapFont(api, cid)).toBe(20);
+      // Property values and the image stay; style overrides go.
+      expect((child(api, a, "T") as ExcalidrawTextElement).originalText).toBe("Studio Head");
+      expect(child(api, a, "I")).toMatchObject({ fileId: "file-2" });
+      expect(child(api, a, "R").backgroundColor).toBe(get(api, "R").backgroundColor);
+      expect(tagFor(child(api, a, "T"), cid)!.pv).toEqual({ title: "Studio Head" });
+    });
+
+    it("commands on an instance with an enlarged font don't spread it to the others", async () => {
+      const { api, clock, cid, first, a, b } = await card();
+      userEdit(api, { [child(api, a, "T").id]: { fontSize: 40 } });
+      clock.frame();
+      call(() => setInstanceProperties(api, a, { Title: "Studio Head" }));
+      clock.frame();
+      expect(font(api, a)).toBe(40);
+      expect(font(api, b)).toBe(20);
+      expect(font(api, first)).toBe(20);
+      // A master edit keeps the instance's own size and moves the others.
+      const edited = masterSnapshot(all(api), cid, a).elements.map((e) =>
+        e.type === "text" ? ({ ...e, fontSize: 24 } as El) : e,
+      );
+      call(() => applyComponentMasterEdit(api, cid, edited));
+      clock.frame();
+      expect(font(api, a)).toBe(40);
+      expect(font(api, b)).toBe(24);
+      // Per-slot reset (the override's ×) restores the master's size.
+      call(() => resetInstanceOverrides(api, a, { slots: ["T"] }));
+      clock.frame();
+      expect(font(api, a)).toBe(24);
+      expect(snapFont(api, cid)).toBe(24);
+    });
+
+    it("legacy drift (no recorded master size) is not copied into the master", async () => {
+      const { api, clock, cid, a, b } = await card();
+      // A file from an older build: no master font size recorded, A's title already enlarged.
+      const t = child(api, a, "T");
+      const legacy = (e: El) => {
+        const tag = tagFor(e, cid)!;
+        const ms = { ...(tag.ms ?? {}) };
+        delete ms.fontSize;
+        return withTag(e, { ...tag, ms });
+      };
+      act(() =>
+        api.updateScene({
+          elements: all(api).map((e) =>
+            tagFor(e, cid)
+              ? ({ ...e, ...(e.id === t.id ? { fontSize: 40 } : {}), customData: legacy(e) } as El)
+              : e,
+          ),
+          captureUpdate: CaptureUpdateAction.NEVER,
+        }),
+      );
+      clock.frame();
+      expect(snapFont(api, cid, a)).toBe(20);
+      call(() => resetInstanceOverrides(api, a, { content: false }));
+      clock.frame();
+      expect(font(api, a)).toBe(20);
+      expect(font(api, b)).toBe(20);
+    });
   });
 });
