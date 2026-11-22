@@ -150,7 +150,12 @@ export function MasterEditor({ session, theme, onPointerUpdate }: MasterEditorPr
     const s = mainApi.getAppState();
     if (session.sidebar && s.openSidebar?.name !== session.sidebar.name)
       mainApi.updateScene({ appState: { openSidebar: session.sidebar } });
+    // Excalidraw's shortcuts follow focus; hand it back to the drawing so ⌘Z works right away.
+    const main = canvasRef.current
+      ?.closest(".canvas-slot")
+      ?.querySelector<HTMLElement>(".excalidraw-canvas:not(.master-edit__canvas) .excalidraw");
     useMasterEditStore.getState().close();
+    main?.focus({ preventScroll: true });
   }, [mainApi, session]);
 
   const done = useCallback(() => {
@@ -281,6 +286,7 @@ export function MasterEditor({ session, theme, onPointerUpdate }: MasterEditorPr
           <Excalidraw
             initialData={initialData}
             excalidrawAPI={handleApi}
+            autoFocus
             onDuplicate={componentsOnDuplicate}
             {...(onPointerUpdate ? { onPointerUpdate } : {})}
             {...(theme ? { theme } : {})}
