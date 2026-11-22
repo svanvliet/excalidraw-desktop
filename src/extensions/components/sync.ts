@@ -120,6 +120,11 @@ export function currentValue(c: El, key: OverrideKey): unknown {
   return key === "text" ? (c as TextEl).originalText : rec(c)[key];
 }
 
+/** Font sizes that differ by rounding only (measured / scaled sizes) are the same. */
+export function sameFont(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(0.05, 0.01 * Math.abs(b));
+}
+
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
@@ -334,7 +339,8 @@ function deriveChild(
     const mt = m as TextEl;
     const scale = Math.min(ic.t.sx, ic.t.sy);
     for (const k of TEXT_KEYS) if (k in mr) p[k] = mr[k];
-    p.fontSize = Math.round(mt.fontSize * scale * 1000) / 1000;
+    const fs = c ? tagFor(c, mc.componentId)?.fs : undefined;
+    p.fontSize = Math.round((fs ?? mt.fontSize) * scale * 1000) / 1000;
     const text = typeof ov?.text === "string" ? ov.text : mt.originalText;
     const style = { ...mt, fontSize: p.fontSize } as TextEl;
     const containerId = mt.containerId
@@ -393,6 +399,8 @@ function deriveChild(
   if (mc.props.length) tag.props = mc.props;
   if (Object.keys(ic.pv).length) tag.pv = ic.pv;
   if (Object.keys(ic.npv).length) tag.npv = ic.npv;
+  if (m.type === "text" && typeof ct?.fs === "number" && !sameFont(ct.fs, (m as TextEl).fontSize))
+    tag.fs = ct.fs;
   if (mc.source) {
     tag.source = mc.source;
     if (mc.libraryId) tag.libraryId = mc.libraryId;
@@ -594,6 +602,7 @@ export function syncComponent(
           npv: undefined,
           mv: undefined,
           ms: undefined,
+          fs: undefined,
           promoted,
         }),
       });
@@ -873,12 +882,15 @@ function adoptOrphanEdits(
         pvChanged = true;
       } else if (!same(cur, mv[k])) explicit[k] = cur;
     }
-    // Keys an instance can't override snap back to the master's look.
+    // Keys an instance can't override snap back to the master's look. A text's font size is
+    // the exception: resizing it is the instance's own edit (`fs`), kept out of the master.
     const back: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(tag.ms ?? {})) if (!same(rec(c)[k] ?? null, v)) back[k] = v;
+    for (const [k, v] of Object.entries(tag.ms ?? {}))
+      if (k !== "fontSize" && !same(rec(c)[k] ?? null, v)) back[k] = v;
+    const fs = c.type === "text" ? fontOverride(children, c, tag, componentId, changed) : tag.fs;
     const overrides = Object.keys(explicit).length ? explicit : undefined;
-    if (!same(overrides ?? null, tag.overrides ?? null))
-      access.patch(c.id, { ...back, customData: withTag(c, { ...tag, overrides }) });
+    if (!same(overrides ?? null, tag.overrides ?? null) || fs !== tag.fs)
+      access.patch(c.id, { ...back, customData: withTag(c, { ...tag, overrides, fs }) });
     else if (Object.keys(back).length) access.patch(c.id, back as Patch);
   }
   if (pvChanged)
@@ -887,6 +899,28 @@ function adoptOrphanEdits(
       const tag = tagFor(el, componentId);
       if (tag) access.patch(c.id, { customData: withTag(el, { ...tag, pv: { ...pv } }) });
     }
+}
+
+/**
+ * The `fs` an orphan instance's text child should record after a direct edit: its font size in
+ * master units when that differs from the master's recorded size (`ms.fontSize`), else none.
+ * Without a recorded size (files from older builds) the current `fs` stays.
+ */
+function fontOverride(
+  children: readonly El[],
+  c: El,
+  tag: ComponentTag,
+  componentId: string,
+  changed: ReadonlySet<string>,
+): number | undefined {
+  const master = tag.ms?.fontSize;
+  if (typeof master !== "number" || master <= 0) return tag.fs;
+  const t = chooseTransform(children, componentId, changed);
+  const scale = Math.min(t.sx, t.sy) || 1;
+  const cur = (c as TextEl).fontSize;
+  if (sameFont(cur, (tag.fs ?? master) * scale)) return tag.fs;
+  const fs = Math.round((cur / scale) * 1000) / 1000;
+  return sameFont(fs, master) ? undefined : fs;
 }
 
 /**

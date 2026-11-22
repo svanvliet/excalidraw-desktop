@@ -260,3 +260,76 @@ test("library-linked instance: Edit master…, Done updates the instance", async
   await expect.poll(() => roles(page)).toEqual(["instance", "instance"]);
   await expect.poll(() => texts(page)).toEqual(["Edited"]);
 });
+
+/** Edits the elements matching `ids` like a user would (one undoable step). */
+async function userEdit(page: Page, ids: string[], patch: Record<string, unknown>) {
+  await page.evaluate(
+    ([ids, patch]) =>
+      window.__canvas!.updateScene({
+        elements: window
+          .__canvas!.getSceneElementsIncludingDeleted()
+          .map((e) => (ids.includes(e.id) ? { ...e, ...patch, version: e.version + 1 } : e)),
+        captureUpdate: "IMMEDIATELY" as never,
+      }),
+    [ids, patch] as const,
+  );
+}
+
+const fontSizes = (page: Page) =>
+  page.evaluate(() =>
+    window
+      .__canvas!.getSceneElements()
+      .filter((e) => e.type === "text")
+      .map((e) => ({
+        text: (e as { text: string }).text,
+        fontSize: (e as { fontSize: number }).fontSize,
+        group: e.groupIds.at(-1),
+      })),
+  );
+
+test("Reset overrides resets only that instance's look and keeps its text (FR-67)", async ({
+  page,
+}) => {
+  await open(page);
+  await twoCards(page);
+  const all = await tagged(page);
+  const group = all.find((e) => e.id === "M")!.groupIds.at(-1)!;
+  const label = all.find((e) => e.type === "text" && e.groupIds.includes(group))!;
+  await userEdit(page, [label.id], { text: "Magnus", originalText: "Magnus" });
+  await userEdit(page, [label.id], { fontSize: 40 });
+  await expect
+    .poll(async () => (await fontSizes(page)).map((t) => [t.text, t.fontSize]).sort())
+    .toEqual([
+      ["Card", 20],
+      ["Magnus", 40],
+    ]);
+
+  await select(
+    page,
+    all.filter((e) => e.groupIds.includes(group)).map((e) => e.id),
+  );
+  await openStripRow(page, "component-props");
+  await expect(page.locator("[data-testid=component-override]:visible")).toContainText("font size");
+  await page.locator("[data-testid=component-reset]:visible").click();
+  await expect
+    .poll(async () => (await fontSizes(page)).map((t) => [t.text, t.fontSize]).sort())
+    .toEqual([
+      ["Card", 20],
+      ["Magnus", 20],
+    ]);
+  await expect(page.locator("[data-testid=component-reset]:visible")).toBeDisabled();
+
+  // The master kept its own look: Edit master… shows the original size.
+  await page.locator("[data-testid=component-edit-master]:visible").click();
+  await expect(overlay(page)).toBeVisible();
+  await page.waitForFunction(() => window.__masterEditor);
+  const masterSizes = await page.evaluate(() =>
+    window
+      .__masterEditor!.getSceneElements()
+      .filter((e) => e.type === "text")
+      .map((e) => (e as { fontSize: number }).fontSize),
+  );
+  expect(masterSizes.length).toBeGreaterThan(0);
+  expect(masterSizes.every((s) => s === 20)).toBe(true);
+  await page.getByTestId("master-edit-cancel").click();
+});

@@ -21,7 +21,11 @@
  *  - `source: "library"` + `libraryId`: the master lives in the library, so instances whose
  *    master is absent stay instances (no promotion). `mv` keeps the master's values for the keys
  *    an instance child overrides, and `ms` its look for the keys it can't override, so the
- *    master can be rebuilt from an instance and direct edits to those keys revert.
+ *    master can be rebuilt from an instance and direct edits to those keys revert. For text,
+ *    `ms.fontSize` is the master's (unscaled) font size.
+ *  - `fs` (instance text children): the instance's own font size, in master units (the child
+ *    shows `fs × scale` instead of the master's size). Set when the user resizes the text of an
+ *    instance; it stays local to that instance and never feeds back into the master (FR-67).
  *
  * Nested components (D-DX11): an element can belong to several components at once (an element
  * of an A instance inside B's master). Then the namespace holds `{ v: 2, tags: [...] }`, one tag
@@ -68,10 +72,20 @@ export const LOOK_KEYS = [
   "endArrowhead",
 ] as const;
 
-/** `el`'s values for the `LOOK_KEYS` it has. */
+/**
+ * Override keys that hold an instance's content rather than its look. "Reset overrides" in the
+ * UI keeps them (and property values); they're cleared one slot at a time (FR-67, D-DX21).
+ */
+export const CONTENT_KEYS: readonly string[] = ["text", "fileId", "link"];
+
+/** `el`'s values for the `LOOK_KEYS` it has, plus a text's font size (see `ms`). */
 export function lookOf(el: El): Record<string, unknown> {
   const r = el as unknown as Record<string, unknown>;
-  return Object.fromEntries(LOOK_KEYS.filter((k) => k in r).map((k) => [k, r[k] ?? null]));
+  const out = Object.fromEntries(
+    LOOK_KEYS.filter((k) => k in r).map((k) => [k, r[k] ?? null]),
+  ) as Record<string, unknown>;
+  if (el.type === "text" && typeof r.fontSize === "number") out.fontSize = r.fontSize;
+  return out;
 }
 
 export type OverrideKey = (typeof OVERRIDE_KEYS)[number];
@@ -119,6 +133,8 @@ export interface ComponentTag {
   mv?: Overrides;
   /** The master's look for keys instances can't override (`LOOK_KEYS`), with `mv`. */
   ms?: Record<string, unknown>;
+  /** Instance text only: its own font size in master units (see the header). */
+  fs?: number;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -269,6 +285,7 @@ function cleanTag(tag: ComponentTag): ComponentTag {
   if (tag.libraryId) out.libraryId = tag.libraryId;
   if (nonEmpty(tag.mv)) out.mv = tag.mv;
   if (nonEmpty(tag.ms)) out.ms = tag.ms;
+  if (typeof tag.fs === "number" && tag.fs > 0) out.fs = tag.fs;
   if (needsV2(out)) out.v = 2;
   return out;
 }

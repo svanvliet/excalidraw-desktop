@@ -9,7 +9,12 @@ import { canSaveMyComponents } from "../../lib/componentLibraryStore";
 import { CloseIcon } from "../icons";
 import type { PanelApi } from "../propertiesPanel/panel";
 import { saveToMyComponents, useMyComponents } from "./commands";
-import { keyLabel, linkedEntryId, type ComponentView } from "./componentPanelSection";
+import {
+  hasStyleOverrides,
+  keyLabel,
+  linkedEntryId,
+  type ComponentView,
+} from "./componentPanelSection";
 import { isMasterEditorApi, openMasterEditor } from "./masterEditStore";
 
 /** Keeps Excalidraw's canvas focused so its shortcuts (undo!) keep working after a click. */
@@ -130,8 +135,9 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
         )}
         <Action
           testId="component-reset"
-          disabled={!view.overrides.length}
-          onClick={() => resetInstanceOverrides(api, view.groupId)}
+          title="Resets this instance's look to the master; keeps its text, images and property values"
+          disabled={!hasStyleOverrides(view.overrides)}
+          onClick={() => resetInstanceOverrides(api, view.groupId, { content: false })}
         >
           Reset overrides
         </Action>

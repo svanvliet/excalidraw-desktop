@@ -14,7 +14,7 @@
  */
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { El } from "../../agent/scene/draft";
-import { groupOf, listComponents, tagOf } from "../../extensions/components/model";
+import { CONTENT_KEYS, groupOf, listComponents, tagOf } from "../../extensions/components/model";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { createComponentFromSelection } from "../../extensions/components/host";
 import { ComponentsIcon } from "../icons";
@@ -70,7 +70,12 @@ const KEY_LABELS: Record<string, string> = {
   opacity: "opacity",
   link: "link",
   fileId: "image",
+  fontSize: "font size",
 };
+
+/** Overrides "Reset overrides" clears: everything but content (text, image, link) — FR-67. */
+export const hasStyleOverrides = (overrides: readonly SlotOverride[]) =>
+  overrides.some((o) => o.keys.some((k) => !CONTENT_KEYS.includes(k)));
 
 export const keyLabel = (k: string) => KEY_LABELS[k] ?? k;
 
@@ -120,7 +125,9 @@ export function componentView(
   });
   const overrides: SlotOverride[] = [];
   for (const c of children) {
-    const keys = Object.keys(tagOf(c)?.overrides ?? {});
+    const tag = tagOf(c);
+    const keys = Object.keys(tag?.overrides ?? {});
+    if (typeof tag?.fs === "number") keys.push("fontSize");
     if (keys.length) overrides.push({ slot: tagOf(c)!.slot, label: slotLabel(c), keys });
   }
   const source = children.map(librarySourceOf).find(Boolean) ?? null;

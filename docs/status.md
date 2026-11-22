@@ -42,6 +42,8 @@
 | DX-12 | DX wave 3: Masterless components + master-edit overlay                                        | ✅     | Engine (L5): create makes the first instance, `applyMasterEdit` (one undo step), legacy masters demoted on load, masterless agent tools (FR-64, D-DX18). Overlay (L6): Edit master… opens a temporary canvas with dimmed context; Done = one undo, Cancel no-op (FR-66, D-DX20). Vitest + Playwright green.                                                                                                                                                       |
 | DX-14 | UX nit: sidebar remembers its last tab                                                        | ✅     | The Library button reopens the sidebar on the last-used tab (e.g. Components), across document tabs and restarts (`sidebarTab` setting) (FR-68, D-DX22). Vitest `sidebarTabMemory` + `settingsStore` and `e2e/sidebar-tab-memory.spec.ts` green.                                                                                                                                                                                                                  |
 
+**DX-12 fix (FR-67, D-DX21):** Reset overrides on one masterless instance spread its enlarged title font to the master and every instance and wiped its data. Text font size is now an instance override (`fs`), the rebuilt master keeps `ms.fontSize`, and the UI's Reset overrides keeps text, images and property values. Vitest `components.real.test.tsx` (FR-67) + `componentsUi.real.test.tsx`, Playwright `components-ui.spec.ts` green.
+
 ## Acceptance checks (per milestone)
 
 ### M1
@@ -223,6 +225,7 @@
 - [x] Edit master… opens the overlay with its header; changing the master and Done updates every instance; one Cmd/Ctrl+Z reverts (Playwright `components-ui.spec.ts`, Vitest `componentsUi.real.test.tsx`).
 - [x] Cancel and Esc leave the drawing unchanged; Done on a linked component updates My components (Playwright, Vitest).
 - [x] Scene build: alignment, context copies dimmed and locked, context stripped on Done (Vitest `masterEditScene.test.ts`).
+- [x] Reset overrides on one instance resets its font size only; other instances and the master keep theirs; text, image and property values stay (FR-67; Vitest `components.real.test.tsx`, `componentsUi.real.test.tsx`; Playwright `components-ui.spec.ts`).
 
 ## Changelog of status changes
 

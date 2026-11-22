@@ -34,7 +34,7 @@ import {
   type OverrideKey,
 } from "./model";
 import { resolveInstance, syncDraft } from "./actions";
-import { currentValue, masterValue, overridable, propOverrides } from "./sync";
+import { currentValue, masterValue, overridable, propOverrides, sameFont } from "./sync";
 import { layoutBoundText, measureFreeText, wrapFixedText } from "./text";
 
 type TextEl = ExcalidrawTextElement;
@@ -233,8 +233,74 @@ function masterTag(tag: ComponentTag): ComponentTag {
     npv: undefined,
     mv: undefined,
     ms: undefined,
+    fs: undefined,
     promoted: undefined,
   };
+}
+
+/** The transform of an instance (from its largest child with a recorded base). */
+function instanceTransform(children: readonly El[], cid: string) {
+  const ref = children
+    .filter((c) => !c.isDeleted && !isBoundText(c) && tagFor(c, cid)?.base)
+    .sort((a, b) => {
+      const ba = tagFor(a, cid)!.base!;
+      const bb = tagFor(b, cid)!.base!;
+      return Math.abs(bb.w * bb.h) - Math.abs(ba.w * ba.h);
+    })[0];
+  return ref ? inferTransform(ref, tagFor(ref, cid)!.base!) : translation({ x: 0, y: 0 });
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * The master's font size per text slot, never an instance's own (FR-67): the size instances
+ * recorded (`ms.fontSize`), else (files from older builds) the size most instances show, in
+ * master units. Instance text that shows another size without an `fs` gets one, so the size
+ * stays that instance's own and the rebuilt master doesn't take it.
+ */
+function masterFontSizes(draft: Draft, cid: string): Map<string, number> {
+  const groups = new Map<string, El[]>();
+  for (const el of draft.toArray()) {
+    const t = tagFor(el, cid);
+    const g = t?.role === "instance" && !isOwned(el, cid) ? groupOf(el, t) : null;
+    if (!g) continue;
+    const list = groups.get(g);
+    if (list) list.push(el);
+    else groups.set(g, [el]);
+  }
+  const votes = new Map<string, Map<number, number>>();
+  const seen: Array<{ el: El; size: number }> = [];
+  for (const els of groups.values()) {
+    const t = instanceTransform(els, cid);
+    const scale = Math.min(t.sx, t.sy) || 1;
+    for (const el of els) {
+      if (el.type !== "text" || el.isDeleted) continue;
+      const tag = tagFor(el, cid)!;
+      const size = round3((el as TextEl).fontSize / scale);
+      seen.push({ el, size });
+      const recorded = tag.ms?.fontSize;
+      const vote =
+        typeof recorded === "number" && recorded > 0
+          ? recorded
+          : tag.fs === undefined
+            ? size
+            : null;
+      if (vote === null) continue;
+      let v = votes.get(tag.slot);
+      if (!v) votes.set(tag.slot, (v = new Map()));
+      v.set(vote, (v.get(vote) ?? 0) + 1);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [slot, v] of votes)
+    out.set(slot, [...v].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]);
+  for (const { el, size } of seen) {
+    const tag = tagFor(el, cid)!;
+    const master = out.get(tag.slot);
+    if (master === undefined || tag.fs !== undefined || sameFont(size, master)) continue;
+    draft.update(el.id, { customData: writeTags(el, swapTag(el, cid, { ...tag, fs: size })) });
+  }
+  return out;
 }
 
 /**
@@ -247,17 +313,11 @@ export function materialize(draft: Draft, instance: unknown): string {
   const cid = inst.componentId;
   mustHaveNoMaster(draft, cid);
   rekeyNested(draft, cid);
+  const fonts = masterFontSizes(draft, cid);
   const children = instanceChildren(draft, cid, inst.groupId);
   const canon = canonicalInner(children, cid);
   const live = children.filter((c) => !c.isDeleted);
-  const ref = [...live]
-    .filter((c) => !isBoundText(c) && tagFor(c, cid)?.base)
-    .sort((a, b) => {
-      const ba = tagFor(a, cid)!.base!;
-      const bb = tagFor(b, cid)!.base!;
-      return Math.abs(bb.w * bb.h) - Math.abs(ba.w * ba.h);
-    })[0];
-  const t = ref ? inferTransform(ref, tagFor(ref, cid)!.base!) : translation({ x: 0, y: 0 });
+  const t = instanceTransform(live, cid);
   const box = unionBounds(live)!;
   const place = translation({ x: box.maxX + GAP, y: box.minY });
   const scale = Math.min(t.sx, t.sy) || 1;
@@ -309,7 +369,7 @@ export function materialize(draft: Draft, instance: unknown): string {
       updated: Date.now(),
     } as unknown as Record<string, unknown>;
     if (c.type === "text") {
-      el.fontSize = Math.round(((c as TextEl).fontSize / scale) * 1000) / 1000;
+      el.fontSize = fonts.get(tag.slot) ?? round3((c as TextEl).fontSize / scale);
       el.containerId = remap((c as TextEl).containerId) ?? null;
     }
     for (const end of ["startBinding", "endBinding"]) {
@@ -334,13 +394,18 @@ export function adoptAsMaster(draft: Draft, instance: unknown): string {
   const inst = resolveInstance(draft, instance);
   const cid = inst.componentId;
   mustHaveNoMaster(draft, cid);
+  const fonts = masterFontSizes(draft, cid);
   const children = instanceChildren(draft, cid, inst.groupId);
+  const t = instanceTransform(children, cid);
+  const scale = Math.min(t.sx, t.sy) || 1;
   const changed: string[] = [];
   for (const c of children) {
     const tag = tagFor(c, cid)!;
     const tags = tagsOf(c).map((t) => (t.componentId === cid ? masterTag(t) : t));
+    const font = c.type === "text" ? fonts.get(tag.slot) : undefined;
     draft.update(c.id, {
       ...valuesPatch(c, masterValues(draft, c, cid)),
+      ...(font !== undefined ? { fontSize: round3(font * scale) } : {}),
       isDeleted: false,
       customData: writeTags(c, tags),
     });
