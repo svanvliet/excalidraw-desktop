@@ -132,13 +132,17 @@ export async function finishMasterEdit(api: Api): Promise<boolean> {
   const edit = edits.get(api);
   const engine = libraryMasterEngine();
   if (!edit || !engine) return false;
-  let saved = false;
-  try {
-    saved = await putMyComponent(
-      masterToEntry(api.getSceneElements() as readonly El[], api.getFiles(), edit.componentId),
-    );
-  } catch (err) {
-    log.error("components: saving the edited master failed", err);
+  // A component that isn't in My components (FR-64: created in this drawing) only lives here.
+  const inLibrary = hasLibraryEntry(edit.componentId);
+  let saved = !inLibrary;
+  if (inLibrary) {
+    try {
+      saved = await putMyComponent(
+        masterToEntry(api.getSceneElements() as readonly El[], api.getFiles(), edit.componentId),
+      );
+    } catch (err) {
+      log.error("components: saving the edited master failed", err);
+    }
   }
   if (!saved) {
     api.setToast({ message: "Couldn't save the master to My components. It stays on the canvas." });
@@ -147,7 +151,7 @@ export async function finishMasterEdit(api: Api): Promise<boolean> {
   edits.delete(api);
   notify();
   engine.dematerializeMaster(api, edit.masterGroupId);
-  api.setToast({ message: `Saved "${edit.name}" to My components`, duration: 2500 });
+  if (inLibrary) api.setToast({ message: `Saved "${edit.name}" to My components`, duration: 2500 });
   return true;
 }
 
