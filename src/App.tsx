@@ -1,4 +1,5 @@
 import { referencedFiles } from "./extensions/stack";
+import { persistedElements } from "./extensions/components/persist";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -147,11 +148,7 @@ export function App() {
   const captureSnapshot = useCallback((tabId: string): string | null => {
     const api = apisRef.current.get(tabId);
     if (!api) return null;
-    return serializeScene(
-      api.getSceneElements(),
-      api.getAppState() as unknown as Record<string, unknown>,
-      referencedFiles(api.getSceneElements(), api.getFiles()) as unknown as Record<string, unknown>,
-    );
+    return serializeSceneOf(api);
   }, []);
 
   const scheduleAutosave = useCallback(
@@ -478,12 +475,7 @@ export function App() {
   const writeActiveTabTo = useCallback(async (id: string, path: string) => {
     const api = apisRef.current.get(id);
     if (!api) throw new Error("editor is not ready yet");
-    const contents = serializeScene(
-      api.getSceneElements(),
-      api.getAppState() as unknown as Record<string, unknown>,
-      referencedFiles(api.getSceneElements(), api.getFiles()) as unknown as Record<string, unknown>,
-    );
-    await saveFile(path, contents);
+    await saveFile(path, serializeSceneOf(api));
   }, []);
 
   const handleSaveAsInternal = useCallback(async (): Promise<boolean> => {
@@ -871,6 +863,19 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
     </main>
+  );
+}
+
+/**
+ * The `.excalidraw` JSON for a tab: live elements plus hidden component slots (FR-69), and the
+ * files they reference.
+ */
+function serializeSceneOf(api: ExcalidrawImperativeAPI): string {
+  const elements = persistedElements(api.getSceneElementsIncludingDeleted());
+  return serializeScene(
+    elements,
+    api.getAppState() as unknown as Record<string, unknown>,
+    referencedFiles(elements, api.getFiles()) as unknown as Record<string, unknown>,
   );
 }
 

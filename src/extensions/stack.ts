@@ -229,7 +229,7 @@ export function sceneFileIds(elements: readonly ExcalidrawElement[]): string[] {
 }
 
 /**
- * The subset of `files` the given (non-deleted) elements still need. Excalidraw keeps every file
+ * The subset of `files` the given (saved) elements still need. Excalidraw keeps every file
  * it has seen in memory, including superseded extension outputs, so saving `getFiles()` as-is
  * would grow the document with each re-render.
  */
