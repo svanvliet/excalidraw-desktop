@@ -225,4 +225,91 @@ describe("PropertiesPanelHost", () => {
     await waitFor(() => expect(screen.queryByTestId("b2-native")).toBeNull());
     expect(order()).toEqual(["first", "mid", "last"]);
   });
+
+  describe("progressive disclosure (FR-65)", () => {
+    const make = vi.fn();
+    // g1: in use only with 2+ elements; "+" reveals it. g2: a run-only "+" entry.
+    const gated = [
+      section("t1", "top", () => true),
+      section("g1", "top", () => true, {
+        inUse: ({ n }: { n: number }) => n > 1,
+        more: () => ({ label: "Add g1" }),
+      }),
+      section("g2", "top", () => true, {
+        inUse: () => false,
+        more: () => ({ label: "Make g2", run: make }),
+      }),
+    ];
+    const renderGated = () =>
+      render(
+        <PropertiesPanelHost
+          api={api as unknown as PanelApi}
+          container={{ current: wrapper }}
+          sections={gated}
+        />,
+      );
+    beforeEach(() => make.mockReset());
+
+    it("hides unused rows behind a last '+' row", async () => {
+      menu.append(nativePanel());
+      renderGated();
+      api.select("r");
+      await screen.findByTestId("props-strip-more-native");
+      expect(order()).toEqual(["t1-native", "props-strip-more-native", "first", "mid", "last"]);
+      expect(screen.getByTestId("props-strip-more-native")).toHaveClass("props-strip__row--last");
+      expect(screen.getByTestId("t1-native")).not.toHaveClass("props-strip__row--last");
+
+      fireEvent.click(screen.getByTestId("props-strip-more-toggle"));
+      expect(screen.getAllByRole("menuitem").map((b) => b.textContent)).toEqual([
+        "Add g1",
+        "Make g2",
+      ]);
+
+      api.select("r", "e");
+      await screen.findByTestId("g1-native");
+      expect(order()).toEqual([
+        "t1-native",
+        "g1-native",
+        "props-strip-more-native",
+        "first",
+        "mid",
+        "last",
+      ]);
+    });
+
+    it("reveals and opens a row from '+' until the selection changes", async () => {
+      menu.append(nativePanel());
+      renderGated();
+      api.select("r");
+      fireEvent.click(await screen.findByTestId("props-strip-more-toggle"));
+      fireEvent.click(screen.getByTestId("props-strip-more-g1"));
+      expect(await screen.findByText("g1:1")).toBeInTheDocument();
+      expect(usePanelStripStore.getState().open).toBe("g1");
+      expect(screen.queryByRole("menuitem")).toBeNull();
+
+      api.select("e");
+      await waitFor(() => expect(screen.queryByTestId("g1-native")).toBeNull());
+    });
+
+    it("runs a '+' action entry instead of revealing its row", async () => {
+      menu.append(nativePanel());
+      renderGated();
+      api.select("r");
+      fireEvent.click(await screen.findByTestId("props-strip-more-toggle"));
+      fireEvent.click(screen.getByTestId("props-strip-more-g2"));
+      expect(make).toHaveBeenCalledWith(api);
+      expect(screen.queryByTestId("g2-native")).toBeNull();
+    });
+
+    it("docks the '+' row after the strip rows", async () => {
+      renderGated();
+      api.select("r");
+      const dock = await screen.findByTestId("props-dock");
+      expect(Array.from(dock.children).map((c) => (c as HTMLElement).dataset.testid)).toEqual([
+        "t1-dock",
+        "props-strip-more-dock",
+      ]);
+      expect(screen.getByTestId("props-strip-more-dock")).toHaveClass("props-strip__row--last");
+    });
+  });
 });

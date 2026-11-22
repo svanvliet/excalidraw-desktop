@@ -10,6 +10,9 @@
  * panel is in the DOM (e.g. the mobile layout with its properties sheet closed) the sections show
  * in a small docked island instead.
  *
+ * Rows gated by progressive disclosure (FR-65, D-DX19: `inUse` / `more`) are offered from a "+"
+ * row after the last row instead; picking one reveals that row for the current selection.
+ *
  * Being outside Excalidraw's React tree, the sections would swallow its shortcuts; keyboard.ts
  * bridges them back. The DOM contract (PANEL_SELECTOR) is pinned by e2e/extensions.spec.ts.
  */
@@ -18,17 +21,21 @@ import { createPortal } from "react-dom";
 import {
   computeViews,
   PANEL_SELECTOR,
+  selectionKey,
+  stripLayout,
   type AnyPanelSection,
   type PanelApi,
   type Views,
 } from "./panel";
 import { bridgePanelKeys, PANEL_HOST_ATTR } from "./keyboard";
-import { StripRow } from "./controls";
+import { MORE_TEST_ID, StripMore, StripRow } from "./controls";
 import { usePanelStripStore } from "../../stores/panelStripStore";
 
 const rowClass = (s: AnyPanelSection) =>
   s.slot === "top" ? "props-strip__row" : `props-section ${s.testId}`;
 const LAST_ROW = "props-strip__row--last";
+/** Host id of the "+" row (not a section id). */
+const MORE = "\u0000more";
 
 /**
  * Keeps one host node per visible section in the native panel, in registration order. Returns
@@ -48,6 +55,11 @@ function usePanelHosts(
       el.setAttribute(PANEL_HOST_ATTR, "");
       map.set(s.id, el);
     }
+    const more = document.createElement("div");
+    more.className = "props-strip__row";
+    more.dataset.testid = `${MORE_TEST_ID}-native`;
+    more.setAttribute(PANEL_HOST_ATTR, "");
+    map.set(MORE, more);
     return map;
   }, [sections]);
   const [attached, setAttached] = useState(false);
@@ -58,6 +70,7 @@ function usePanelHosts(
     const pick = (slot: AnyPanelSection["slot"]) =>
       sections.filter((s) => s.slot === slot && ids.has(s.id)).map((s) => hosts.get(s.id)!);
     const top = pick("top");
+    if (ids.has(MORE)) top.push(hosts.get(MORE)!);
     const bottom = pick("bottom");
     const sync = () => {
       for (const [id, host] of hosts) if (!ids.has(id)) host.remove();
@@ -98,6 +111,16 @@ function usePanelHosts(
   return visibleKey && attached ? hosts : null;
 }
 
+interface Snapshot {
+  views: Views;
+  sel: string;
+}
+
+const snapshot = (api: PanelApi, sections: readonly AnyPanelSection[]): Snapshot => ({
+  views: computeViews(api, sections),
+  sel: selectionKey(api),
+});
+
 export function PropertiesPanelHost({
   api,
   container,
@@ -109,22 +132,28 @@ export function PropertiesPanelHost({
   /** Registration order is display order within a slot. Keep the array identity stable. */
   sections: readonly AnyPanelSection[];
 }) {
-  const [views, setViews] = useState<Views>(() => computeViews(api, sections));
+  const [{ views, sel }, setState] = useState<Snapshot>(() => snapshot(api, sections));
   const [root, setRoot] = useState<HTMLElement | null>(null);
+  // Rows revealed from "+", for the selection they were revealed on.
+  const [revealed, setRevealed] = useState<{ sel: string; ids: string[] }>({ sel: "", ids: [] });
 
   useEffect(() => {
-    let last = JSON.stringify(computeViews(api, sections));
-    setViews(JSON.parse(last) as Views);
+    let last = JSON.stringify(snapshot(api, sections));
+    setState(JSON.parse(last) as Snapshot);
     return api.onChange(() => {
-      const key = JSON.stringify(computeViews(api, sections));
+      const key = JSON.stringify(snapshot(api, sections));
       if (key === last) return;
       last = key;
-      setViews(JSON.parse(key) as Views);
+      setState(JSON.parse(key) as Snapshot);
     });
   }, [api, sections]);
 
-  const shown = sections.filter((s) => s.id in views);
-  const visibleKey = shown.map((s) => s.id).join("\n");
+  const { shown, more } = stripLayout(
+    sections,
+    views,
+    new Set(revealed.sel === sel ? revealed.ids : []),
+  );
+  const visibleKey = [...shown.map((s) => s.id), ...(more.length ? [MORE] : [])].join("\n");
 
   useEffect(() => {
     setRoot(container.current?.querySelector<HTMLElement>(".excalidraw") ?? null);
@@ -134,8 +163,23 @@ export function PropertiesPanelHost({
   useEffect(() => (root ? bridgePanelKeys(root) : undefined), [root]);
   const open = usePanelStripStore((s) => s.open);
   const toggle = usePanelStripStore((s) => s.toggle);
+  const setOpen = usePanelStripStore((s) => s.setOpen);
 
-  if (!shown.length || !root) return null;
+  if (!visibleKey || !root) return null;
+  const pick = (testId: string) => {
+    const hit = more.find((m) => m.section.testId === testId);
+    if (!hit) return;
+    if (hit.entry.run) return hit.entry.run(api);
+    const keep = revealed.sel === sel ? revealed.ids : [];
+    setRevealed({ sel, ids: [...keep, hit.section.id] });
+    setOpen(hit.section.id);
+  };
+  const moreRow = (
+    <StripMore
+      entries={more.map((m) => ({ testId: m.section.testId, ...m.entry }))}
+      onPick={pick}
+    />
+  );
   const render = (s: AnyPanelSection) => {
     if (s.slot === "top") {
       return (
@@ -151,18 +195,35 @@ export function PropertiesPanelHost({
     const { Component } = s;
     return Component ? <Component view={views[s.id]} api={api} /> : null;
   };
-  if (hosts) return <>{shown.map((s) => createPortal(render(s), hosts.get(s.id)!, s.id))}</>;
+  if (hosts) {
+    return (
+      <>
+        {shown.map((s) => createPortal(render(s), hosts.get(s.id)!, s.id))}
+        {more.length > 0 && createPortal(moreRow, hosts.get(MORE)!, MORE)}
+      </>
+    );
+  }
   const top = shown.filter((s) => s.slot === "top");
   const docked = [...top, ...shown.filter((s) => s.slot !== "top")];
   const dockClass = (s: AnyPanelSection) =>
     s.slot !== "top"
       ? `panelColumn ${rowClass(s)}`
-      : s === top[top.length - 1]
+      : s === top[top.length - 1] && !more.length
         ? `${rowClass(s)} ${LAST_ROW}`
         : rowClass(s);
   return createPortal(
     <div className="Island props-dock" data-testid="props-dock" {...{ [PANEL_HOST_ATTR]: "" }}>
-      {docked.map((s) => (
+      {top.map((s) => (
+        <div key={s.id} className={dockClass(s)} data-testid={`${s.testId}-dock`}>
+          {render(s)}
+        </div>
+      ))}
+      {more.length > 0 && (
+        <div className={`props-strip__row ${LAST_ROW}`} data-testid={`${MORE_TEST_ID}-dock`}>
+          {moreRow}
+        </div>
+      )}
+      {docked.slice(top.length).map((s) => (
         <div key={s.id} className={dockClass(s)} data-testid={`${s.testId}-dock`}>
           {render(s)}
         </div>
