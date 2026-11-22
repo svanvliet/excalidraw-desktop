@@ -433,7 +433,9 @@ export function demoteMaster(draft: Draft, masterGroupId: unknown): string {
     draft.update(el.id, { customData: writeTags(el, swapTag(el, cid, tag)) });
   }
   rekeyNested(draft, cid, legacy);
-  syncDraft(draft, [cid]);
+  // The old master becomes an ordinary instance with no property values set, so it shows the
+  // defaults (e.g. only the default branch of a choice) like a freshly inserted instance would.
+  withMaster(draft, cid, () => syncDraft(draft, [cid]), masterGroupId as string);
   return masterGroupId as string;
 }
 

@@ -1363,4 +1363,51 @@ describe("masterless components (FR-64)", () => {
     expect(get(api, "E").width).toBe(60);
     expect(call(() => demoteLegacyMasters(api))).toBe(0);
   });
+
+  it("migration: the demoted master shows the property defaults, like a new instance", async () => {
+    const { api, clock, created, inst, text } = await setup();
+    const cid = created.componentId;
+    // Avatar: "photo" shows R (with its label), "initials" shows E; the master shows both.
+    run(api, (d) =>
+      defineProperty(d, cid, {
+        id: "avatar",
+        name: "Avatar",
+        type: "choice",
+        options: ["photo", "initials"],
+        default: "photo",
+        bindings: [
+          { elementId: "R", key: "visible", map: { photo: true, initials: false } },
+          { elementId: "E", key: "visible", map: { photo: false, initials: true } },
+        ],
+      }),
+    );
+    run(api, (d) => setProperties(d, inst.groupId, { avatar: "initials" }));
+    clock.frame();
+    const loaded = demoteMastersIn(all(api));
+    const at = (id: string) => loaded.find((e) => e.id === id)!;
+    expect(at("R").isDeleted).toBe(false);
+    expect(at(text).isDeleted).toBe(false);
+    expect(at("E").isDeleted).toBe(true);
+    expect(tagFor(at("E"), cid)).toMatchObject({ role: "instance" });
+    // The other instance keeps its own choice.
+    const other = (slot: string) =>
+      loaded.find((e) => {
+        const t = tagFor(e, cid);
+        return t?.role === "instance" && groupOf(e, t) === inst.groupId && t.slot === slot;
+      })!;
+    expect(other("R").isDeleted).toBe(true);
+    expect(other("E").isDeleted).toBe(false);
+    // Choosing the other branch on the demoted card reveals it.
+    const { api: api2, clock: clock2 } = await (async () => {
+      cleanup();
+      const a = await mount(loaded as El[]);
+      const c = manualSchedule();
+      installComponents(a, { schedule: c.schedule });
+      return { api: a, clock: c };
+    })();
+    call(() => setInstanceProperties(api2, created.masterGroupId, { avatar: "initials" }));
+    clock2.frame();
+    expect(get(api2, "E").isDeleted).toBe(false);
+    expect(get(api2, "R").isDeleted).toBe(true);
+  });
 });
