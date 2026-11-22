@@ -209,29 +209,50 @@ export function applyComponentMasterEdit(
   return runComponentCommand(api, (d) => (applyMasterEdit(d, componentId, edited), true)) ?? false;
 }
 
+/** Demote every live master in `draft` (see `demoteLegacyMasters`). Returns how many. */
+function demoteAll(draft: Draft): number {
+  let n = 0;
+  for (const c of listComponents(draft.toArray())) {
+    const group = liveMasterGroup(draft, c.componentId);
+    if (!group) continue;
+    demoteMaster(draft, group);
+    n++;
+  }
+  return n;
+}
+
 /**
  * Turn masters left on the canvas by older builds into instances (FR-64): the master moves
- * off-canvas and its elements stay where they are. Not an undo step. Returns how many.
+ * off-canvas and its elements stay where they are. For a drawing about to be loaded; returns
+ * the same array when there's nothing to migrate (or migrating fails).
  */
+export function demoteMastersIn<T extends readonly El[]>(elements: T): T {
+  try {
+    const draft = new Draft(elements);
+    const n = demoteAll(draft);
+    if (!n) return elements;
+    log.info(`components: moved ${n} on-canvas master(s) off-canvas`);
+    return draft.toArray() as unknown as T;
+  } catch (err) {
+    log.error("components: demoting legacy masters failed", err);
+    return elements;
+  }
+}
+
+/** `demoteMastersIn` on a live editor, not as an undo step. Returns how many. */
 export function demoteLegacyMasters(api: Api): number {
   if (api.getAppState().viewModeEnabled) return 0;
   engines.get(api)?.flush();
   const draft = new Draft(api.getSceneElementsIncludingDeleted());
   let n = 0;
   try {
-    for (const c of listComponents(draft.toArray())) {
-      const group = liveMasterGroup(draft, c.componentId);
-      if (!group) continue;
-      demoteMaster(draft, group);
-      n++;
-    }
+    n = demoteAll(draft);
   } catch (err) {
     log.error("components: demoting legacy masters failed", err);
     return 0;
   }
   if (draft.changed.size)
     api.updateScene({ elements: draft.toArray(), captureUpdate: CaptureUpdateAction.NEVER });
-  if (n) log.info(`components: moved ${n} on-canvas master(s) off-canvas`);
   return n;
 }
 

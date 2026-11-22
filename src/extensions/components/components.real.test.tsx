@@ -32,6 +32,7 @@ import {
   defineComponentProperty,
   dematerializeMaster,
   demoteLegacyMasters,
+  demoteMastersIn,
   insertComponentInstance,
   installComponents,
   materializeMaster,
@@ -1334,6 +1335,12 @@ describe("masterless components (FR-64)", () => {
     run(api, (d) => setProperties(d, inst.groupId, { fill: "#a5d8ff" }));
     clock.frame();
     const look = all(api).map((e) => [e.id, e.x, e.y, e.width, e.backgroundColor]);
+    // On load: the file's elements are migrated before the editor sees them.
+    const saved = all(api);
+    const loaded = demoteMastersIn(saved);
+    expect(loaded.filter((e) => tagsOf(e).some((t) => t.role === "master"))).toEqual([]);
+    expect(loaded.map((e) => [e.id, e.x, e.y, e.width, e.backgroundColor])).toEqual(look);
+    expect(demoteMastersIn(loaded)).toBe(loaded);
     expect(call(() => demoteLegacyMasters(api))).toBe(1);
     clock.frame();
     expect(masters(api)).toEqual([]);
