@@ -4,8 +4,11 @@
  * `Sidebar.Tab`, so it docks, themes and closes exactly like the native tabs. Later features
  * (e.g. Components) register here by adding a {@link SidebarTabDef}.
  */
-import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
+import { DefaultSidebar, Sidebar, useI18n } from "@excalidraw/excalidraw";
 import type { ReactNode } from "react";
+import { LibraryIcon } from "../icons";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { reopenTab } from "./sidebarTabMemory";
 
 export interface SidebarTabDef {
   /** Tab id; open it with `api.toggleSidebar({ name: "default", tab })`. */
@@ -20,6 +23,34 @@ export interface SidebarTabDef {
 export const DEFAULT_SIDEBAR = "default";
 
 export function SidebarTabs({ tabs }: { tabs: readonly SidebarTabDef[] }) {
+  return (
+    <>
+      <LibraryTrigger tabs={tabs} />
+      <DefaultSidebarWithTabs tabs={tabs} />
+    </>
+  );
+}
+
+/**
+ * Replaces Excalidraw's fallback Library button (same look and label) so it reopens the sidebar
+ * on the last-used tab instead of always on Library (FR-68; see sidebarTabMemory.ts).
+ */
+function LibraryTrigger({ tabs }: { tabs: readonly SidebarTabDef[] }) {
+  const { t } = useI18n();
+  const remembered = useSettingsStore((s) => s.sidebarTab);
+  const tab = reopenTab(
+    remembered,
+    tabs.map((d) => d.tab),
+  );
+  const label = t("toolBar.library");
+  return (
+    <DefaultSidebar.Trigger icon={<LibraryIcon />} title={label} tab={tab}>
+      {label}
+    </DefaultSidebar.Trigger>
+  );
+}
+
+function DefaultSidebarWithTabs({ tabs }: { tabs: readonly SidebarTabDef[] }) {
   return (
     <DefaultSidebar>
       <DefaultSidebar.TabTriggers>

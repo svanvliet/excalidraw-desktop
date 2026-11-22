@@ -336,6 +336,17 @@ export const StylesIcon = () => (
   </NativeIcon>
 );
 
+/** Library trigger: Excalidraw's own LibraryIcon (not exported), for our replacement trigger. */
+export const LibraryIcon = () => (
+  <NativeIcon grid={24}>
+    <g strokeWidth="1.25">
+      <path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0" />
+      <path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0" />
+      <path d="M3 6v13M12 6v13M21 6v13" />
+    </g>
+  </NativeIcon>
+);
+
 /** Components tab: a master diamond over an instance. */
 export const ComponentsIcon = () => (
   <NativeIcon grid={24}>
