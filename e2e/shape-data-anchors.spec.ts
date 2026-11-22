@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openStripRow } from "./fixtures/strip";
+import { openStripRow, revealStripRow } from "./fixtures/strip";
 
 /**
  * Shape data + elbow-arrow anchors smoke (docs/plan.md D-DX2 / D-DX3), against the real
@@ -99,8 +99,10 @@ test("edits shape data from the native panel; Ctrl/Cmd+Z undoes each change", as
   await seed(page);
   await select(page, "A", "B");
   const section = page.locator(".App-menu__left .panelColumn > [data-testid=shape-data-native]");
+  // No data yet: the row waits behind the strip's "+" (FR-65).
+  await expect(section).toHaveCount(0);
+  await revealStripRow(page, "shape-data");
   await expect(section).toBeVisible();
-  await openStripRow(page, "shape-data");
 
   await section.getByLabel("New key").fill("owner");
   await section.getByLabel("New value").fill("ann");

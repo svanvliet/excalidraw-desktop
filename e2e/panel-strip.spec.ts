@@ -1,10 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openStripRow } from "./fixtures/strip";
+import { revealStripRow } from "./fixtures/strip";
 
 /**
  * Panel strip smoke (FR-63, D-DX17): our panel sections are compact rows at the top of
  * Excalidraw's properties panel, so they are on screen without scrolling for a shape, an image
- * and a component instance — even on a short window where the native controls overflow.
+ * and a component instance — even on a short window where the native controls overflow. Rows a
+ * selection doesn't use (Style, Data) wait behind the "+" row (FR-65, D-DX19).
  */
 
 const NS = "excalidrawDesktop.component";
@@ -86,19 +87,21 @@ test("rows sit at the top of the panel for a rectangle; Create runs inline", asy
   await open(page);
   await seedRectangle(page);
   await select(page, ["R"]);
+  await expectStripOnTop(page, ["component-props-native", "props-strip-more-native"]);
+  await expect(page.getByTestId("component-props-primary")).toHaveText("Create");
+  // The window is short enough that the native controls below the strip overflow.
+  expect((await layout(page)).scrollable).toBe(true);
+
+  // "+" reveals and opens Style, then Data; single-open: Data replaces Style.
+  await revealStripRow(page, "style-section");
+  await expect(page.getByTestId("style-section-picker")).toBeVisible();
+  await revealStripRow(page, "shape-data");
+  // Nothing is left behind "+", so its row goes.
   await expectStripOnTop(page, [
     "component-props-native",
     "style-section-native",
     "shape-data-native",
   ]);
-  await expect(page.getByTestId("component-props-primary")).toHaveText("Create");
-  // The window is short enough that the native controls below the strip overflow.
-  expect((await layout(page)).scrollable).toBe(true);
-
-  // Single-open: opening Style closes nothing else, then Data replaces it.
-  await openStripRow(page, "style-section");
-  await expect(page.getByTestId("style-section-picker")).toBeVisible();
-  await openStripRow(page, "shape-data");
   await expect(page.getByTestId("style-section-picker")).toHaveCount(0);
   await expect(page.getByTestId("style-section-toggle")).toHaveAttribute("aria-expanded", "false");
   expect((await layout(page)).scrollTop).toBe(0);
@@ -125,11 +128,7 @@ test("rows sit at the top of the panel for a component instance", async ({ page 
     .toBe(1);
   const inst = (await roles(page)).filter((e) => e.role === "instance").map((e) => e.id);
   await select(page, inst);
-  await expectStripOnTop(page, [
-    "component-props-native",
-    "style-section-native",
-    "shape-data-native",
-  ]);
+  await expectStripOnTop(page, ["component-props-native", "props-strip-more-native"]);
   // Its summary is the component's name (no overrides yet).
   await expect(
     page.locator("[data-testid=component-props-native] .props-strip__summary"),

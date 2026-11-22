@@ -35,7 +35,7 @@ function selectionView(api: Api) {
 export const CONTAINER_COMMANDS: readonly ContainerCommand[] = [
   {
     id: "makeContainer",
-    label: "Make container",
+    label: "Make stack",
     shortcut: "Alt+Shift+A",
     keyTest: isMakeContainerShortcut,
     enabled: (api) => Object.values(api.getAppState().selectedElementIds).some(Boolean),
@@ -43,12 +43,12 @@ export const CONTAINER_COMMANDS: readonly ContainerCommand[] = [
   },
   {
     id: "removeContainer",
-    label: "Remove container",
+    label: "Remove stack",
     enabled: (api) => selectionView(api)?.mode === "container",
     run: (api) => {
       const view = selectionView(api);
       if (view?.mode === "container" && view.containerId) unmakeContainer(api, view.containerId);
-      else api.setToast({ message: "Select a container first." });
+      else api.setToast({ message: "Select a stack first." });
     },
   },
 ];
