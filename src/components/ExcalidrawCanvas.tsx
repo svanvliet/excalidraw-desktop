@@ -21,6 +21,7 @@ import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
 import { StylesPanel } from "./sidebar/StylesPanel";
 import { SidebarTabs, type SidebarTabDef } from "./sidebar/SidebarTabs";
+import { installSidebarRestore, SIDEBAR_UI_OPTIONS } from "./sidebar/sidebarRestore";
 import { enableDraggablePropertiesPanel } from "../lib/draggablePropertiesPanel";
 import { refreshTextElements, watchFontLoads } from "../lib/fontRefresh";
 import { sceneContentKey } from "../lib/sceneContent";
@@ -43,6 +44,7 @@ import {
 import { installLineAnchors } from "../extensions/anchors/pointer";
 import { SnapDotsOverlay } from "./lineAnchors/SnapDotsOverlay";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useAgentStore } from "../stores/agentStore";
 
 export interface ExcalidrawCanvasProps {
   /**
@@ -191,6 +193,19 @@ export function ExcalidrawCanvas({
     });
   }, [api]);
 
+  // Keep a pinned sidebar pinned across the AI panel (FR-62).
+  useEffect(() => {
+    if (!api) return;
+    return installSidebarRestore(api, {
+      panelOpen: () => useAgentStore.getState().panelOpen,
+      onPanelChange: (cb) =>
+        useAgentStore.subscribe((s, prev) => {
+          if (s.panelOpen !== prev.panelOpen) cb(s.panelOpen);
+        }),
+      editorWidth: () => canvasRef.current?.getBoundingClientRect().width ?? Infinity,
+    });
+  }, [api]);
+
   const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
     (elements, appState, files) => {
       onCollabChange?.(elements, appState, files);
@@ -304,6 +319,7 @@ export function ExcalidrawCanvas({
         onChange={handleChange}
         onLibraryChange={handleLibraryChange}
         onDuplicate={componentsOnDuplicate}
+        UIOptions={SIDEBAR_UI_OPTIONS}
         aiEnabled={aiEnabled ?? false}
         isCollaborating={isCollaborating ?? false}
         // `undefined` (not false) hands view mode back to the user when promoted.
