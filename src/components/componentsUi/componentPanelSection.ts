@@ -7,6 +7,9 @@
  *  - An instance: Go to master (or Edit master… when the master lives in My components), Save,
  *    Reset all, Detach, and each overridden slot with its own reset.
  *  - Anything mixed (several components, or component + plain shapes): hidden.
+ *
+ * The row also carries the component's typed properties (FR-56): D-DX19 merged the former
+ * "Properties" row into this one.
  */
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { El } from "../../agent/scene/draft";
@@ -15,7 +18,8 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { createComponentFromSelection } from "../../extensions/components/host";
 import { ComponentsIcon } from "../icons";
 import type { PanelSection } from "../propertiesPanel/panel";
-import { ComponentSection } from "./ComponentSection";
+import { propsView, type PropsView } from "../componentProps/propsPanelSection";
+import { ComponentRow } from "./ComponentRow";
 import { librarySourceOf } from "./libraryCodec";
 
 export interface SlotOverride {
@@ -119,7 +123,10 @@ export function componentView(
   };
 }
 
-export const componentPanelSection: PanelSection<ComponentView> = {
+/** The Component row's view: the component plus its properties (null when it has none). */
+export type ComponentRowView = ComponentView & { props: PropsView | null };
+
+export const componentPanelSection: PanelSection<ComponentRowView> = {
   id: "component",
   slot: "top",
   testId: "component-props",
@@ -142,6 +149,11 @@ export const componentPanelSection: PanelSection<ComponentView> = {
           run: (api) => createComponentFromSelection(api as ExcalidrawImperativeAPI),
         }
       : null,
-  view: ({ api, selected }) => componentView(selected, api.getSceneElements()),
-  Component: ComponentSection,
+  view: ({ api, selected }) => {
+    const scene = api.getSceneElements();
+    const view = componentView(selected, scene);
+    if (!view) return null;
+    return { ...view, props: view.kind === "create" ? null : propsView(selected, scene) };
+  },
+  Component: ComponentRow,
 };

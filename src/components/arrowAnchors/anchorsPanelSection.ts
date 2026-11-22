@@ -1,5 +1,5 @@
 /**
- * "Anchors" properties-panel section: pin a bound elbow arrow's ends to a side of their shapes
+ * "Connection" properties-panel section (D-DX19 renamed it from "Anchors"): pin a bound elbow arrow's ends to a side of their shapes
  * (docs/plan.md D-DX8), or a straight / curved arrow's ends to a face midpoint or the centre
  * (D-DX15).
  */
@@ -36,7 +36,7 @@ export const anchorsPanelSection: PanelSection<AnchorsView> = {
   id: "anchors",
   slot: "top",
   testId: "arrow-anchors",
-  title: "Anchors",
+  title: "Connection",
   icon: AnchorCenterIcon,
   // Start → end, e.g. "Top → Free"; "–" for an unbound end.
   summary: ({ start, end }) =>
