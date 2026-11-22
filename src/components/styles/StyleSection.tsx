@@ -21,7 +21,6 @@ export function StyleSection({ view, api: panelApi }: { view: StyleSectionView; 
   if (view.master) {
     return (
       <fieldset className="style-section">
-        <legend>Style</legend>
         <div className="style-section__note" data-testid="style-section-master">
           {view.master.name
             ? `Follows its component master (${view.master.name})`
@@ -40,7 +39,6 @@ export function StyleSection({ view, api: panelApi }: { view: StyleSectionView; 
 
   return (
     <fieldset className="style-section">
-      <legend>Style</legend>
       <select
         className="style-section__select"
         aria-label="Named style"

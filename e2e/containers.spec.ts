@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow } from "./fixtures/strip";
 
 /**
  * Smart containers smoke (docs/containers.md, FR-59), against the real Excalidraw 0.18.1 editor:
@@ -53,6 +54,7 @@ test("make a container, change its gap from the panel, undo", async ({ page }) =
     ".App-menu__left .panelColumn > [data-testid=container-section-native]",
   );
   await expect(section).toBeVisible();
+  await openStripRow(page, "container-section");
   const gap = section.getByTestId("container-gap");
   await gap.fill("40");
   await gap.press("Enter");

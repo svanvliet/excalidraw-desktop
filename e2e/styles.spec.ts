@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow } from "./fixtures/strip";
 
 /**
  * Named styles smoke (docs/styles.md, FR-58), against the real Excalidraw editor: make a style
@@ -63,6 +64,7 @@ test("a named style updates its linked elements live; one undo reverts", async (
   await select(page, ["A", "B"]);
 
   // Properties panel: new style from the selection links both.
+  await openStripRow(page, "style-section");
   const picker = page.getByTestId("style-section-picker");
   await expect(picker).toBeVisible();
   await picker.selectOption("__new__");

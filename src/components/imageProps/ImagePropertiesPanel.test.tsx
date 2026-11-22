@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { setExtensionsForTests } from "../../extensions/registry";
 import { EXT_KEY } from "../../extensions/types";
+import { usePanelStripStore } from "../../stores/panelStripStore";
 import { ImagePropertiesPanel, type ImagePanelApi } from "./ImagePropertiesPanel";
 
 vi.mock("../../extensions/raster", () => import("../../extensions/testRaster"));
@@ -56,6 +57,8 @@ let wrapper: HTMLDivElement;
 let menu: HTMLDivElement;
 beforeEach(() => {
   setExtensionsForTests();
+  // The strip row starts collapsed; these tests work inside it.
+  usePanelStripStore.setState({ open: "image" });
   api = new PanelApi([image("i1"), image("i2"), image("r", "rectangle")] as never);
   api.files = {
     "file-i1": { id: "file-i1", mimeType: "image/png", dataURL: "data:i1", created: 1 },
@@ -89,7 +92,7 @@ const pressed = (name: string) =>
   );
 
 describe("ImagePropertiesPanel", () => {
-  it("injects its sections right after the native panel's first slot", async () => {
+  it("injects its strip row before the native panel's first slot", async () => {
     menu.append(nativePanel());
     renderPanel();
     expect(screen.queryByTestId("image-props-native")).toBeNull();
@@ -99,7 +102,8 @@ describe("ImagePropertiesPanel", () => {
 
     api.select("i1");
     const host = await screen.findByTestId("image-props-native");
-    expect(host.previousElementSibling).toBe(screen.getByTestId("stroke-slot"));
+    expect(host.nextElementSibling).toBe(screen.getByTestId("stroke-slot"));
+    expect(host.parentElement!.firstElementChild).toBe(host);
     expect(within(host).getByText("Stroke")).toBeInTheDocument();
     expect(within(host).getByText("Mask")).toBeInTheDocument();
     // No border yet: the width/style/sloppiness rows wait for one.
@@ -121,7 +125,7 @@ describe("ImagePropertiesPanel", () => {
     await waitFor(() =>
       expect(menu.querySelector(".panelColumn > [data-testid=image-props-native]")).not.toBeNull(),
     );
-    expect(screen.getByTestId("image-props-native").previousElementSibling).toBe(
+    expect(screen.getByTestId("image-props-native").nextElementSibling).toBe(
       menu.querySelector("[data-testid=stroke-slot]"),
     );
   });

@@ -97,7 +97,6 @@ export function ContainerSection({ view, api }: { view: ContainerPanelView; api:
   if (view.mode === "make" || !view.def || !view.containerId) {
     return (
       <fieldset>
-        <legend>Container</legend>
         <TextButton
           label="Make container"
           testId="container-make"
@@ -114,7 +113,6 @@ export function ContainerSection({ view, api }: { view: ContainerPanelView; api:
 
   return (
     <fieldset className="container-props">
-      <legend>Container</legend>
       {view.mode === "child" && (
         <div className="container-props__child" data-testid="container-child">
           <span>

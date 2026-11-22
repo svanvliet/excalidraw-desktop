@@ -25,20 +25,42 @@ export interface PanelContext {
   selected: readonly ExcalidrawElement[];
 }
 
+/** A strip row's inline action, e.g. Create on plain shapes (test id `<testId>-primary`). */
+export interface PanelPrimary {
+  label: string;
+  /** Tooltip, e.g. the shortcut. */
+  title?: string;
+  disabled?: boolean;
+  /** Gets the full editor API (PanelApi only narrows it). */
+  run(api: PanelApi): void;
+}
+
 /**
  * One panel section. `view` runs on every scene change, so keep it cheap; its result must be
  * JSON-serialisable (it is diffed by value) and `null` hides the section.
+ *
+ * "top" sections are rows of the strip at the top of the panel (FR-63, D-DX17): icon, title,
+ * one-line `summary`, an optional inline `primary` action and, when `Component` is set, a body
+ * that expands inline. Only one row is open at a time (stores/panelStripStore). "bottom"
+ * sections are appended at the end of the panel as they are.
  */
 export interface PanelSection<V> {
   id: string;
   slot: "top" | "bottom";
   /**
-   * Host CSS class, and test ids: `<testId>-native` in the panel, `<testId>-dock` in the
-   * docked fallback.
+   * Test ids: `<testId>-native` on the host in the panel, `<testId>-dock` in the docked
+   * fallback; strip rows add `<testId>-toggle` and `<testId>-primary`. Also the body's CSS class.
    */
   testId: string;
+  title: string;
+  /** A NativeIcon from components/icons (sized by the strip CSS). */
+  icon: ComponentType;
+  /** One line next to the title; keep it short (it is ellipsised). */
+  summary(view: V): string;
+  primary?(view: V): PanelPrimary | null;
   view(ctx: PanelContext): V | null;
-  Component: ComponentType<{ view: V; api: PanelApi }>;
+  /** The expanded body. A row without one has no chevron (title, summary and primary only). */
+  Component?: ComponentType<{ view: V; api: PanelApi }>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous registry
