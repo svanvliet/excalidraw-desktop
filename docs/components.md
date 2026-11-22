@@ -60,7 +60,13 @@ instance children are its targets, with `componentId` as the key. Each change ru
    master.
 3. **Text**: copies the master's text unless the slot overrides it. Text is **re-measured**
    (`text.ts`, via the exported `convertToExcalidrawElements`), never copied, because overrides,
-   scale and late-loading fonts all change the layout. Measurements are memoised per container.
+   scale and late-loading fonts all change the layout. Measurements are memoised per container,
+   but only once the font is loaded (`fontReady`): a sync that runs earlier (for example the
+   load-time demotion) would otherwise keep fallback-font widths and clip property values.
+   `watchComponentFonts` re-measures every instance text when fonts finish loading
+   (`relayoutComponentText`, not an undo step). Left-aligned text keeps its x, centred text its
+   centre. Fixed-width text (`autoResize: false`) keeps its width, wraps, and grows its height
+   (FR-56).
 4. **Children**: adds or removes children as the master changes. An element drawn or pasted
    into the master group (group editing) is adopted as a new master child. Every instance then
    gains a child for it, with a deterministic id, and loses the children of deleted slots. Undo
@@ -137,7 +143,10 @@ This is the default model (FR-64, D-DX18). `createComponentFromSelection` create
 and immediately demotes its master (`demoteMaster`), so the selection becomes the first
 instance. Drawings saved with on-canvas masters are demoted when they open (`demoteMastersIn`
 in the editor's `initialData`, `demoteLegacyMasters(api)` for a loaded editor). A demoted
-instance keeps its slots, so nested copies and property bindings still resolve.
+instance keeps its slots, so nested copies and property bindings still resolve. It is derived
+once against its own master as it is demoted, so it looks like a freshly inserted instance with
+no values set: choice and boolean defaults apply (an "Avatar: photo" default hides the initials
+slot), and text properties without a default keep the master's text.
 
 A master can live in the library instead of on the canvas. Its tag then carries
 `source: "library"` and `libraryId`. When such a component has no live master, its instances
@@ -307,6 +316,7 @@ Code lives in `src/components/componentsUi/`, and the personal store in `src/lib
   - Plain shapes: **Create component**.
   - Master (legacy drawings, or inside the master editor): **Save to / Update in My components**.
   - Instance: **Edit master…**, **Save to / Update in My components**, **Reset overrides**, **Detach**, and a per-slot override list with a reset for each slot.
+  - "Update in My components" and the summary's "· from My components" appear only when My components really has the entry (`linkedEntryId`, the master editor's "Also update in My components" rule). A created or demoted component carries a library link before it is saved, so it shows "Save to My components" until then.
 - **Edit master…** (FR-66, D-DX20), from the Component row or the pencil on an **In this drawing** row, opens the master editor (`MasterEditor.tsx`): a temporary second `<Excalidraw>` laid over the drawing.
   - An accent header names the component and its instance count, with **Cancel** and **Done**.
   - The master is placed on the instance it was opened from, at the same viewport; the rest of the drawing around it shows as dimmed, locked copies for context (`masterEditScene.ts`). The drawing itself never holds the master.
