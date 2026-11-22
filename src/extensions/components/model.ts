@@ -20,7 +20,8 @@
  *    nested instance's group id inside the master.
  *  - `source: "library"` + `libraryId`: the master lives in the library, so instances whose
  *    master is absent stay instances (no promotion). `mv` keeps the master's values for the keys
- *    an instance child overrides, so the master can be rebuilt from an instance.
+ *    an instance child overrides, and `ms` its look for the keys it can't override, so the
+ *    master can be rebuilt from an instance and direct edits to those keys revert.
  *
  * Nested components (D-DX11): an element can belong to several components at once (an element
  * of an A instance inside B's master). Then the namespace holds `{ v: 2, tags: [...] }`, one tag
@@ -53,6 +54,26 @@ export const OVERRIDE_KEYS = [
   "fileId",
   "visible",
 ] as const;
+/** Look keys an instance child can't override; library instances record them in `ms`. */
+export const LOOK_KEYS = [
+  "fillStyle",
+  "strokeWidth",
+  "strokeStyle",
+  "roughness",
+  "roundness",
+  "fontFamily",
+  "textAlign",
+  "verticalAlign",
+  "startArrowhead",
+  "endArrowhead",
+] as const;
+
+/** `el`'s values for the `LOOK_KEYS` it has. */
+export function lookOf(el: El): Record<string, unknown> {
+  const r = el as unknown as Record<string, unknown>;
+  return Object.fromEntries(LOOK_KEYS.filter((k) => k in r).map((k) => [k, r[k] ?? null]));
+}
+
 export type OverrideKey = (typeof OVERRIDE_KEYS)[number];
 export type Overrides = Partial<Record<OverrideKey, unknown>>;
 
@@ -96,6 +117,8 @@ export interface ComponentTag {
   source?: "library";
   libraryId?: string;
   mv?: Overrides;
+  /** The master's look for keys instances can't override (`LOOK_KEYS`), with `mv`. */
+  ms?: Record<string, unknown>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -245,6 +268,7 @@ function cleanTag(tag: ComponentTag): ComponentTag {
   if (tag.source === "library") out.source = "library";
   if (tag.libraryId) out.libraryId = tag.libraryId;
   if (nonEmpty(tag.mv)) out.mv = tag.mv;
+  if (nonEmpty(tag.ms)) out.ms = tag.ms;
   if (needsV2(out)) out.v = 2;
   return out;
 }
@@ -303,7 +327,7 @@ export interface ComponentInfo {
   }>;
   /** Declared properties (D-DX11). */
   props: PropDef[];
-  /** Components with instances nested in this component's master. */
+  /** Components with instances nested in this component (its master, or its instances). */
   uses: string[];
   /** "library" when the master lives in the library (no promotion of orphans). */
   source?: "library";
@@ -406,7 +430,8 @@ export function listComponents(elements: readonly El[]): ComponentInfo[] {
           inst.parent ??= { componentId: outer.componentId, role: outer.role, groupId: og };
         if (!info.props.length && tag.props?.length) info.props = tag.props;
       }
-      if (outer?.role === "master") {
+      // Nested in a master, or in an instance of a component whose master is off-canvas.
+      if (outer) {
         const parent = byId.get(outer.componentId);
         if (parent && !parent.uses.includes(tag.componentId)) parent.uses.push(tag.componentId);
         else if (!parent) pendingUses.push([outer.componentId, tag.componentId]);

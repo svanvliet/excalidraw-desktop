@@ -169,6 +169,8 @@ export const CANVAS_TOOL_NAMES = [
   "create_component",
   "insert_instance",
   "list_components",
+  "get_component_master",
+  "edit_component_master",
   "list_my_components",
   "insert_my_component",
   "set_overrides",

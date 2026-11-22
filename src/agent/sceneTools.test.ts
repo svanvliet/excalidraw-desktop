@@ -1145,11 +1145,14 @@ describe("line anchors (straight arrows)", () => {
 });
 
 describe("component tools", () => {
-  it("create, insert, sync via update_elements, overrides, reset, detach", async () => {
+  it("create (masterless), insert, edit the master by slot, overrides, reset, detach", async () => {
     setup(boxes());
     const made = await call("create_component", { ids: ["a"], name: "Card" });
-    expect(made.componentId).toBeTruthy();
+    expect(made).toMatchObject({ masterGroupId: null, ids: expect.arrayContaining(["a"]) });
     expect(api.undoStack).toHaveLength(1);
+    // The selection became the first instance: no master on the canvas (FR-64).
+    const textId = api.byId("a").boundElements!.find((b) => b.type === "text")!.id;
+    expect(api.byId("a").groupIds).toContain(made.groupId);
 
     const inst = await call("insert_instance", { component: "a", x: 500, y: 200 });
     expect(inst.componentId).toBe(made.componentId);
@@ -1159,28 +1162,52 @@ describe("component tools", () => {
     const instText = rect.type === "text" ? rect : label;
     expect(instRect.x).toBe(500);
     expect(instText.text).toBe("Alpha");
+    // The three boxes and a's label, plus one new instance: no master copy anywhere.
+    expect(api.elements.filter((e) => !e.isDeleted)).toHaveLength(4 + 2);
 
     let list = (await call("list_components")).components;
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ name: "Card", instances: [{ groupId: inst.groupId }] });
+    expect(list[0]).toMatchObject({ name: "Card", masterGroupId: null });
+    expect(list[0].instances.map((i: { groupId: string }) => i.groupId)).toEqual([
+      made.groupId,
+      inst.groupId,
+    ]);
 
-    // Editing the master through a generic tool syncs the instance in the same commit.
-    const textId = api.byId("a").boundElements!.find((b) => b.type === "text")!.id;
-    const steps = api.undoStack.length;
-    await call("update_elements", {
-      updates: [{ id: "a", patch: { backgroundColor: "#ffc9c9", width: 140 } }],
+    // The master design is readable by slot with coordinates relative to its top-left.
+    const master = await call("get_component_master", { component: inst.groupId });
+    expect(master).toMatchObject({ componentId: made.componentId, name: "Card", onCanvas: false });
+    const masterRect = master.elements.find((e: { slot: string }) => e.slot === "a");
+    expect(masterRect).toMatchObject({ type: "rectangle", x: 0, y: 0, width: 100 });
+    expect(master.elements.find((e: { slot: string }) => e.slot === textId)).toMatchObject({
+      type: "text",
+      containerId: "a",
     });
-    expect(api.undoStack.length).toBe(steps + 1);
-    expect(api.byId(instRect.id)).toMatchObject({ backgroundColor: "#ffc9c9", width: 140 });
 
-    // Overrides by slot (the master element id).
+    // Editing the master updates every instance in one undo step, with no master left behind.
+    let steps = api.undoStack.length;
+    const count = api.elements.length;
+    const edited = await call("edit_component_master", {
+      component: made.componentId,
+      updates: [{ slot: "a", patch: { backgroundColor: "#ffc9c9", width: 140 } }],
+    });
+    expect(edited).toMatchObject({ updated: 1 });
+    expect(api.undoStack.length).toBe(steps + 1);
+    expect(api.elements).toHaveLength(count); // no tombstones from the temporary master
+    expect(api.byId(instRect.id)).toMatchObject({ backgroundColor: "#ffc9c9", width: 140 });
+    expect(api.byId("a")).toMatchObject({ backgroundColor: "#ffc9c9", width: 140 });
+
+    // Overrides by slot.
     await call("set_overrides", {
       instance: inst.groupId,
       overrides: [{ slot: textId, values: { text: "Beta" } }],
     });
     expect((api.byId(instText.id) as unknown as { text: string }).text).toBe("Beta");
-    await call("update_elements", { updates: [{ id: textId, patch: { text: "Gamma" } }] });
+    await call("edit_component_master", {
+      component: "a",
+      updates: [{ slot: textId, patch: { text: "Gamma" } }],
+    });
     expect((api.byId(instText.id) as unknown as { text: string }).text).toBe("Beta");
+    expect((api.byId(textId) as unknown as { text: string }).text).toBe("Gamma");
 
     // A direct edit of an instance child's overridable key becomes an override; others revert.
     await call("update_elements", {
@@ -1207,24 +1234,42 @@ describe("component tools", () => {
     await expect(
       runSceneTool(
         "set_overrides",
-        { instance: "a", overrides: [{ slot: "a", values: { text: "x" } }] },
-        TAB,
-      ),
-    ).rejects.toThrow(/master, not an instance/);
-    await expect(
-      runSceneTool(
-        "set_overrides",
         { instance: inst.groupId, overrides: [{ slot: "a", values: { roughness: 1 } }] },
         TAB,
       ),
     ).rejects.toThrow(/can't be overridden/);
+    await expect(
+      runSceneTool(
+        "edit_component_master",
+        { component: "a", updates: [{ slot: "nope", patch: { x: 1 } }] },
+        TAB,
+      ),
+    ).rejects.toThrow(/not a slot/);
+
+    // Add and remove master parts: every instance gains/loses them.
+    steps = api.undoStack.length;
+    const grown = await call("edit_component_master", {
+      component: "a",
+      add: [{ type: "ellipse", x: 110, y: 10, width: 20, height: 20 }],
+    });
+    expect(grown.addedSlots).toHaveLength(1);
+    expect(api.undoStack.length).toBe(steps + 1);
+    list = (await call("list_components")).components;
+    expect(list[0].instances.map((i: { ids: string[] }) => i.ids.length)).toEqual([3, 3]);
+    await call("edit_component_master", { component: "a", remove: grown.addedSlots });
+    list = (await call("list_components")).components;
+    expect(list[0].instances.map((i: { ids: string[] }) => i.ids.length)).toEqual([2, 2]);
 
     const det = await call("detach_instance", { instance: inst.groupId });
     expect(det.detached.ids).toHaveLength(2);
     list = (await call("list_components")).components;
-    expect(list[0].instances).toHaveLength(0);
-    await call("update_elements", { updates: [{ id: "a", patch: { backgroundColor: "#000" } }] });
+    expect(list[0].instances).toHaveLength(1);
+    await call("edit_component_master", {
+      component: "a",
+      updates: [{ slot: "a", patch: { backgroundColor: "#000000" } }],
+    });
     expect(api.byId(instRect.id).backgroundColor).toBe("#ffc9c9");
+    expect(api.byId("a").backgroundColor).toBe("#000000");
   });
 
   it("works inside apply_ops and is refused on a viewer tab", async () => {
@@ -1239,6 +1284,17 @@ describe("component tools", () => {
     const inst = res.results[1];
     const el = api.byId(inst.ids[0]);
     expect(el.width).toBe(200);
+    await call("apply_ops", {
+      ops: [
+        {
+          tool: "edit_component_master",
+          args: { component: "b", updates: [{ slot: "b", patch: { width: 50 } }] },
+        },
+      ],
+    });
+    expect(api.undoStack).toHaveLength(2);
+    expect(api.byId(inst.ids[0]).width).toBe(100);
+    expect(api.byId("b").width).toBe(50);
     expect(el.angle).toBeCloseTo(Math.PI / 2);
     viewer = true;
     await expect(runSceneTool("detach_instance", { instance: inst.groupId }, TAB)).rejects.toThrow(
@@ -1269,7 +1325,9 @@ describe("component tools", () => {
     expect((api.byId(label.id) as unknown as { text: string }).text).toBe("Hi");
     const summary = (await call("list_components")).components[0];
     expect(summary.props).toHaveLength(1);
-    expect(summary.instances[0].values).toEqual({ [def.propertyId]: "Hi" });
+    expect(
+      summary.instances.find((i: { groupId: string }) => i.groupId === inst.groupId).values,
+    ).toEqual({ [def.propertyId]: "Hi" });
     await expect(
       call("set_properties", { instance: inst.groupId, values: { Nope: "x" } }),
     ).rejects.toThrow(/property/i);
@@ -1278,19 +1336,32 @@ describe("component tools", () => {
     const panel = await call("create_component", { ids: ["b"], name: "Panel" });
     const nested = await call("insert_instance", {
       component: card.componentId,
-      into: panel.masterGroupId,
+      into: panel.componentId,
       x: 300,
       y: 100,
     });
     await expect(
-      call("insert_instance", { component: panel.componentId, into: card.masterGroupId }),
+      call("insert_instance", { component: panel.componentId, into: card.componentId }),
     ).rejects.toThrow(/cycle/);
+    expect(nested).toMatchObject({ componentId: card.componentId, nestedIn: panel.componentId });
+    // The panel's first instance (the old "b") already carries the nested card.
+    expect(
+      (await call("list_components")).components.find(
+        (c: { componentId: string }) => c.componentId === panel.componentId,
+      ).instances[0].ids,
+    ).toHaveLength(3);
     const pi = await call("insert_instance", { component: panel.componentId, x: 0, y: 500 });
     expect(pi.componentId).toBe(panel.componentId);
     expect(pi.ids).toHaveLength(3); // ellipse + nested card rect + label
+    // The copy nested in this panel instance, as list_components shows it.
+    const nestedCopy = (await call("list_components")).components
+      .find((c: { componentId: string }) => c.componentId === card.componentId)
+      .instances.find(
+        (i: { parent?: { groupId: string } }) => i.parent?.groupId === pi.groupId,
+      ).groupId;
     await call("set_properties", {
       instance: pi.groupId,
-      nested: nested.groupId,
+      nested: nestedCopy,
       values: { Title: "Deep" },
     });
     const texts = pi.ids
@@ -1433,8 +1504,10 @@ describe("style tools", () => {
   });
 
   it("styles a component master and its instance follows; instance children can't be styled", async () => {
-    setup(boxes());
-    await call("create_component", { ids: ["a"], name: "Card" });
+    // A drawing from before FR-64, with its master still on the canvas.
+    const legacy = new Draft(boxes());
+    createComponent(legacy, ["a"], "Card");
+    setup(legacy.toArray());
     const inst = await call("insert_instance", { component: "a", x: 500, y: 200 });
     const instRect = inst.ids.map((id: string) => api.byId(id)).find((e: El) => e.type !== "text");
     await expect(

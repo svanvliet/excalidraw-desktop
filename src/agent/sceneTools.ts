@@ -73,15 +73,19 @@ import {
   removeProperty,
   setProperties,
   resetOverrides,
+  resolveInstance,
   setOverrides,
+  syncDraft,
   syncEdited,
   type OverrideEntry,
   type PropertyInput,
 } from "../extensions/components/actions";
 import {
+  canonicalInner,
   elementComponentInfo,
   groupOf,
   listComponents,
+  tagFor,
   tagOf,
   tagsOf,
 } from "../extensions/components/model";
@@ -112,6 +116,12 @@ import {
   type MyComponent,
 } from "../lib/componentLibraryStore";
 import { insertMyComponent } from "../components/componentsUi/libraryCodec";
+import {
+  demoteMaster,
+  liveMasterGroup,
+  masterSnapshot,
+  withMaster,
+} from "../extensions/components/library";
 import { libraryMasterEngine } from "../components/componentsUi/libraryMasters";
 import { getActiveSceneTabId, getSceneTab, listSceneTabs, type SceneTab } from "./sceneBridge";
 import { CANVAS_TOOLS, type ToolContent } from "./types";
@@ -147,6 +157,7 @@ const EDIT_TOOLS = new Set([
   "set_arrow_anchors",
   "create_component",
   "insert_instance",
+  "edit_component_master",
   "set_overrides",
   "reset_overrides",
   "detach_instance",
@@ -1538,22 +1549,58 @@ function componentIdOf(draft: Draft, ref: unknown): string {
   );
 }
 
+/**
+ * The selection becomes the component's first instance; its master lives off-canvas and is only
+ * rebuilt inside an edit (FR-64, D-DX18).
+ */
 function createComponentTool(draft: Draft, args: Args) {
   const ids = reqStrArray(args, "ids");
   if (ids.length > 500) throw new ToolError(`At most 500 ids per call`);
-  return createComponent(draft, ids, optStr(args, "name"));
+  const c = createComponent(draft, ids, optStr(args, "name"));
+  const groupId = demoteMaster(draft, c.masterGroupId);
+  return { componentId: c.componentId, groupId, ids: c.ids, masterGroupId: null };
+}
+
+/** Run `fn` with the instance's component master present (rebuilt for this draft if needed). */
+function onInstance<T>(draft: Draft, instance: unknown, fn: () => T): T {
+  const inst = resolveInstance(draft, instance);
+  return withMaster(draft, inst.componentId, fn, inst.groupId);
 }
 
 function insertInstanceTool(draft: Draft, args: Args) {
   const angle = optNum(args, "angle");
   const componentId = componentIdOf(draft, args.component);
-  const out = insertInstance(draft, componentId, {
-    into: optStr(args, "into"),
+  const opts = {
     x: optNum(args, "x"),
     y: optNum(args, "y"),
     scale: optNum(args, "scale"),
     angle: angle === undefined ? undefined : (angle * Math.PI) / 180,
-  });
+  };
+  const into = optStr(args, "into");
+  if (into) {
+    // Nest into another component: into its master (rebuilt for this edit when off-canvas).
+    const outer = componentIdOf(draft, into);
+    const live = liveMasterGroup(draft, outer);
+    if (live) {
+      const out = withMaster(draft, componentId, () =>
+        insertInstance(draft, componentId, { ...opts, into }),
+      );
+      return { componentId, ...out };
+    }
+    const nested = withMaster(draft, outer, (masterGroup) => {
+      const out = withMaster(draft, componentId, () =>
+        insertInstance(draft, componentId, { ...opts, into: masterGroup }),
+      );
+      const masterEls = draft.live().filter((e) => {
+        const t = tagFor(e, outer);
+        return t?.role === "master" && groupOf(e, t) === masterGroup;
+      });
+      return canonicalInner(masterEls, outer).get(out.groupId) ?? out.groupId;
+    });
+    // `nested` is the key set_properties takes to reach this copy from an outer instance.
+    return { componentId, nestedIn: outer, nested };
+  }
+  const out = withMaster(draft, componentId, () => insertInstance(draft, componentId, opts));
   return { componentId, ...out };
 }
 
@@ -1567,17 +1614,131 @@ function setOverridesTool(draft: Draft, args: Args) {
       throw new ToolError(`overrides[${i}] needs exactly one of "elementId" or "slot"`);
     return { elementId, slot, values: e.values };
   });
-  setOverrides(draft, args.instance, entries);
+  onInstance(draft, args.instance, () => setOverrides(draft, args.instance, entries));
   return { instance: args.instance, updated: entries.length };
 }
 
 function resetOverridesTool(draft: Draft, args: Args) {
-  resetOverrides(draft, args.instance, {
-    slots: strArray(args, "slots"),
-    elementIds: strArray(args, "elementIds"),
-    keys: strArray(args, "keys"),
-  });
+  onInstance(draft, args.instance, () =>
+    resetOverrides(draft, args.instance, {
+      slots: strArray(args, "slots"),
+      elementIds: strArray(args, "elementIds"),
+      keys: strArray(args, "keys"),
+    }),
+  );
   return { instance: args.instance, reset: true };
+}
+
+/** Master elements of `cid` in `group`, and their top-left (master coordinates' origin). */
+function masterFrame(draft: Draft, cid: string, group: string) {
+  const els = draft.live().filter((e) => {
+    const t = tagFor(e, cid);
+    return t?.role === "master" && groupOf(e, t) === group;
+  });
+  const box = unionBounds(els)!;
+  return { els, x: box.minX, y: box.minY };
+}
+
+/** Elements of a component's master, with x/y relative to the master's top-left (FR-64). */
+function getComponentMasterTool(tab: SceneTab, tabId: string, args: Args): ToolContent[] {
+  const elements = tab.api.getSceneElementsIncludingDeleted();
+  const cid = componentIdOf(new Draft(elements), args.component);
+  const snap = masterSnapshot(elements, cid);
+  const box = unionBounds(snap.elements)!;
+  const slotOf = (id: string | null | undefined) => {
+    const el = id ? snap.elements.find((e) => e.id === id) : null;
+    return el ? tagFor(el, cid)!.slot : null;
+  };
+  return json({
+    tabId,
+    revision: revisionOf(elements),
+    componentId: cid,
+    ...(snap.name ? { name: snap.name } : {}),
+    onCanvas: !!liveMasterGroup(new Draft(elements), cid),
+    elements: snap.elements.map((e) => {
+      const {
+        customData: _c,
+        groupIds: _g,
+        id: _id,
+        boundElements: _b,
+        ...rest
+      } = e as El & {
+        containerId?: string | null;
+      };
+      const out: Args = {
+        slot: tagFor(e, cid)!.slot,
+        ...rest,
+        x: e.x - box.minX,
+        y: e.y - box.minY,
+      };
+      if ("containerId" in rest) out.containerId = slotOf(rest.containerId);
+      const nested = tagsOf(e)
+        .filter((t) => t.componentId !== cid)
+        .map((t) => t.componentId);
+      if (nested.length) out.nestedComponents = nested;
+      return out;
+    }),
+  });
+}
+
+/**
+ * Edit a component's master by slot, with coordinates relative to its top-left; every instance
+ * (nested copies included) updates in the same undo step. The master is rebuilt for the edit
+ * and taken off the canvas again when it lives off-canvas (FR-64).
+ */
+function editComponentMasterTool(draft: Draft, args: Args) {
+  const cid = componentIdOf(draft, args.component);
+  const updates = args.updates === undefined ? [] : reqArray(args, "updates");
+  const add = args.add === undefined ? [] : reqArray(args, "add");
+  const remove = strArray(args, "remove") ?? [];
+  if (!updates.length && !add.length && !remove.length)
+    throw new ToolError(`Pass at least one of "updates", "add" or "remove"`);
+  return withMaster(draft, cid, (group) => {
+    const frame = masterFrame(draft, cid, group);
+    const bySlot = new Map(frame.els.map((e) => [tagFor(e, cid)!.slot, e.id]));
+    const idOf = (slot: unknown, where: string) => {
+      const id = typeof slot === "string" ? bySlot.get(slot) : undefined;
+      if (!id) throw new ToolError(`${where}: "${String(slot)}" is not a slot of this component`);
+      return id;
+    };
+    const shift = (o: Args): Args => ({
+      ...o,
+      ...(typeof o.x === "number" ? { x: o.x + frame.x } : {}),
+      ...(typeof o.y === "number" ? { y: o.y + frame.y } : {}),
+    });
+    if (updates.length)
+      updateElements(draft, {
+        updates: updates.map((u, i) => {
+          if (!isObj(u) || !isObj(u.patch))
+            throw new ToolError(`updates[${i}] must be {slot, patch}`);
+          return { id: idOf(u.slot, `updates[${i}]`), patch: shift(u.patch) };
+        }),
+      });
+    if (remove.length)
+      deleteElements(draft, { ids: remove.map((slot, i) => idOf(slot, `remove[${i}]`)) });
+    let added: string[] = [];
+    if (add.length) {
+      const res = addElements(draft, {
+        elements: add.map((a, i) => {
+          if (!isObj(a)) throw new ToolError(`add[${i}] must be an object`);
+          return shift(a);
+        }),
+      }) as { created: Array<{ id: string; labelId?: string }> };
+      added = res.created.flatMap((c) => (c.labelId ? [c.id, c.labelId] : [c.id]));
+      for (const id of added) {
+        const el = draft.get(id)!;
+        draft.update(id, { groupIds: [...el.groupIds, group] });
+      }
+    }
+    syncDraft(draft, [cid]);
+    return {
+      componentId: cid,
+      updated: updates.length,
+      removed: remove,
+      // New master children are keyed by their (first) element id.
+      addedSlots: added,
+    };
+  });
 }
 
 // --- My components (personal cross-document library, FR-55) ------------------
@@ -1633,6 +1794,10 @@ function detachInstanceTool(draft: Draft, args: Args) {
 
 function definePropertyTool(draft: Draft, args: Args) {
   const componentId = componentIdOf(draft, args.component);
+  return withMaster(draft, componentId, () => definePropertyIn(draft, componentId, args));
+}
+
+function definePropertyIn(draft: Draft, componentId: string, args: Args) {
   if (!isObj(args.property)) throw new ToolError(`"property" must be an object`);
   const id = defineProperty(draft, componentId, args.property as unknown as PropertyInput);
   return { componentId, propertyId: id };
@@ -1640,14 +1805,20 @@ function definePropertyTool(draft: Draft, args: Args) {
 
 function removePropertyTool(draft: Draft, args: Args) {
   const componentId = componentIdOf(draft, args.component);
-  removeProperty(draft, componentId, args.property);
+  withMaster(draft, componentId, () => removeProperty(draft, componentId, args.property));
   return { componentId, removed: args.property };
 }
 
 function setPropertiesTool(draft: Draft, args: Args) {
   if (!isObj(args.values)) throw new ToolError(`"values" must be an object`);
-  const nested = optStr(args, "nested");
-  setProperties(draft, args.instance, args.values, { nested });
+  let nested = optStr(args, "nested");
+  const inst = resolveInstance(draft, args.instance);
+  if (nested && !liveMasterGroup(draft, inst.componentId)) {
+    // Masterless: a nested instance's group inside this outer instance maps to its stable key.
+    nested = canonicalInner(inst.children, inst.componentId).get(nested) ?? nested;
+  }
+  const values = args.values;
+  onInstance(draft, args.instance, () => setProperties(draft, args.instance, values, { nested }));
   const target = instanceProperties(draft, args.instance).find((t) =>
     nested ? t.nestedKey === nested : !t.nestedKey,
   );
@@ -1885,6 +2056,8 @@ function applyEdit(tool: string, draft: Draft, args: Args, ctx: EditCtx): unknow
       return createComponentTool(draft, args);
     case "insert_instance":
       return insertInstanceTool(draft, args);
+    case "edit_component_master":
+      return editComponentMasterTool(draft, args);
     case "set_overrides":
       return setOverridesTool(draft, args);
     case "reset_overrides":
@@ -2074,6 +2247,8 @@ export async function runSceneTool(
       return getShapeData(tab, tabId, args);
     case "list_components":
       return listComponentsTool(tab, tabId);
+    case "get_component_master":
+      return getComponentMasterTool(tab, tabId, args);
     case "list_containers":
       return listContainersTool(tab, tabId);
     case "list_styles":

@@ -24,6 +24,7 @@ import {
   groupOf,
   innerTags,
   isOwned,
+  lookOf,
   OVERRIDE_KEYS,
   stableId,
   tagFor,
@@ -227,6 +228,7 @@ function masterTag(tag: ComponentTag): ComponentTag {
     pv: undefined,
     npv: undefined,
     mv: undefined,
+    ms: undefined,
     promoted: undefined,
   };
 }
@@ -290,6 +292,7 @@ export function materialize(draft: Draft, instance: unknown): string {
       ...c,
       ...placeGeometry(unscaled, base, place),
       ...valuesPatch(c, masterValues(draft, c, cid)),
+      ...(tag.ms ?? {}),
       id: idMap.get(c.id)!,
       groupIds,
       isDeleted: false,
@@ -417,6 +420,7 @@ export function demoteMaster(draft: Draft, masterGroupId: unknown): string {
       role: "instance",
       base: baseOf(el, origin),
       mv,
+      ms: lookOf(el),
       overrides: undefined,
       pv: undefined,
       npv: undefined,
