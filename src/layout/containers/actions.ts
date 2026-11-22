@@ -236,14 +236,14 @@ export function parentOf(draft: Draft, box: El): ContainerRef | null {
 /** A container by its box id, any member's id (innermost container), or its group id. */
 export function resolveContainer(draft: Draft, ref: unknown): ContainerRef {
   if (typeof ref !== "string" || !ref) {
-    throw new ToolError("containerId must be a container's box id (or a group id)");
+    throw new ToolError("containerId must be a stack's box id (or a group id)");
   }
   const el = draft.get(ref);
   const hit = el ? containerOfEl(draft, el) : null;
   if (hit) return hit;
   const box = boxOf(members(draft, ref), ref);
   if (box) return { group: ref, box, def: readDef(box)! };
-  throw new ToolError(`"${ref}" is not a smart container (or inside one)`);
+  throw new ToolError(`"${ref}" is not a stack (or inside one)`);
 }
 
 function unitsWithRects(draft: Draft, c: ContainerRef) {
@@ -295,7 +295,7 @@ function unitKeys(draft: Draft, c: ContainerRef, ids: readonly unknown[]): strin
   const out: string[] = [];
   for (const id of ids) {
     const key = typeof id === "string" ? keyOf.get(id) : undefined;
-    if (!key) throw new ToolError(`"${String(id)}" is not a child of container "${c.box.id}"`);
+    if (!key) throw new ToolError(`"${String(id)}" is not a child of stack "${c.box.id}"`);
     if (!out.includes(key)) out.push(key);
   }
   return out;
@@ -316,15 +316,15 @@ export function makeContainer(
   changes: ContainerChanges = {},
 ): MadeContainer {
   if (!Array.isArray(ids) || !ids.length) {
-    throw new ToolError("Select at least one element to make a container");
+    throw new ToolError("Select at least one element to make a stack");
   }
   const before = snapshot(draft);
   const els = expand(draft, ids);
   const frameId = els[0].frameId;
   if (els.some((e) => e.frameId !== frameId)) {
-    throw new ToolError("A container's elements must all be in the same frame (or none)");
+    throw new ToolError("A stack's elements must all be in the same frame (or none)");
   }
-  const { at } = insertionPoints(draft, els, "make a container");
+  const { at } = insertionPoints(draft, els, "make a stack");
   const outerOf = (el: El) => el.groupIds.slice(at.get(el.id)!);
   const outer = outerOf(els[0]);
   if (els.some((e) => outerOf(e).join() !== outer.join())) {
@@ -476,7 +476,7 @@ export function addToContainer(
   const before = snapshot(draft);
   const c = resolveContainer(draft, ref);
   const els = expand(draft, ids);
-  const { at } = insertionPoints(draft, els, "add it to a container");
+  const { at } = insertionPoints(draft, els, "add it to a stack");
   const outer = c.box.groupIds.slice(c.def.gi + 1);
   const ancestors = new Set(c.box.groupIds);
   const keys: string[] = [];
@@ -484,10 +484,10 @@ export function addToContainer(
   for (const el of els) {
     const i = at.get(el.id)!;
     if (el.id === c.box.id || el.groupIds.slice(0, i).some((g) => ancestors.has(g))) {
-      throw new ToolError(`Can't put "${el.id}" into a container inside it`);
+      throw new ToolError(`Can't put "${el.id}" into a stack inside it`);
     }
     if (el.groupIds.includes(c.group)) {
-      throw new ToolError(`"${el.id}" is already in container "${c.box.id}"`);
+      throw new ToolError(`"${el.id}" is already in stack "${c.box.id}"`);
     }
     const comp = compTag(el);
     if (typeof comp?.gi === "number" && comp.gi >= i) {
@@ -495,7 +495,7 @@ export function addToContainer(
     }
     const own = readDef(el);
     if (own && own.gi >= i) {
-      throw new ToolError(`"${el.id}" is a container's box; select the whole container`);
+      throw new ToolError(`"${el.id}" is a stack's box; select the whole stack`);
     }
     for (const g of el.groupIds.slice(i)) for (const m of members(draft, g)) left.add(m.id);
     const key = i === 0 ? el.id : el.groupIds[i - 1];
@@ -535,13 +535,13 @@ export function removeFromContainer(draft: Draft, ids: readonly unknown[]): stri
   if (!Array.isArray(ids) || !ids.length) throw new ToolError("ids must list at least one element");
   const before = snapshot(draft);
   const els = expand(draft, ids);
-  const { at } = insertionPoints(draft, els, "take it out of its container");
+  const { at } = insertionPoints(draft, els, "take it out of its stack");
   const byGroup = new Map<string, El[]>();
   for (const el of els) {
     const i = at.get(el.id)!;
     const own = readDef(el);
     if (own && isActiveBox(el) && own.gi >= i) {
-      throw new ToolError(`"${el.id}" is a container's box; select the whole container`);
+      throw new ToolError(`"${el.id}" is a stack's box; select the whole stack`);
     }
     const g = el.groupIds[i];
     if (!g || !boxOf(members(draft, g), g)) {

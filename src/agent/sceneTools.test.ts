@@ -1378,7 +1378,7 @@ describe("container tools", () => {
       runSceneTool("update_container", { containerId: res.results[0].containerId, gap: -1 }, TAB),
     ).rejects.toThrow(/gap must be/);
     await expect(runSceneTool("update_container", { containerId: "c" }, TAB)).rejects.toThrow(
-      /not a smart container/,
+      /not a stack/,
     );
   });
 });
