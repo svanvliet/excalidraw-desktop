@@ -79,13 +79,16 @@ that the component rule resizes re-flows the container holding it. A container t
 `host.ts` runs every command on a `Draft` and commits it with `commitUndoable`, so the command
 and its re-flow are one undo step. It flushes the reactor first and refuses in view mode.
 
-- **Make container**: Alt/Option+Shift+A, or **Make container** in the panel when 2+ elements
-  are selected. The new group is selected.
-- The **Container** properties-panel section:
+The UI calls containers **stacks** (D-DX19); code, command ids and agent tools keep "container".
+
+- **Make stack**: Alt/Option+Shift+A, **Layout ▸ Make Stack**, or "+" ▸ **Make stack** in the
+  panel strip when 2+ elements are selected (no row is shown for a plain selection, FR-65). The
+  new group is selected.
+- The **Stack** properties-panel row:
   - **container mode** (a whole container selected): direction, align, gap, padding, size W/H
-    (hug or fixed), distribute (when the main axis is fixed) and **Remove container**.
+    (hug or fixed), distribute (when the main axis is fixed) and **Remove stack**.
   - **child mode** (one child selected inside a container): "Item i of n", Move up/down (or
-    left/right) and **Take out**, plus the parent container's settings.
+    left/right) and **Take out of stack**, plus the parent container's settings.
 
 **Command registration.** `commands.ts` (`CONTAINER_COMMANDS`, `runContainerMenuCommand`,
 `registerContainerActions`) is the single place that registers the container commands. Menu

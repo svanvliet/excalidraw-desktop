@@ -207,8 +207,10 @@ hosts any registered `PanelSection` (`panel.ts`: `id`, `slot` top/bottom, `testI
 the **panel strip** (FR-63): one compact row each at the very top of the panel — icon, title,
 one-line summary, inline primary action — and clicking a row expands its body; one row is open at a
 time and the choice is remembered (`panelStripStore`, setting `panelStripOpen`). `sections.ts` lists
-them in order: Component, Properties, **Image** (these controls), Anchors, Container, Style, then
-**Data** for any selection (key/value rows, shared keys for a mixed selection, Copy data as CSV). Image sections are registered by appending `{ id, extensions, Component }` to
+them in order: Component (with its properties), **Image** (these controls), Connection, Stack, Style,
+then **Data** (key/value rows, shared keys for a mixed selection, Copy data as CSV). Rare rows
+(Style, Data, Stack for a plain selection) declare `inUse`/`more` and wait behind a "+" row until
+used (FR-65). Image sections are registered by appending `{ id, extensions, Component }` to
 `IMAGE_SECTIONS` in `src/components/imageProps/registry.ts`; components get `ImageSectionProps`
 (`groups`, `onlyImages`, `label`, `busy`, `run`).
 

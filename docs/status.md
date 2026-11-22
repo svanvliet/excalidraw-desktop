@@ -38,6 +38,7 @@
 | DX-8  | DX wave 2: Line anchors (face-centre snap)                                                    | ✅     | Snap dots at face midpoints + centre while dragging an arrow end; release within 12px snaps, binds and pins the end so it follows move/resize/rotate (straight, curved, elbow; Cmd/Ctrl bypass; setting). Anchors panel + `set_arrow_anchors`/`connect` pin straight ends (FR-61, D-DX15). Vitest + `e2e/line-anchors.spec.ts` green.                                                                                                                             |
 | DX-9  | UX: Pinned sidebar survives the AI panel                                                      | ✅     | A pinned Library or app tab stays docked when the AI panel opens and closes (docking breakpoint 760px); narrow windows reopen it when the panel closes (FR-62, D-DX16). Vitest + `e2e/sidebar-ai.spec.ts` green.                                                                                                                                                                                                                                                  |
 | DX-10 | UX wave: properties-panel strip (accordion at the panel top)                                  | ✅     | Our sections are compact rows (icon, title, summary, inline primary) at the top of the native panel; single-open accordion remembered in settings (FR-63, D-DX17). Vitest `PropertiesPanelHost` + `e2e/panel-strip.spec.ts` green.                                                                                                                                                                                                                                |
+| DX-11 | UX wave: concept demotions (progressive disclosure)                                           | ✅     | Style and Data rows only when used, "+" row for Apply style / Add data / Make stack; Styles tab removed (rename/delete in the Style row); "Stack" naming; Connection row; Properties inside Component (FR-65, D-DX19). Vitest `PropertiesPanelHost` + `sections` and Playwright green.                                                                                                                                                                            |
 
 ## Acceptance checks (per milestone)
 
@@ -166,7 +167,7 @@
 - [x] Rule order: a styled master child reaches instances in the same undo step, never as an instance override; instance children can't be styled (Vitest `styles.real`, `reactor.real`, `sceneTools`).
 - [x] Save → reload round-trip and collab convergence without echo (Vitest `styles.real`, `styles.collab.real`).
 - [x] MCP tools + summary/get_elements style info (Vitest `sceneTools`).
-- [x] Panel picker creates a style, Styles tab edits it live, one undo reverts, overrides reset (Playwright `styles.spec.ts`).
+- [x] Panel picker creates a style, an element's overrides pushed with Update style restyle every linked element live, one undo reverts, overrides reset (Playwright `styles.spec.ts`; the Styles tab was removed in DX-11).
 
 ### DX Wave 2 — Smart containers
 
@@ -208,6 +209,12 @@
 - [x] Open row persisted in settings and sanitised (Vitest `settingsStore`).
 - [x] Rows visible at scrollTop 0 on a short window for a rectangle, an image and a component instance; Create runs inline (Playwright `panel-strip.spec.ts`).
 
+### UX wave — Concept demotions (DX-11)
+
+- [x] Unused rows hide behind a last "+" row; picking reveals and opens a row until the selection changes; action entries run at once; docked fallback (Vitest `PropertiesPanelHost`).
+- [x] Style / Data / Stack gating, "Stack" and "Connection" titles, one Component row (Vitest `sections.test.ts`).
+- [x] Plain rectangle shows Component + "+"; "+" reveals Style and Data (Playwright `panel-strip.spec.ts`); Add data via "+" (`shape-data-anchors.spec.ts`); Apply style, rename, Update style (`styles.spec.ts`); "Make Stack" in the Layout menu (`tidy-arrows.spec.ts`); properties edited in the Component row (`component-properties.spec.ts`).
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -236,3 +243,4 @@
 | 2026-11-22 | DX-8       | — → ✅    | Line anchors / face-centre snap (FR-61, D-DX15).                                                                                       |
 | 2026-11-21 | DX-9       | — → ✅    | Pinned sidebar survives the AI panel (FR-62, D-DX16).                                                                                  |
 | 2026-11-22 | DX-10      | — → ✅    | Properties-panel strip (FR-63, D-DX17).                                                                                                |
+| 2026-11-22 | DX-11      | — → ✅    | Concept demotions (FR-65, D-DX19).                                                                                                     |
