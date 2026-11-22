@@ -11,7 +11,12 @@ import {
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { BinaryFileData, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, type El } from "../../agent/scene/draft";
-import { createComponent, insertInstance, setOverrides } from "../../extensions/components/actions";
+import {
+  createComponent,
+  defineProperty,
+  insertInstance,
+  setOverrides,
+} from "../../extensions/components/actions";
 import {
   createComponentFromSelection,
   defineComponentProperty,
@@ -411,5 +416,60 @@ describe("slots hidden by a property (FR-69)", () => {
     expect(saved.elements.map((e) => e.type).sort()).toEqual(["ellipse", "rectangle", "text"]);
     toInitials(api, groups[0]);
     expect(slots(api, groups[0])).toEqual(["E"]);
+  });
+});
+
+describe("a master left on the canvas by an older build", () => {
+  /** A legacy drawing (as Excalidraw's own Open, a paste or a library item brings it in, without
+   * load-time demotion): Card master on the canvas plus one instance; its Avatar choice hides E. */
+  async function legacy() {
+    __setLibraryMasterEngineForTest(undefined);
+    const draft = new Draft(
+      convertToExcalidrawElements(
+        [
+          { type: "rectangle", id: "R", x: 0, y: 0, width: 200, height: 80 },
+          { type: "ellipse", id: "E", x: 220, y: 20, width: 40, height: 40 },
+          { type: "text", id: "T", x: 10, y: 10, text: "Hi" },
+        ] as ExcalidrawElementSkeleton[],
+        { regenerateIds: false },
+      ),
+    );
+    const made = createComponent(draft, ["R", "E", "T"], "Card");
+    defineProperty(draft, made.componentId, {
+      name: "Avatar",
+      type: "choice",
+      options: ["photo", "initials"],
+      default: "photo",
+      bindings: [{ elementId: "E", key: "visible", map: { photo: false, initials: true } }],
+    });
+    const inst = insertInstance(draft, made.componentId, { x: 0, y: 300 });
+    const api = await mount(draft.toArray());
+    installed.push(api);
+    installComponents(api, { schedule: () => () => {} });
+    expect(listComponents(live(api))[0].masterGroupId).toBe(made.masterGroupId);
+    return { api, master: made.masterGroupId, inst: inst.groupId };
+  }
+
+  it("Edit master… on it moves it off the canvas and opens the master editor", async () => {
+    const { api, master, inst } = await legacy();
+    panel(api, master);
+    act(() => void fireEvent.click(screen.getByTestId("component-edit-master")));
+    render(<MasterEditorHost api={api} />);
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+    expect(listComponents(live(api))[0].masterGroupId).toBeNull();
+    const overlay = window.__masterEditor as unknown as Api;
+    const edited = live(overlay).filter((e) => !e.customData?.[CTX_KEY]);
+    expect(edited.map((e) => e.type).sort()).toEqual(["ellipse", "rectangle", "text"]);
+    userEdit(overlay, edited.find((e) => e.type === "text")!.id, {
+      text: "Bye",
+      originalText: "Bye",
+    });
+    act(() => void fireEvent.click(screen.getByTestId("master-edit-done")));
+    await act(async () => void (await new Promise((r) => setTimeout(r, 0))));
+    for (const g0 of [master, inst]) {
+      expect(textOf(children(api, g0))).toBe("Bye");
+      act(() => void setInstanceProperties(api, g0, { Avatar: "initials" }));
+      expect(children(api, g0).some((e) => e.type === "ellipse")).toBe(true);
+    }
   });
 });
