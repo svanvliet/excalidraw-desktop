@@ -1,5 +1,5 @@
 // Components UI (FR-55) against the REAL Excalidraw 0.18.1 in jsdom: placing saved components
-// (with images), the properties-panel actions, and the library-master Edit / Done / Cancel flow.
+// (with images), the properties-panel actions, and the master-edit overlay's Done / Cancel (FR-66).
 import "../../agent/scene/testHarness";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -12,11 +12,7 @@ import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/tran
 import type { BinaryFileData, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Draft, type El } from "../../agent/scene/draft";
 import { createComponent, insertInstance, setOverrides } from "../../extensions/components/actions";
-import {
-  installComponents,
-  runComponentCommand,
-  uninstallComponents,
-} from "../../extensions/components/host";
+import { installComponents, uninstallComponents } from "../../extensions/components/host";
 import { groupOf, listComponents, tagOf } from "../../extensions/components/model";
 import {
   __resetMyComponentsForTest,
@@ -30,14 +26,10 @@ import { ComponentSection } from "./ComponentSection";
 import { componentView } from "./componentPanelSection";
 import { placeMyComponent } from "./insert";
 import { librarySourceOf, masterToEntry } from "./libraryCodec";
-import {
-  __clearMasterEdit,
-  __setLibraryMasterEngineForTest,
-  cancelMasterEdit,
-  finishMasterEdit,
-  libraryMasterEngine,
-  masterEditOf,
-} from "./libraryMasters";
+import { __setLibraryMasterEngineForTest, libraryMasterEngine } from "./libraryMasters";
+import { MasterEditorHost } from "./MasterEditor";
+import { CTX_KEY } from "./masterEditScene";
+import { useMasterEditStore } from "./masterEditStore";
 
 type Api = ExcalidrawImperativeAPI;
 
@@ -78,12 +70,14 @@ function personEntry(): MyComponent {
 const mounted: Api[] = [];
 const installed: Api[] = [];
 beforeEach(async () => {
+  localStorage.setItem("excalidraw-desktop:e2e", "1");
   __resetMyComponentsForTest();
   await loadMyComponents();
 });
 afterEach(() => {
   for (const api of installed.splice(0)) uninstallComponents(api);
-  for (const api of mounted.splice(0)) __clearMasterEdit(api);
+  mounted.splice(0);
+  useMasterEditStore.getState().close();
   __setLibraryMasterEngineForTest(undefined);
   __resetMyComponentsForTest();
   cleanup();
@@ -213,46 +207,67 @@ describe("library-backed masters", () => {
     for (const e of live(api)) expect(librarySourceOf(e)?.libraryId).toBe(entry.id);
     expect(api.getFiles().photo1).toBeTruthy();
     panel(api, inst.groupId);
-    expect(screen.queryByTestId("component-go-to-master")).toBeNull();
     expect(screen.getByTestId("component-edit-master")).toBeTruthy();
   });
 
-  it("Edit master… then Done saves the edit to My components and takes the master away", async () => {
-    const { api, entry, inst } = await placed();
-    panel(api, inst.groupId);
+  /** Edit master… from the panel; returns the overlay's API. */
+  async function openOverlay(api: Api, instanceGroupId: string) {
+    panel(api, instanceGroupId);
     act(() => void fireEvent.click(screen.getByTestId("component-edit-master")));
-    const edit = masterEditOf(api);
-    expect(edit?.componentId).toBe(entry.id);
-    const master = children(api, edit!.masterGroupId);
-    expect(master).toHaveLength(3);
-    userEdit(api, master.find((e) => e.type === "text")!.id, { text: "Grace" });
+    render(<MasterEditorHost api={api} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(screen.getByTestId("master-edit-header").textContent).toContain("Person");
+    return window.__masterEditor as unknown as Api;
+  }
+  const masterIn = (overlay: Api) => live(overlay).filter((e) => !e.customData?.[CTX_KEY]);
+  const flush = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 
-    await act(async () => void (await finishMasterEdit(api)));
-    expect(masterEditOf(api)).toBeNull();
+  it("opens the master over the instance; the drawing gets no master", async () => {
+    const { api, inst } = await placed();
+    const overlay = await openOverlay(api, inst.groupId);
+    const master = masterIn(overlay);
+    expect(master).toHaveLength(3);
+    expect(master.every((e) => tagOf(e)?.role === "master")).toBe(true);
+    const rect = (els: readonly El[]) => els.find((e) => e.type === "rectangle")!;
+    expect([rect(master).x, rect(master).y]).toEqual([
+      rect(children(api, inst.groupId)).x,
+      rect(children(api, inst.groupId)).y,
+    ]);
     expect(listComponents(live(api))[0].masterGroupId).toBeNull();
-    expect(children(api, edit!.masterGroupId)).toHaveLength(0);
+    expect(live(api)).toHaveLength(3);
+  });
+
+  it("Done applies the edit to the drawing in one undo step and updates My components", async () => {
+    const { api, entry, inst } = await placed();
+    const overlay = await openOverlay(api, inst.groupId);
+    const text = masterIn(overlay).find((e) => e.type === "text")!;
+    userEdit(overlay, text.id, { text: "Grace", originalText: "Grace" });
+    expect(screen.getByTestId("master-edit-update-library")).toBeTruthy();
+    act(() => void fireEvent.click(screen.getByTestId("master-edit-done")));
+    await flush();
+    expect(useMasterEditStore.getState().session).toBeNull();
+    expect(screen.queryByTestId("master-edit")).toBeNull();
+    expect(textOf(children(api, inst.groupId))).toBe("Grace");
+    expect(listComponents(live(api))[0].masterGroupId).toBeNull();
     const saved = getMyComponents().find((c) => c.id === entry.id)!;
     expect(textOf(saved.elements as El[])).toBe("Grace");
     expect(saved.files?.photo1).toBeTruthy();
-    expect(children(api, inst.groupId)).toHaveLength(3);
+    undo();
+    expect(textOf(children(api, inst.groupId))).toBe("Ada");
   });
 
-  it("Cancel puts things back as one undo step", async () => {
+  it("Cancel leaves the drawing and My components alone", async () => {
     const { api, inst } = await placed();
-    panel(api, inst.groupId);
-    act(() => void fireEvent.click(screen.getByTestId("component-edit-master")));
-    const edit = masterEditOf(api)!;
-    const rect = children(api, inst.groupId).find((e) => e.type === "rectangle")!;
-    userEdit(api, rect.id, { x: rect.x + 50 });
-    act(() => void cancelMasterEdit(api));
-    expect(masterEditOf(api)).toBeNull();
-    expect(children(api, edit.masterGroupId)).toHaveLength(0);
-    expect(live(api).find((e) => e.id === rect.id)!.x).toBe(rect.x);
+    const before = live(api).map((e) => `${e.id}:${e.version}`);
+    const overlay = await openOverlay(api, inst.groupId);
+    const rect = masterIn(overlay).find((e) => e.type === "rectangle")!;
+    userEdit(overlay, rect.id, { x: rect.x + 50 });
+    act(() => void fireEvent.click(screen.getByTestId("master-edit-cancel")));
+    expect(useMasterEditStore.getState().session).toBeNull();
+    expect(live(api).map((e) => `${e.id}:${e.version}`)).toEqual(before);
     expect(getMyComponents()[0].updated).toBe(getMyComponents()[0].created);
-    // The cancel itself is a single step: one undo brings back the edited state.
-    undo();
-    expect(children(api, edit.masterGroupId)).toHaveLength(3);
-    expect(live(api).find((e) => e.id === rect.id)!.x).toBe(rect.x + 50);
   });
 
   it("offers Save when this machine doesn't have the definition, with no master placed", async () => {
@@ -269,18 +284,15 @@ describe("library-backed masters", () => {
     expect(listComponents(live(api))[0].masterGroupId).toBeNull();
   });
 
-  it("Edit master… → Done on a drawing-only component keeps it out of My components", async () => {
+  it("Done on a drawing-only component keeps it out of My components", async () => {
     const { api, entry, inst } = await placed();
     await act(async () => void (await removeMyComponent(entry.id)));
-    panel(api, inst.groupId);
-    act(() => void fireEvent.click(screen.getByTestId("component-edit-master")));
-    const edit = masterEditOf(api)!;
-    const text = children(api, edit.masterGroupId).find((e) => e.type === "text")!;
-    runComponentCommand(api, () => {}); // a frame: the engine settles before the user edits
-    userEdit(api, text.id, { text: "Grace", originalText: "Grace" });
-    await act(async () => void (await finishMasterEdit(api)));
-    expect(masterEditOf(api)).toBeNull();
-    expect(listComponents(live(api))[0].masterGroupId).toBeNull();
+    const overlay = await openOverlay(api, inst.groupId);
+    expect(screen.queryByTestId("master-edit-update-library")).toBeNull();
+    const text = masterIn(overlay).find((e) => e.type === "text")!;
+    userEdit(overlay, text.id, { text: "Grace", originalText: "Grace" });
+    act(() => void fireEvent.click(screen.getByTestId("master-edit-done")));
+    await flush();
     expect(textOf(children(api, inst.groupId))).toBe("Grace");
     expect(getMyComponents()).toHaveLength(0);
   });

@@ -2691,67 +2691,74 @@ button {
   color: var(--color-primary);
 }
 
-/* "Edit master…" banner, top-centre over the canvas (outside .excalidraw, so app tokens). */
-.desktop-master-edit {
+/* Master-edit overlay (FR-66): a temporary canvas over the editor, framed in the accent. */
+.master-edit {
   position: absolute;
-  top: 4.25rem;
-  left: 50%;
-  z-index: 5;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+
+.master-edit__bar {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: calc(100% - 2rem);
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
-  color: var(--fg-default);
+  padding: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: var(--fg-on-accent);
   font-family: var(--font-sans);
   font-size: var(--font-size-sm);
-  transform: translateX(-50%);
 }
 
-.desktop-master-edit__text {
+.master-edit__title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.desktop-master-edit__btn {
-  flex: 0 0 auto;
-  height: var(--control-height-sm);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--fg-default);
-  font: inherit;
+.master-edit__meta {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.master-edit__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.desktop-master-edit__btn:hover {
-  background: var(--bg-hover);
-}
-
-.desktop-master-edit__btn--primary {
-  border-color: var(--accent);
-  background: var(--accent);
+.master-edit__bar .icon-btn:not(.icon-btn--primary) {
+  border-color: color-mix(in srgb, var(--fg-on-accent) 50%, transparent);
+  background: transparent;
   color: var(--fg-on-accent);
 }
 
-.desktop-master-edit__btn--primary:hover {
-  background: var(--accent-hover);
+.master-edit__bar .icon-btn--primary {
+  background: var(--fg-on-accent);
+  color: var(--accent);
 }
 
-.desktop-master-edit__btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+.master-edit__canvas {
+  flex: 1;
+  min-height: 0;
 }
 
-.desktop-master-edit__btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+/* The overlay edits one component: no library here. */
+.master-edit .default-sidebar-trigger {
+  display: none;
+}
+
+.master-edit__frame {
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--accent);
+  pointer-events: none;
 }
 
 /* Line anchors (D-DX15): face-centre snap dots while an arrow end is dragged. */

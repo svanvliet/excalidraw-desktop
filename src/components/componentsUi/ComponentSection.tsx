@@ -8,14 +8,9 @@ import {
 import { canSaveMyComponents } from "../../lib/componentLibraryStore";
 import { CloseIcon } from "../icons";
 import type { PanelApi } from "../propertiesPanel/panel";
-import { goToMaster, saveToMyComponents, useMyComponents } from "./commands";
+import { saveToMyComponents, useMyComponents } from "./commands";
 import { keyLabel, type ComponentView } from "./componentPanelSection";
-import {
-  editLibraryMaster,
-  libraryMasterEngine,
-  moveMasterToLibrary,
-  useMasterEdit,
-} from "./libraryMasters";
+import { isMasterEditorApi, openMasterEditor } from "./masterEditStore";
 
 /** Keeps Excalidraw's canvas focused so its shortcuts (undo!) keep working after a click. */
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
@@ -52,8 +47,6 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
   // The host hands sections the full editor API; PanelApi only narrows what most sections use.
   const api = panelApi as ExcalidrawImperativeAPI;
   const mine = useMyComponents();
-  const editing = useMasterEdit(api);
-  const engine = !!libraryMasterEngine();
   const canSave = canSaveMyComponents();
 
   if (view.kind === "create") {
@@ -73,16 +66,19 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
   }
 
   if (view.kind === "master") {
+    // Masters only exist in the master editor (FR-66), or in drawings from older builds.
     const n = view.instances;
+    const inEditor = isMasterEditorApi(api);
     const saved = mine.some((m) => m.id === view.componentId);
     return (
       <fieldset className="component-props">
         <div className="component-props__summary" data-testid="component-props-summary">
-          <strong>{view.name}</strong> · {n} instance{n === 1 ? "" : "s"}
+          <strong>{view.name}</strong>
+          {!inEditor && ` · ${n} instance${n === 1 ? "" : "s"}`}
         </div>
-        {editing?.componentId === view.componentId ? (
+        {inEditor ? (
           <div className="component-props__note">
-            Editing from My components. Use Done or Cancel at the top of the canvas.
+            This is the master. Done at the top applies your changes to every instance.
           </div>
         ) : (
           <div className="component-props__actions">
@@ -93,16 +89,6 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
             >
               {saved ? "Update in My components" : "Save to My components"}
             </Action>
-            {engine && (
-              <Action
-                testId="component-move-to-library"
-                disabled={!canSave}
-                title="Saves it to My components and takes the master off the canvas"
-                onClick={() => void moveMasterToLibrary(api, view.componentId)}
-              >
-                Move to My components
-              </Action>
-            )}
           </div>
         )}
       </fieldset>
@@ -118,22 +104,16 @@ export function ComponentSection({ view, api: panelApi }: { view: ComponentView;
         {libraryOnly && " · from My components"}
       </div>
       <div className="component-props__actions">
-        {view.hasMaster && (
-          <Action testId="component-go-to-master" onClick={() => goToMaster(api, view.componentId)}>
-            Go to master
-          </Action>
-        )}
-        {libraryOnly && engine && !editing && (
+        {!isMasterEditorApi(api) && (
           <Action
             testId="component-edit-master"
-            disabled={!canSave}
-            title="Puts the master on the canvas until you choose Done or Cancel"
-            onClick={() => editLibraryMaster(api, view.groupId)}
+            title="Edits the component in a temporary canvas; Done updates every instance"
+            onClick={() => openMasterEditor(api, view.groupId)}
           >
             Edit master…
           </Action>
         )}
-        {(view.hasMaster || libraryOnly) && (
+        {!isMasterEditorApi(api) && (
           <Action
             testId="component-save"
             disabled={!canSave}

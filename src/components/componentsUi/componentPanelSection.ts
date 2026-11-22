@@ -3,9 +3,10 @@
  * what you can do with it.
  *
  *  - Plain shapes: Create component.
- *  - A master: name, instance count, Save to / Move to My components.
- *  - An instance: Go to master (or Edit master… when the master lives in My components), Save,
- *    Reset all, Detach, and each overridden slot with its own reset.
+ *  - A master (only inside the master editor, or in drawings from older builds): name, instance
+ *    count, Save to / Update in My components.
+ *  - An instance: Edit master… (opens the master editor overlay, FR-66), Save, Reset all,
+ *    Detach, and each overridden slot with its own reset.
  *  - Anything mixed (several components, or component + plain shapes): hidden.
  *
  * The row also carries the component's typed properties (FR-56): D-DX19 merged the former
