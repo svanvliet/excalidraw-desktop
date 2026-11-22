@@ -1,12 +1,11 @@
 /**
- * "Properties" properties-panel section (FR-56, D-DX11): a component's typed properties.
+ * Component properties view (FR-56, D-DX11): a component's typed properties, shown inside the
+ * "Component" strip row (D-DX19 merged the former separate "Properties" row into it).
  *
  *  - An instance (or a whole outer instance): edit its property values, then those of each nested
  *    component inside it that declares properties.
  *  - A master: list the declared properties, remove them, declare new ones bound to a slot.
  *  - Anything else (plain shapes, mixed selections, an instance with no properties): hidden.
- *
- * Separate from the Components UI section ("component") so both stay independent.
  */
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { Draft, type El } from "../../agent/scene/draft";
@@ -19,8 +18,6 @@ import {
   type PropDef,
   type PropValues,
 } from "../../extensions/components/model";
-import type { PanelSection } from "../propertiesPanel/panel";
-import { PropsSection } from "./PropsSection";
 
 export interface PropTargetView {
   /** null: the instance's own component; else the nested instance's group in the outer master. */
@@ -104,14 +101,6 @@ export function propsView(
   if (!targets.length) return null;
   return { kind: "instance", componentId: cid, groupId, targets };
 }
-
-export const propsPanelSection: PanelSection<PropsView> = {
-  id: "componentProps",
-  slot: "bottom",
-  testId: "component-propvals",
-  view: ({ api, selected }) => propsView(selected, api.getSceneElements()),
-  Component: PropsSection,
-};
 
 /** "Primary=#228be6, Danger=#e03131" → options + map (opacity values become numbers). */
 export function parseChoices(

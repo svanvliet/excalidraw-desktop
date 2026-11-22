@@ -97,9 +97,8 @@ export function ContainerSection({ view, api }: { view: ContainerPanelView; api:
   if (view.mode === "make" || !view.def || !view.containerId) {
     return (
       <fieldset>
-        <legend>Container</legend>
         <TextButton
-          label="Make container"
+          label="Make stack"
           testId="container-make"
           onClick={() => makeContainerFromSelection(api)}
         />
@@ -114,7 +113,6 @@ export function ContainerSection({ view, api }: { view: ContainerPanelView; api:
 
   return (
     <fieldset className="container-props">
-      <legend>Container</legend>
       {view.mode === "child" && (
         <div className="container-props__child" data-testid="container-child">
           <span>
@@ -135,7 +133,7 @@ export function ContainerSection({ view, api }: { view: ContainerPanelView; api:
             />
           </div>
           <TextButton
-            label="Take out of container"
+            label="Take out of stack"
             testId="container-child-remove"
             onClick={() => takeOutOfContainer(api, view.childIds)}
           />
@@ -209,7 +207,7 @@ export function ContainerSection({ view, api }: { view: ContainerPanelView; api:
       )}
       {view.mode === "container" && (
         <TextButton
-          label="Remove container"
+          label="Remove stack"
           testId="container-remove"
           danger
           onClick={() => unmakeContainer(api, containerId)}

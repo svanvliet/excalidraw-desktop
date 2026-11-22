@@ -202,10 +202,15 @@ host's image-section props (`groups`, `onlyImages`, `label`, `busy`, `run`).
 
 **Panel host.** The portal is generic: `src/components/propertiesPanel/PropertiesPanelHost.tsx`
 hosts any registered `PanelSection` (`panel.ts`: `id`, `slot` top/bottom, `testId`, a cheap
-`view(ctx)` that returns JSON-serialisable view data or `null` to hide, and a `Component`).
-`sections.ts` lists them in order: image controls (top), **Anchors** for a single bound elbow
-arrow, then **Data** for any selection (key/value rows, shared keys for a mixed selection, Copy data
-as CSV). Image sections are registered by appending `{ id, extensions, Component }` to
+`view(ctx)` that returns JSON-serialisable view data or `null` to hide, a strip `title`, `icon`,
+`summary(view)` and optional `primary(view)`, and an optional `Component` body). Top sections form
+the **panel strip** (FR-63): one compact row each at the very top of the panel — icon, title,
+one-line summary, inline primary action — and clicking a row expands its body; one row is open at a
+time and the choice is remembered (`panelStripStore`, setting `panelStripOpen`). `sections.ts` lists
+them in order: Component (with its properties), **Image** (these controls), Connection, Stack, Style,
+then **Data** (key/value rows, shared keys for a mixed selection, Copy data as CSV). Rare rows
+(Style, Data, Stack for a plain selection) declare `inUse`/`more` and wait behind a "+" row until
+used (FR-65). Image sections are registered by appending `{ id, extensions, Component }` to
 `IMAGE_SECTIONS` in `src/components/imageProps/registry.ts`; components get `ImageSectionProps`
 (`groups`, `onlyImages`, `label`, `busy`, `run`).
 
@@ -220,8 +225,8 @@ Enter, a disabled or removed control). Text inputs keep typing and their own tex
 
 **DOM dependency.** 0.18.1 has no API for adding panel sections and doesn't export its colour or
 stroke pickers, so the host attaches to `PANEL_SELECTOR` — `.App-menu__left .panelColumn` on
-desktop and `.App-mobile-menu .panelColumn` for the mobile properties sheet — right after the
-panel's first child (the stroke slot that is empty for images), and reuses Excalidraw's own class
+desktop and `.App-mobile-menu .panelColumn` for the mobile properties sheet — strip rows go before
+the panel's first child (the stroke slot that is empty for images), and reuses Excalidraw's own class
 names (`buttonList`, `color-picker__*`, `Island`) so it matches both themes. A `MutationObserver`
 re-attaches it when Excalidraw remounts the panel. When no panel is in the DOM (the mobile layout
 with its sheet closed, or a future upstream change), the same sections render in a small docked

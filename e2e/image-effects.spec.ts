@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow } from "./fixtures/strip";
 
 /**
  * Image effects smoke (docs/extensions.md § "Grayscale", "Tint", "Shadow"): drives the effect
@@ -48,6 +49,7 @@ async function selectDroppedImage(page: Page) {
   await expect(panel).toHaveCount(0);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(panel).toBeVisible();
+  await openStripRow(page, "image-props");
   return panel;
 }
 

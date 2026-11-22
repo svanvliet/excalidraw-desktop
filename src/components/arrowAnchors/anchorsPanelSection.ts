@@ -1,10 +1,11 @@
 /**
- * "Anchors" properties-panel section: pin a bound elbow arrow's ends to a side of their shapes
+ * "Connection" properties-panel section (D-DX19 renamed it from "Anchors"): pin a bound elbow arrow's ends to a side of their shapes
  * (docs/plan.md D-DX8), or a straight / curved arrow's ends to a face midpoint or the centre
  * (D-DX15).
  */
 import { isElbowArrow, type Anchor } from "../../lib/elbowAnchors";
 import { endAnchors, isArrow } from "../../lib/lineAnchors";
+import { AnchorCenterIcon } from "../icons";
 import type { PanelSection } from "../propertiesPanel/panel";
 import { AnchorsSection } from "./AnchorsSection";
 
@@ -22,10 +23,24 @@ export interface AnchorsView {
   end: EndView;
 }
 
+const ANCHOR_NAMES: Record<Anchor | "free", string> = {
+  n: "Top",
+  e: "Right",
+  s: "Bottom",
+  w: "Left",
+  center: "Centre",
+  free: "Free",
+};
+
 export const anchorsPanelSection: PanelSection<AnchorsView> = {
   id: "anchors",
-  slot: "bottom",
+  slot: "top",
   testId: "arrow-anchors",
+  title: "Connection",
+  icon: AnchorCenterIcon,
+  // Start → end, e.g. "Top → Free"; "–" for an unbound end.
+  summary: ({ start, end }) =>
+    [start, end].map((e) => (e.bound ? ANCHOR_NAMES[e.anchor ?? "free"] : "–")).join(" → "),
   view({ selected }) {
     if (selected.length !== 1) return null;
     const arrow = selected[0];

@@ -1,11 +1,11 @@
 import "../../agent/scene/testHarness";
 import { describe, expect, it } from "vitest";
-import { convertToExcalidrawElements, FONT_FAMILY } from "@excalidraw/excalidraw";
+import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import type { El } from "../../agent/scene/draft";
 import { COMPONENT_NS } from "../../extensions/components/model";
-import { STYLE_NS, StyleError, type StyleTag } from "../../extensions/styles/model";
-import { missingProps, parseProp, styleSectionView } from "./stylesView";
+import { STYLE_NS, type StyleTag } from "../../extensions/styles/model";
+import { styleSectionView } from "./stylesView";
 
 const tag = (id: string, overrides?: StyleTag["overrides"]): StyleTag => ({
   v: 1,
@@ -69,21 +69,5 @@ describe("styleSectionView", () => {
     const view = styleSectionView([child], [...all, child])!;
     expect(view.ids).toEqual([]);
     expect(view.master).toEqual({ name: "S1" });
-  });
-});
-
-describe("parseProp", () => {
-  it("parses and validates control values", () => {
-    expect(parseProp("strokeColor", " #abcdef ")).toBe("#abcdef");
-    expect(parseProp("opacity", "40")).toBe(40);
-    expect(parseProp("fontFamily", String(FONT_FAMILY.Nunito))).toBe(FONT_FAMILY.Nunito);
-    expect(parseProp("roundness", "sharp")).toBe("sharp");
-    expect(() => parseProp("opacity", "")).toThrow(StyleError);
-    expect(() => parseProp("opacity", "500")).toThrow(StyleError);
-  });
-
-  it("lists properties a style doesn't set yet", () => {
-    expect(missingProps({ strokeColor: "#000" })).not.toContain("strokeColor");
-    expect(missingProps({ strokeColor: "#000" })).toContain("opacity");
   });
 });

@@ -4,8 +4,8 @@ A named style is a reusable look. Elements link to a style, and editing the styl
 linked element live. Each element can still override single properties locally.
 
 Code: `src/extensions/styles/` (model, sync, rule, actions, host) for the engine,
-`src/components/styles/` for the properties-panel Style section, and
-`src/components/sidebar/StylesPanel.tsx` for the Styles tab.
+`src/components/styles/` for the properties-panel Style row. There is no separate Styles
+sidebar tab (removed by D-DX19).
 
 ## 1. Data model
 
@@ -117,14 +117,13 @@ the container re-flow (`reflowEdited`), then the components `syncEdited(draft)`.
 
 ## 3. UI
 
-- **Properties panel → Style** (`stylePanelSection`, after Anchors, before Data): a picker with
-  None, every style, and "New style from selection…". Instance-only selections show the master's
-  style read-only. When targets have overrides it shows them with **Reset overrides** and, for a
-  single element, **Update style** (pushes its overrides into the style).
-- **Styles tab** in the default sidebar: one row per style with a swatch, name and linked count.
-  New (from the selection), double-click or F2 to rename, and a row expands to Apply to
-  selection, Select elements, Delete, and a property editor: change a value, remove a property
-  (×), or add one. Read-only in view mode.
+- **Properties panel → Style** (`stylePanelSection`, after Stack, before Data): a picker with
+  None, every style, and "New style from selection…", plus **Rename** and **Delete style** for the
+  linked style. Instance-only selections show the master's style read-only. When targets have
+  overrides it shows them with **Reset overrides** and, for a single element, **Update style**
+  (pushes its overrides into the style); that is how a style's properties are edited in the UI.
+- The row shows only while the selection uses a style (FR-65): linked, overridden, or following a
+  styled master. Otherwise the strip's **"+"** row offers **Apply style**, which reveals it.
 
 Every UI action is one undo step (`runStyleCommand` → `commitUndoable`).
 

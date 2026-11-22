@@ -1,9 +1,12 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { useState, type KeyboardEvent } from "react";
 import {
   applyStyleToSelection,
   createStyleFromSelection,
+  deleteSceneStyle,
   pushElementOverridesToStyle,
   resetSelectionStyleOverrides,
+  updateSceneStyle,
 } from "../../extensions/styles/host";
 import type { PanelApi } from "../propertiesPanel/panel";
 import { PROP_LABELS, type StyleSectionView } from "./stylesView";
@@ -14,14 +17,40 @@ const MIXED = "__mixed__";
 /** Keeps Excalidraw's canvas focused so its shortcuts keep working after a click. */
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
 
+/** Renames a style in place: Enter / blur commits, Escape cancels. */
+function RenameField({ name, onDone }: { name: string; onDone(name: string | null): void }) {
+  const keys = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur();
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      e.currentTarget.value = name;
+      onDone(null);
+    }
+  };
+  return (
+    <input
+      className="shape-data__input"
+      aria-label="Style name"
+      data-testid="style-section-name"
+      defaultValue={name}
+      autoFocus
+      spellCheck={false}
+      onKeyDown={keys}
+      onBlur={(e) => onDone(e.currentTarget.value)}
+    />
+  );
+}
+
 export function StyleSection({ view, api: panelApi }: { view: StyleSectionView; api: PanelApi }) {
   // The host passes the editor's full imperative API; the panel type only narrows it.
   const api = panelApi as ExcalidrawImperativeAPI;
+  const [renaming, setRenaming] = useState(false);
 
   if (view.master) {
     return (
       <fieldset className="style-section">
-        <legend>Style</legend>
         <div className="style-section__note" data-testid="style-section-master">
           {view.master.name
             ? `Follows its component master (${view.master.name})`
@@ -37,10 +66,10 @@ export function StyleSection({ view, api: panelApi }: { view: StyleSectionView; 
     else if (next !== MIXED) applyStyleToSelection(api, next || null);
   };
   const single = view.overrideIds.length === 1 && view.ids.length === 1;
+  const linked = view.styles.find((st) => st.id === view.current) ?? null;
 
   return (
     <fieldset className="style-section">
-      <legend>Style</legend>
       <select
         className="style-section__select"
         aria-label="Named style"
@@ -61,6 +90,40 @@ export function StyleSection({ view, api: panelApi }: { view: StyleSectionView; 
         ))}
         <option value={NEW}>New style from selection…</option>
       </select>
+      {linked &&
+        (renaming ? (
+          <RenameField
+            name={linked.name}
+            onDone={(name) => {
+              setRenaming(false);
+              if (name?.trim() && name.trim() !== linked.name) {
+                updateSceneStyle(api, linked.id, { name });
+              }
+            }}
+          />
+        ) : (
+          <div className="style-section__actions">
+            <button
+              type="button"
+              className="style-section__btn"
+              data-testid="style-section-rename"
+              onMouseDown={keepFocus}
+              onClick={() => setRenaming(true)}
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              className="style-section__btn"
+              data-testid="style-section-delete"
+              title="Delete the style; its elements keep their look"
+              onMouseDown={keepFocus}
+              onClick={() => deleteSceneStyle(api, linked.id)}
+            >
+              Delete style
+            </button>
+          </div>
+        ))}
       {view.overrides.length > 0 && (
         <div className="style-section__overrides" data-testid="style-section-overrides">
           <div className="style-section__note">

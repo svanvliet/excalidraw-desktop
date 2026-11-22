@@ -47,7 +47,7 @@ export function runContainerCommand<T>(api: CommandApi, action: (draft: Draft) =
     if (err instanceof ToolError) api.setToast?.({ message: err.message });
     else {
       log.error("containers: action failed", err);
-      api.setToast?.({ message: "That container action failed. See the log for details." });
+      api.setToast?.({ message: "That stack action failed. See the log for details." });
     }
     return null;
   }

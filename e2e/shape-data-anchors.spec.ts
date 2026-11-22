@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow, revealStripRow } from "./fixtures/strip";
 
 /**
  * Shape data + elbow-arrow anchors smoke (docs/plan.md D-DX2 / D-DX3), against the real
@@ -98,6 +99,9 @@ test("edits shape data from the native panel; Ctrl/Cmd+Z undoes each change", as
   await seed(page);
   await select(page, "A", "B");
   const section = page.locator(".App-menu__left .panelColumn > [data-testid=shape-data-native]");
+  // No data yet: the row waits behind the strip's "+" (FR-65).
+  await expect(section).toHaveCount(0);
+  await revealStripRow(page, "shape-data");
   await expect(section).toBeVisible();
 
   await section.getByLabel("New key").fill("owner");
@@ -135,6 +139,7 @@ test("pins an elbow arrow's start from the native panel and undoes it", async ({
   await select(page, "X");
   const section = page.locator(".App-menu__left .panelColumn > [data-testid=arrow-anchors-native]");
   await expect(section).toBeVisible();
+  await openStripRow(page, "arrow-anchors");
 
   await section.getByRole("button", { name: "Start: Top" }).click();
   await expect(section.getByRole("button", { name: "Start: Top" })).toHaveAttribute(

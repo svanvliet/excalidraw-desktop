@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openStripRow } from "./fixtures/strip";
 
 /**
  * Image controls smoke (docs/extensions.md § "UI surface"): drop an image, and drive the Stroke /
@@ -45,6 +46,7 @@ async function selectDroppedImage(page: Page) {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(panel).toBeVisible();
   await expect(page.getByTestId("image-props-dock")).toHaveCount(0);
+  await openStripRow(page, "image-props");
   return panel;
 }
 
@@ -259,6 +261,7 @@ test("uses the docked island on the mobile layout until the properties sheet ope
   await dropImage(page);
   const dock = page.getByTestId("image-props-dock");
   await expect(dock).toBeVisible({ timeout: 10_000 });
+  await openStripRow(page, "image-props");
   await expect(dock.getByRole("button", { name: "Circle" })).toBeVisible();
   await shot(page, "mobile-dock");
   await page.getByRole("button", { name: "Edit", exact: true }).click();

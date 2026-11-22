@@ -36,6 +36,9 @@
 | DX-7  | DX wave 2: Tidy arrows + Layout menu                                                          | ✅     | Layout ▸ Tidy Arrows (selection or all, one undo step, optional convert) with an orthogonal obstacle-avoiding router and org-chart trunks; top-level Layout menu + toolbar Layout dropdown from one command list (auto-layout, tidy, containers); `tidy_arrows` MCP tool (FR-60, D-DX14). Vitest + `e2e/tidy-arrows.spec.ts` green.                                                                                                                               |
 | DX-4  | DX wave 2: Component properties + nested components                                           | ✅     | Typed properties bound to slots (instance values = overrides), Properties panel section, nested components (cycles rejected, cascade sync, overrides at both levels), 3 MCP tools (FR-56, FR-57, D-DX11). Real-Excalidraw + collab vitest and `e2e/component-properties.spec.ts` (incl. real Alt-drag) green.                                                                                                                                                     |
 | DX-8  | DX wave 2: Line anchors (face-centre snap)                                                    | ✅     | Snap dots at face midpoints + centre while dragging an arrow end; release within 12px snaps, binds and pins the end so it follows move/resize/rotate (straight, curved, elbow; Cmd/Ctrl bypass; setting). Anchors panel + `set_arrow_anchors`/`connect` pin straight ends (FR-61, D-DX15). Vitest + `e2e/line-anchors.spec.ts` green.                                                                                                                             |
+| DX-9  | UX: Pinned sidebar survives the AI panel                                                      | ✅     | A pinned Library or app tab stays docked when the AI panel opens and closes (docking breakpoint 760px); narrow windows reopen it when the panel closes (FR-62, D-DX16). Vitest + `e2e/sidebar-ai.spec.ts` green.                                                                                                                                                                                                                                                  |
+| DX-10 | UX wave: properties-panel strip (accordion at the panel top)                                  | ✅     | Our sections are compact rows (icon, title, summary, inline primary) at the top of the native panel; single-open accordion remembered in settings (FR-63, D-DX17). Vitest `PropertiesPanelHost` + `e2e/panel-strip.spec.ts` green.                                                                                                                                                                                                                                |
+| DX-11 | UX wave: concept demotions (progressive disclosure)                                           | ✅     | Style and Data rows only when used, "+" row for Apply style / Add data / Make stack; Styles tab removed (rename/delete in the Style row); "Stack" naming; Connection row; Properties inside Component (FR-65, D-DX19). Vitest `PropertiesPanelHost` + `sections` and Playwright green.                                                                                                                                                                            |
 | DX-12 | DX wave 3: Masterless components + master-edit overlay                                        | 🟡     | Engine (L5): create makes the first instance, `applyMasterEdit` (one undo step), load-time demotion of legacy masters, `ms` look record, masterless agent tools + `get_component_master` / `edit_component_master` (FR-64, D-DX18). Vitest + collab real test + `e2e/components-ui.spec.ts` green. Overlay (L6, FR-66) pending.                                                                                                                                   |
 
 ## Acceptance checks (per milestone)
@@ -165,7 +168,7 @@
 - [x] Rule order: a styled master child reaches instances in the same undo step, never as an instance override; instance children can't be styled (Vitest `styles.real`, `reactor.real`, `sceneTools`).
 - [x] Save → reload round-trip and collab convergence without echo (Vitest `styles.real`, `styles.collab.real`).
 - [x] MCP tools + summary/get_elements style info (Vitest `sceneTools`).
-- [x] Panel picker creates a style, Styles tab edits it live, one undo reverts, overrides reset (Playwright `styles.spec.ts`).
+- [x] Panel picker creates a style, an element's overrides pushed with Update style restyle every linked element live, one undo reverts, overrides reset (Playwright `styles.spec.ts`; the Styles tab was removed in DX-11).
 
 ### DX Wave 2 — Smart containers
 
@@ -196,6 +199,23 @@
 - [x] `set_arrow_anchors` (incl. `free`, inside `apply_ops`), `connect` `elbow: false` anchors, summary anchors, tool moves keep pins (Vitest `sceneTools`).
 - [x] Drag end onto a dot, shape drag follows, undo; Cmd/Ctrl bypass; arrow-tool creation; panel pin/free (Playwright `line-anchors.spec.ts`).
 
+### UX — Pinned sidebar and the AI panel (DX-9)
+
+- [x] A docked sidebar that closes as an overlay while the AI panel is open reopens (same tab) when the panel closes; one the user closes while docked stays closed (Vitest `sidebarRestore.test.ts`).
+- [x] At 1440×900, pinned Library and pinned Layers stay docked through open AI → click inside → close AI; at 1110px the pinned Library comes back when AI closes (Playwright `sidebar-ai.spec.ts`).
+
+### UX wave — Panel strip
+
+- [x] Strip rows first in the panel, last-row divider, docked fallback, single-open accordion remembered across selections, inline primary, body-less rows (Vitest `PropertiesPanelHost`).
+- [x] Open row persisted in settings and sanitised (Vitest `settingsStore`).
+- [x] Rows visible at scrollTop 0 on a short window for a rectangle, an image and a component instance; Create runs inline (Playwright `panel-strip.spec.ts`).
+
+### UX wave — Concept demotions (DX-11)
+
+- [x] Unused rows hide behind a last "+" row; picking reveals and opens a row until the selection changes; action entries run at once; docked fallback (Vitest `PropertiesPanelHost`).
+- [x] Style / Data / Stack gating, "Stack" and "Connection" titles, one Component row (Vitest `sections.test.ts`).
+- [x] Plain rectangle shows Component + "+"; "+" reveals Style and Data (Playwright `panel-strip.spec.ts`); Add data via "+" (`shape-data-anchors.spec.ts`); Apply style, rename, Update style (`styles.spec.ts`); "Make Stack" in the Layout menu (`tidy-arrows.spec.ts`); properties edited in the Component row (`component-properties.spec.ts`).
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -222,4 +242,7 @@
 | 2026-11-21 | DX-7       | — → ✅    | Tidy Arrows + Layout menu/toolbar (FR-60, D-DX14).                                                                                     |
 | 2026-11-22 | DX-4       | ⬜ → ✅   | Component properties and nested components (FR-56, FR-57, D-DX11).                                                                     |
 | 2026-11-22 | DX-8       | — → ✅    | Line anchors / face-centre snap (FR-61, D-DX15).                                                                                       |
+| 2026-11-21 | DX-9       | — → ✅    | Pinned sidebar survives the AI panel (FR-62, D-DX16).                                                                                  |
+| 2026-11-22 | DX-10      | — → ✅    | Properties-panel strip (FR-63, D-DX17).                                                                                                |
+| 2026-11-22 | DX-11      | — → ✅    | Concept demotions (FR-65, D-DX19).                                                                                                     |
 | 2026-11-23 | DX-12      | — → 🟡    | Masterless component engine (FR-64, D-DX18); overlay (FR-66) pending.                                                                  |
