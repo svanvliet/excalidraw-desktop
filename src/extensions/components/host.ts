@@ -36,11 +36,14 @@ import {
 import {
   elementComponentInfo,
   listComponents,
+  tagsOf,
   type ComponentInfo,
   type ElementComponentInfo,
 } from "./model";
 import { createAnchorRule, type AnchorRule } from "../anchors/rule";
 import { createStyleRule } from "../styles/rule";
+import { relayoutText } from "../styles/sync";
+import { clearTextCache } from "./text";
 import {
   adoptAsMaster,
   applyMasterEdit,
@@ -60,6 +63,88 @@ const engines = new WeakMap<Api, Reactor>();
 const holds = new WeakMap<Api, ReturnType<typeof createHoldTracker>>();
 const remotes = new WeakMap<Api, Api>();
 const anchorRules = new WeakMap<Api, AnchorRule>();
+const fontWatchers = new WeakMap<Api, () => void>();
+
+type Schedule = (cb: () => void) => () => void;
+
+const nextFrame: Schedule = (cb) => {
+  if (typeof requestAnimationFrame === "function") {
+    const id = requestAnimationFrame(cb);
+    return () => cancelAnimationFrame(id);
+  }
+  const id = setTimeout(cb, 16);
+  return () => clearTimeout(id);
+};
+
+/**
+ * Re-measure instance text that was measured with a fallback face (FR-56/FR-64). Excalidraw
+ * doesn't refresh text dimensions when its fonts finish loading, and syncs that ran before
+ * (load-time demotion, a sync on open, an agent tool) measured with the fallback face, so
+ * property text ends up clipped to the narrower width. Applied as a remote, non-undoable change
+ * so the reactor doesn't treat it as a user edit. Returns how many text elements changed.
+ */
+export function relayoutComponentText(api: Api): number {
+  engines.get(api)?.flush();
+  clearTextCache();
+  const draft = new Draft(api.getSceneElementsIncludingDeleted());
+  const access = {
+    get: (id: string) => draft.get(id),
+    patch: (id: string, p: Record<string, unknown>) => {
+      const cur = draft.get(id);
+      if (cur && differs(cur, p)) draft.update(id, p);
+    },
+  };
+  for (const el of draft.live()) {
+    if (el.type !== "text" || !tagsOf(el).some((t) => t.role === "instance")) continue;
+    relayoutText(el.id, access);
+  }
+  const n = [...draft.changed].filter((id) => draft.get(id)?.type === "text").length;
+  if (!draft.changed.size) return 0;
+  const reactor = engines.get(api);
+  (reactor ? reactor.wrapRemoteApi(api) : api).updateScene({
+    elements: draft.toArray(),
+    captureUpdate: CaptureUpdateAction.NEVER,
+  });
+  log.info(`components: re-measured ${n} instance text element(s) after fonts loaded`);
+  return n;
+}
+
+/** Sub-pixel jitter between measurements isn't a change worth a version bump. */
+function differs(el: El, p: Record<string, unknown>): boolean {
+  const cur = el as unknown as Record<string, unknown>;
+  return Object.entries(p).some(([k, v]) =>
+    typeof v === "number" && typeof cur[k] === "number"
+      ? Math.abs((cur[k] as number) - v) > 0.5
+      : cur[k] !== v,
+  );
+}
+
+/** Re-measures instance text whenever a batch of web fonts finishes loading. */
+function watchComponentFonts(api: Api, schedule: Schedule): () => void {
+  const fonts = typeof document === "undefined" ? undefined : document.fonts;
+  if (!fonts || typeof fonts.addEventListener !== "function") return () => {};
+  let cancel: (() => void) | null = null;
+  let disposed = false;
+  const onLoaded = () => {
+    if (disposed || cancel) return;
+    cancel = schedule(() => {
+      cancel = null;
+      if (disposed) return;
+      try {
+        relayoutComponentText(api);
+      } catch (err) {
+        log.error("components: re-measuring text after font load failed", err);
+      }
+    });
+  };
+  fonts.addEventListener("loadingdone", onLoaded);
+  void fonts.ready?.then(onLoaded);
+  return () => {
+    disposed = true;
+    cancel?.();
+    fonts.removeEventListener("loadingdone", onLoaded);
+  };
+}
 
 export function installComponents(
   api: Api,
@@ -88,6 +173,7 @@ export function installComponents(
     hold.attach(api, reactor);
     engines.set(api, reactor);
     holds.set(api, hold);
+    fontWatchers.set(api, watchComponentFonts(api, opts.schedule ?? nextFrame));
   }
   return reactor;
 }
@@ -104,6 +190,8 @@ export function lineAnchorRule(api: Api): AnchorRule | undefined {
 export function uninstallComponents(api: Api): void {
   engines.get(api)?.dispose();
   engines.delete(api);
+  fontWatchers.get(api)?.();
+  fontWatchers.delete(api);
   anchorRules.delete(api);
   holds.get(api)?.dispose();
   holds.delete(api);

@@ -35,7 +35,7 @@ import {
 } from "./model";
 import { resolveInstance, syncDraft } from "./actions";
 import { currentValue, masterValue, overridable, propOverrides } from "./sync";
-import { layoutBoundText, measureFreeText } from "./text";
+import { layoutBoundText, measureFreeText, wrapFixedText } from "./text";
 
 type TextEl = ExcalidrawTextElement;
 
@@ -194,7 +194,11 @@ function relayoutText(draft: Draft, ids: readonly string[]): void {
       if (laid) draft.update(id, laid.text);
       continue;
     }
-    if (t.autoResize === false) continue;
+    if (t.autoResize === false) {
+      const w = wrapFixedText(t, t.originalText, t.width);
+      draft.update(id, { text: w.text, height: w.height });
+      continue;
+    }
     const m = measureFreeText(t, t.originalText);
     const cx = t.x + t.width / 2;
     const cy = t.y + t.height / 2;
@@ -429,7 +433,9 @@ export function demoteMaster(draft: Draft, masterGroupId: unknown): string {
     draft.update(el.id, { customData: writeTags(el, swapTag(el, cid, tag)) });
   }
   rekeyNested(draft, cid, legacy);
-  syncDraft(draft, [cid]);
+  // The old master becomes an ordinary instance with no property values set, so it shows the
+  // defaults (e.g. only the default branch of a choice) like a freshly inserted instance would.
+  withMaster(draft, cid, () => syncDraft(draft, [cid]), masterGroupId as string);
   return masterGroupId as string;
 }
 

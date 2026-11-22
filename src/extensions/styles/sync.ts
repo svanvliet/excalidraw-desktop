@@ -13,7 +13,7 @@
  */
 import type { ExcalidrawTextElement } from "@excalidraw/excalidraw/element/types";
 import type { El, Patch } from "../reactor/reactor";
-import { layoutBoundText, measureFreeText } from "../components/text";
+import { layoutBoundText, measureFreeText, wrapFixedText } from "../components/text";
 import {
   appliedKeys,
   elementPatchFor,
@@ -111,7 +111,11 @@ export function relayoutText(id: string, access: Pick<StyleAccess, "get" | "patc
     } else access.patch(id, laid.text);
     return;
   }
-  if (t.autoResize === false) return;
+  if (t.autoResize === false) {
+    const w = wrapFixedText(t, t.originalText, t.width);
+    access.patch(id, { text: w.text, height: w.height });
+    return;
+  }
   const m = measureFreeText(t, t.originalText);
   const x =
     t.textAlign === "center"

@@ -58,7 +58,7 @@ import {
   type PropDef,
   type PropValues,
 } from "./model";
-import { layoutBoundText, measureFreeText } from "./text";
+import { layoutBoundText, measureFreeText, wrapFixedText } from "./text";
 
 type TextEl = ExcalidrawTextElement;
 
@@ -351,8 +351,10 @@ function deriveChild(
         if (again) Object.assign(p, again.text);
       }
     } else if (mt.autoResize === false && !containerId) {
-      p.text = typeof ov?.text === "string" ? ov.text : mt.text;
+      const wrapped = wrapFixedText(style, text, p.width as number);
+      p.text = wrapped.text;
       p.originalText = text;
+      p.height = wrapped.height;
     } else {
       const meas = measureFreeText(style, text);
       const boxW = p.width as number;
