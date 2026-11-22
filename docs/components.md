@@ -117,7 +117,15 @@ None of them hold a stale snapshot of an element that the in-place apply could i
   one. Keys that don't apply to the element type (for example `text` on a rectangle) are
   rejected.
 - **Reset** (`reset_overrides`): clears all overrides, or only those for some slots, element
-  ids or keys. The instance follows the master again.
+  ids or keys. The instance follows the master again. With no filters it also clears property
+  values. `resetOverrides(…, { content: false })` resets only the look: style overrides, hidden
+  slots and text sizes (`fs`), and keeps content (`CONTENT_KEYS`: text, image, link), property
+  values and nested values.
+- **UI semantics (FR-67, D-DX21)**: **Reset overrides** in the Component row is the
+  `content: false` reset. It is enabled only when the instance has a style override, and it
+  never touches the master or other instances. Text, images and property values are cleared
+  individually with the per-slot × (which clears everything on that slot) or the property's ×.
+  The agent's `reset_overrides` keeps the full reset.
 - **Detach** (`detach_instance`): removes the tags. The elements keep their group, position and
   current look, and stop following the master.
 
@@ -180,6 +188,13 @@ Masterless edits go through `library.ts`:
 - A library instance records the master's look (`ms`: fill style, stroke width and style,
   sloppiness, edges, font, alignment, arrowheads). These keys can't be overridden, so a direct
   edit to them reverts to `ms`, and `materialize` rebuilds the master with them.
+- **Text size is the exception (FR-67)**: `ms.fontSize` records the master's size, and a direct
+  font-size edit on an instance's text is that instance's own override, `fs` (in master
+  units; the text shows `fs × scale`). It is listed as "font size" and cleared by Reset
+  overrides. `materialize` takes each text slot's size from the recorded `ms.fontSize` (else,
+  for older files, the size most instances show), never from the instance it rebuilds from, and
+  gives an `fs` to instance text that shows another size. Before this, an instance's enlarged
+  text became the master's on the next instance command and spread to every instance.
 
 The definition's `elements` are clones of the master after tagging, so instances inserted
 from it already carry `source: "library"`. `files` lists the image `fileId`s they use. While a
