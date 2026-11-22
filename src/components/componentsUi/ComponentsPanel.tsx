@@ -25,14 +25,14 @@ import { removeMyComponent, renameMyComponent } from "../../lib/componentLibrary
 import { CloseIcon, ExportIcon, SaveIcon } from "../icons";
 import {
   exportLibrary,
-  goToMaster,
+  goToComponent,
   makeFromLibraryItem,
   saveToMyComponents,
   useMyComponents,
 } from "./commands";
 import { placeInstance, placeMyComponent, setDragPayload } from "./insert";
 import { renameComponent } from "./libraryCodec";
-import { libraryMasterEngine, moveMasterToLibrary } from "./libraryMasters";
+import { openMasterEditorForComponent } from "./masterEditStore";
 import { ComponentThumb } from "./thumbnail";
 
 type Api = ExcalidrawImperativeAPI;
@@ -161,11 +161,11 @@ export function ComponentsPanel({
                       dark={doc.dark}
                     />
                   }
-                  hint={edit ? "Click or drag to place an instance" : "Show the master"}
+                  hint={edit ? "Click or drag to place an instance" : "Show it on the canvas"}
                   onActivate={() =>
                     edit
                       ? placeInstance(api, c.info.componentId)
-                      : goToMaster(api, c.info.componentId)
+                      : goToComponent(api, c.info.componentId)
                   }
                   drag={edit ? { source: "doc", id: c.info.componentId } : undefined}
                   renaming={renaming === `doc:${c.info.componentId}`}
@@ -177,25 +177,25 @@ export function ComponentsPanel({
                   }}
                 >
                   <RowButton
-                    label={c.info.masterGroupId ? `Go to the master of ${name}` : `Go to ${name}`}
-                    onClick={() => goToMaster(api, c.info.componentId)}
+                    label={`Go to ${name}`}
+                    onClick={() => goToComponent(api, c.info.componentId)}
                   >
                     <TargetIcon />
                   </RowButton>
+                  {edit && n > 0 && (
+                    <RowButton
+                      label={`Edit the master of ${name}`}
+                      onClick={() => void openMasterEditorForComponent(api, c.info.componentId)}
+                    >
+                      <PencilIcon />
+                    </RowButton>
+                  )}
                   {save && (
                     <RowButton
                       label={`Save ${name} to My components`}
                       onClick={() => void saveToMyComponents(api, c.info.componentId)}
                     >
                       <SaveIcon size={16} />
-                    </RowButton>
-                  )}
-                  {save && libraryMasterEngine() && c.info.masterGroupId && (
-                    <RowButton
-                      label={`Move the master of ${name} to My components (off the canvas)`}
-                      onClick={() => void moveMasterToLibrary(api, c.info.componentId)}
-                    >
-                      <MoveToLibraryIcon />
                     </RowButton>
                   )}
                 </Row>
@@ -454,8 +454,8 @@ function RenameInput({
   );
 }
 
-/** Arrow into a tray: "move to My components". */
-const MoveToLibraryIcon = () => (
+/** Pencil: "edit the master". */
+const PencilIcon = () => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
@@ -465,8 +465,8 @@ const MoveToLibraryIcon = () => (
     strokeLinejoin="round"
     aria-hidden="true"
   >
-    <path d="M12 3v11M8 10l4 4 4-4" />
-    <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" />
+    <path d="M13.5 6.5l4 4" />
   </svg>
 );
 

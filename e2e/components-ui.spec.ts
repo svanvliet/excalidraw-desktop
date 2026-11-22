@@ -5,8 +5,8 @@ import { openStripRow } from "./fixtures/strip";
  * Components UI smoke (docs/components.md § UI, FR-55): make a component with the shortcut, save
  * it to My components from the properties panel, and place it in another drawing from the
  * Components tab. Making a component leaves no master on the canvas: the selection becomes its
- * first instance (FR-64). With library-backed masters, insert places only an instance, Edit
- * master… → Done updates the instance and takes the master away again.
+ * first instance (FR-64). Edit master… opens the master in a temporary overlay canvas over the
+ * drawing (FR-66); Done updates every instance as one undo step, Cancel/Esc changes nothing.
  */
 
 const NS = "excalidrawDesktop.component";
@@ -128,9 +128,111 @@ test("save a component to My components and place it in another drawing", async 
   expect(new Set(texts)).toEqual(new Set(["Card"]));
 });
 
-test("library master: insert, Edit master…, Done updates the instance", async ({ page }) => {
+/** Changes the master's label inside the open overlay, like a user would. */
+async function editOverlayLabel(page: Page, text: string) {
+  await page.waitForFunction(() => window.__masterEditor);
+  await page.evaluate(
+    ([ns, text]) => {
+      const api = window.__masterEditor!;
+      api.updateScene({
+        elements: api.getSceneElementsIncludingDeleted().map((e) => {
+          const role = (e.customData?.[ns] as { role?: string } | undefined)?.role;
+          return role === "master" && e.type === "text"
+            ? { ...e, text, originalText: text, version: e.version + 1 }
+            : e;
+        }),
+        captureUpdate: "IMMEDIATELY" as never,
+      });
+    },
+    [NS, text] as const,
+  );
+}
+
+const texts = async (page: Page) =>
+  (await tagged(page))
+    .filter((e) => e.type === "text")
+    .map((e) => e.text)
+    .sort();
+
+/** A Card plus a second instance placed with the agent tool. */
+async function twoCards(page: Page) {
+  const componentId = await makeCard(page);
+  await page.evaluate(
+    async (componentId) =>
+      window.__e2e!.runSceneTool("insert_instance", {
+        component: componentId,
+        x: 500,
+        y: 120,
+      } as never),
+    componentId,
+  );
+  await expect.poll(() => roles(page)).toEqual(["instance", "instance", "instance", "instance"]);
+  return componentId;
+}
+
+const overlay = (page: Page) => page.locator("[data-testid=master-edit]");
+
+test("Edit master… opens an overlay; Done updates every instance; one undo reverts", async ({
+  page,
+}) => {
   await open(page);
-  expect(await page.evaluate(() => window.__e2e!.libraryMasters)).toBe(true);
+  await twoCards(page);
+  const all = await tagged(page);
+  const group = all.find((e) => e.id === "M")!.groupIds.at(-1)!;
+  await select(
+    page,
+    all.filter((e) => e.groupIds.includes(group)).map((e) => e.id),
+  );
+  await openStripRow(page, "component-props");
+  await page.locator("[data-testid=component-edit-master]:visible").click();
+  await expect(overlay(page)).toBeVisible();
+  await expect(page.getByTestId("master-edit-header")).toContainText("“Component”");
+  await expect(page.getByTestId("master-edit-header")).toContainText("2 instances");
+  // The drawing never holds the master, not even while editing it.
+  expect(await roles(page)).toEqual(["instance", "instance", "instance", "instance"]);
+
+  await editOverlayLabel(page, "Edited");
+  await page.getByTestId("master-edit-done").click();
+  await expect(overlay(page)).toHaveCount(0);
+  await expect.poll(() => texts(page)).toEqual(["Edited", "Edited"]);
+  expect(await roles(page)).toEqual(["instance", "instance", "instance", "instance"]);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => texts(page)).toEqual(["Card", "Card"]);
+});
+
+test("Cancel and Escape leave the drawing untouched", async ({ page }) => {
+  await open(page);
+  await twoCards(page);
+  const before = await page.evaluate(() =>
+    window.__canvas!.getSceneElementsIncludingDeleted().map((e) => [e.id, e.version]),
+  );
+  await page.locator(".excalidraw .sidebar-trigger:visible").first().click();
+  await page.locator("[data-testid=sidebar-tab-components]:visible").click();
+  await page.getByRole("button", { name: "Edit the master of Component", exact: true }).click();
+  await expect(overlay(page)).toBeVisible();
+  await editOverlayLabel(page, "Nope");
+  await page.getByTestId("master-edit-cancel").click();
+  await expect(overlay(page)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Edit the master of Component", exact: true }).click();
+  await expect(overlay(page)).toBeVisible();
+  await page.evaluate(() =>
+    window.__masterEditor!.updateScene({ appState: { selectedElementIds: {} } as never }),
+  );
+  await page.keyboard.press("Escape");
+  await expect(overlay(page)).toHaveCount(0);
+
+  expect(
+    await page.evaluate(() =>
+      window.__canvas!.getSceneElementsIncludingDeleted().map((e) => [e.id, e.version]),
+    ),
+  ).toEqual(before);
+  expect(await texts(page)).toEqual(["Card", "Card"]);
+});
+
+test("library-linked instance: Edit master…, Done updates the instance", async ({ page }) => {
+  await open(page);
   const componentId = await makeCard(page);
   await select(
     page,
@@ -149,27 +251,12 @@ test("library master: insert, Edit master…, Done updates the instance", async 
     (await tagged(page)).map((e) => e.id),
   );
   await page.locator("[data-testid=component-edit-master]:visible").click();
-  await expect(page.locator("[data-testid=master-edit-banner]:visible")).toBeVisible();
-  await expect.poll(async () => (await roles(page)).filter((r) => r === "master").length).toBe(2);
+  await expect(overlay(page)).toBeVisible();
+  await expect(page.getByTestId("master-edit-update-library")).toBeChecked();
+  await editOverlayLabel(page, "Edited");
+  await page.getByTestId("master-edit-done").click();
 
-  // Edit the master's label like a user would; the engine syncs it to the instance.
-  await page.evaluate((ns) => {
-    const api = window.__canvas!;
-    api.updateScene({
-      elements: api.getSceneElementsIncludingDeleted().map((e) => {
-        const role = (e.customData?.[ns] as { role?: string } | undefined)?.role;
-        return role === "master" && e.type === "text"
-          ? { ...e, text: "Edited", originalText: "Edited", version: e.version + 1 }
-          : e;
-      }),
-      captureUpdate: "IMMEDIATELY" as never,
-    });
-  }, NS);
-  await page.locator("[data-testid=master-edit-done]:visible").click();
-
-  await expect(page.locator("[data-testid=master-edit-banner]:visible")).toHaveCount(0);
+  await expect(overlay(page)).toHaveCount(0);
   await expect.poll(() => roles(page)).toEqual(["instance", "instance"]);
-  await expect
-    .poll(async () => (await tagged(page)).find((e) => e.type === "text")?.text)
-    .toBe("Edited");
+  await expect.poll(() => texts(page)).toEqual(["Edited"]);
 });

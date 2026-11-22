@@ -32,10 +32,10 @@ export function toast(api: Api, message: string) {
 }
 
 /**
- * Select a component's master and scroll it into view; when its master lives off-canvas
- * (FR-64), its first top-level instance.
+ * Select a component's first top-level instance and scroll it into view (a master left on the
+ * canvas by an older build, if there is one).
  */
-export function goToMaster(api: Api, componentId: string) {
+export function goToComponent(api: Api, componentId: string) {
   const els = api.getSceneElements() as readonly El[];
   const info = listComponents(els).find((c) => c.componentId === componentId);
   const target = info?.masterGroupId

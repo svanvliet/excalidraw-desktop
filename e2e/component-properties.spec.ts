@@ -124,18 +124,37 @@ test("declare a property on the master; set it on an instance; one undo reverts"
   await select(page, instIds);
   await openStripRow(page, "component-props");
   await tid(page, "component-edit-master").click();
-  await expect(tid(page, "master-edit-banner")).toBeVisible();
-  const masterIds = (await tagged(page)).filter((e) => e.role === "master").map((e) => e.id);
-  expect(masterIds).toHaveLength(2);
-  await select(page, masterIds);
-  await openStripRow(page, "component-props");
-  await tid(page, "propdef-name").fill("Title");
-  await tid(page, "propdef-add").click();
-  await expect(tid(page, "propdef-remove-Title")).toBeVisible();
+  // The master is edited in the overlay (FR-66); declare the property there.
+  await expect(tid(page, "master-edit-header")).toBeVisible();
+  await page.waitForFunction(() => window.__masterEditor);
+  await page.evaluate((ns) => {
+    const api = window.__masterEditor!;
+    const ids = api
+      .getSceneElements()
+      .filter((e) => (e.customData?.[ns] as { role?: string } | undefined)?.role === "master")
+      .map((e) => e.id);
+    const groupId = api
+      .getSceneElements()
+      .find((e) => e.id === ids[0])!
+      .groupIds.at(-1)!;
+    api.updateScene({
+      appState: {
+        selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
+        selectedGroupIds: { [groupId]: true },
+      } as never,
+    });
+  }, NS);
+  const inOverlay = (id: string) =>
+    page.locator(`[data-testid=master-edit] [data-testid=${id}]:visible`);
+  const toggle = inOverlay("component-props-toggle");
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await inOverlay("propdef-name").fill("Title");
+  await inOverlay("propdef-add").click();
+  await expect(inOverlay("propdef-remove-Title")).toBeVisible();
   await tid(page, "master-edit-done").click();
-  await expect
-    .poll(async () => (await tagged(page)).filter((e) => e.role === "master"))
-    .toEqual([]);
+  await expect(tid(page, "master-edit-header")).toHaveCount(0);
+  expect((await tagged(page)).filter((e) => e.role === "master")).toEqual([]);
 
   await select(page, instIds);
   await openStripRow(page, "component-props");

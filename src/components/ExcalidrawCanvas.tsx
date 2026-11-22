@@ -15,7 +15,7 @@ import "@excalidraw/excalidraw/index.css";
 import { ComponentsIcon, LayersIcon } from "./icons";
 import { ComponentsPanel } from "./componentsUi/ComponentsPanel";
 import { handleComponentDragOver, handleComponentDrop } from "./componentsUi/insert";
-import { MasterEditBanner } from "./componentsUi/MasterEditBanner";
+import { MasterEditorHost } from "./componentsUi/MasterEditor";
 import { PropertiesPanelHost } from "./propertiesPanel/PropertiesPanelHost";
 import { PANEL_SECTIONS } from "./propertiesPanel/sections";
 import { LayersPanel } from "./sidebar/LayersPanel";
@@ -307,37 +307,40 @@ export function ExcalidrawCanvas({
     [api, viewOnly, persistLibrary, libraryItems],
   );
 
+  // The master editor is a sibling of the editor root, outside its key and drop handlers.
   return (
-    <div
-      ref={canvasRef}
-      className="excalidraw-canvas"
-      onKeyDownCapture={(e) => handleComponentShortcut(apiRef.current, e)}
-      onDragOverCapture={(e) => handleComponentDragOver(apiRef.current, e)}
-      onDropCapture={(e) => handleComponentDrop(apiRef.current, e)}
-    >
-      <Excalidraw
-        initialData={editorData}
-        excalidrawAPI={handleApi}
-        onChange={handleChange}
-        onLibraryChange={handleLibraryChange}
-        onDuplicate={componentsOnDuplicate}
-        UIOptions={SIDEBAR_UI_OPTIONS}
-        aiEnabled={aiEnabled ?? false}
-        isCollaborating={isCollaborating ?? false}
-        // `undefined` (not false) hands view mode back to the user when promoted.
-        viewModeEnabled={viewOnly ? true : undefined}
-        {...(onPointerUpdate ? { onPointerUpdate } : {})}
-        {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
-        {...(theme ? { theme } : {})}
+    <>
+      <div
+        ref={canvasRef}
+        className="excalidraw-canvas"
+        onKeyDownCapture={(e) => handleComponentShortcut(apiRef.current, e)}
+        onDragOverCapture={(e) => handleComponentDragOver(apiRef.current, e)}
+        onDropCapture={(e) => handleComponentDrop(apiRef.current, e)}
       >
-        <SidebarTabs tabs={sidebarTabs} />
-      </Excalidraw>
-      {api && !viewOnly && (
-        <PropertiesPanelHost api={api} container={canvasRef} sections={PANEL_SECTIONS} />
-      )}
-      {!viewOnly && <MasterEditBanner api={api} />}
-      {api && !viewOnly && <SnapDotsOverlay api={api} enabled={snapArrowAnchors} />}
-    </div>
+        <Excalidraw
+          initialData={editorData}
+          excalidrawAPI={handleApi}
+          onChange={handleChange}
+          onLibraryChange={handleLibraryChange}
+          onDuplicate={componentsOnDuplicate}
+          UIOptions={SIDEBAR_UI_OPTIONS}
+          aiEnabled={aiEnabled ?? false}
+          isCollaborating={isCollaborating ?? false}
+          // `undefined` (not false) hands view mode back to the user when promoted.
+          viewModeEnabled={viewOnly ? true : undefined}
+          {...(onPointerUpdate ? { onPointerUpdate } : {})}
+          {...(libraryReturnUrl ? { libraryReturnUrl } : {})}
+          {...(theme ? { theme } : {})}
+        >
+          <SidebarTabs tabs={sidebarTabs} />
+        </Excalidraw>
+        {api && !viewOnly && (
+          <PropertiesPanelHost api={api} container={canvasRef} sections={PANEL_SECTIONS} />
+        )}
+        {api && !viewOnly && <SnapDotsOverlay api={api} enabled={snapArrowAnchors} />}
+      </div>
+      {!viewOnly && <MasterEditorHost api={api} theme={theme} onPointerUpdate={onPointerUpdate} />}
+    </>
   );
 }
 

@@ -39,7 +39,7 @@
 | DX-9  | UX: Pinned sidebar survives the AI panel                                                      | ✅     | A pinned Library or app tab stays docked when the AI panel opens and closes (docking breakpoint 760px); narrow windows reopen it when the panel closes (FR-62, D-DX16). Vitest + `e2e/sidebar-ai.spec.ts` green.                                                                                                                                                                                                                                                  |
 | DX-10 | UX wave: properties-panel strip (accordion at the panel top)                                  | ✅     | Our sections are compact rows (icon, title, summary, inline primary) at the top of the native panel; single-open accordion remembered in settings (FR-63, D-DX17). Vitest `PropertiesPanelHost` + `e2e/panel-strip.spec.ts` green.                                                                                                                                                                                                                                |
 | DX-11 | UX wave: concept demotions (progressive disclosure)                                           | ✅     | Style and Data rows only when used, "+" row for Apply style / Add data / Make stack; Styles tab removed (rename/delete in the Style row); "Stack" naming; Connection row; Properties inside Component (FR-65, D-DX19). Vitest `PropertiesPanelHost` + `sections` and Playwright green.                                                                                                                                                                            |
-| DX-12 | DX wave 3: Masterless components + master-edit overlay                                        | 🟡     | Engine (L5): create makes the first instance, `applyMasterEdit` (one undo step), load-time demotion of legacy masters, `ms` look record, masterless agent tools + `get_component_master` / `edit_component_master` (FR-64, D-DX18). Vitest + collab real test + `e2e/components-ui.spec.ts` green. Overlay (L6, FR-66) pending.                                                                                                                                   |
+| DX-12 | DX wave 3: Masterless components + master-edit overlay                                        | ✅     | Engine (L5): create makes the first instance, `applyMasterEdit` (one undo step), legacy masters demoted on load, masterless agent tools (FR-64, D-DX18). Overlay (L6): Edit master… opens a temporary canvas with dimmed context; Done = one undo, Cancel no-op (FR-66, D-DX20). Vitest + Playwright green.                                                                                                                                                       |
 
 ## Acceptance checks (per milestone)
 
@@ -216,6 +216,13 @@
 - [x] Style / Data / Stack gating, "Stack" and "Connection" titles, one Component row (Vitest `sections.test.ts`).
 - [x] Plain rectangle shows Component + "+"; "+" reveals Style and Data (Playwright `panel-strip.spec.ts`); Add data via "+" (`shape-data-anchors.spec.ts`); Apply style, rename, Update style (`styles.spec.ts`); "Make Stack" in the Layout menu (`tidy-arrows.spec.ts`); properties edited in the Component row (`component-properties.spec.ts`).
 
+### UX wave — Master editor overlay (DX-12)
+
+- [x] Making a component leaves one instance and no master on the canvas (Playwright `components-ui.spec.ts`).
+- [x] Edit master… opens the overlay with its header; changing the master and Done updates every instance; one Cmd/Ctrl+Z reverts (Playwright `components-ui.spec.ts`, Vitest `componentsUi.real.test.tsx`).
+- [x] Cancel and Esc leave the drawing unchanged; Done on a linked component updates My components (Playwright, Vitest).
+- [x] Scene build: alignment, context copies dimmed and locked, context stripped on Done (Vitest `masterEditScene.test.ts`).
+
 ## Changelog of status changes
 
 | Date (UTC) | Milestone  | From → To | Note                                                                                                                                   |
@@ -246,3 +253,4 @@
 | 2026-11-22 | DX-10      | — → ✅    | Properties-panel strip (FR-63, D-DX17).                                                                                                |
 | 2026-11-22 | DX-11      | — → ✅    | Concept demotions (FR-65, D-DX19).                                                                                                     |
 | 2026-11-23 | DX-12      | — → 🟡    | Masterless component engine (FR-64, D-DX18); overlay (FR-66) pending.                                                                  |
+| 2026-11-23 | DX-12      | 🟡 → ✅   | Master editor overlay (FR-66, D-DX20).                                                                                                 |
