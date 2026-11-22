@@ -19,6 +19,7 @@ import type { BinaryFileData, BinaryFiles, LibraryItem } from "@excalidraw/excal
 import { Draft, newId, ToolError, type El } from "../../agent/scene/draft";
 import { componentsOf, createComponent, insertInstance } from "../../extensions/components/actions";
 import { componentMembers } from "../../extensions/components/sync";
+import { masterSnapshot, withMaster } from "../../extensions/components/library";
 import {
   listComponents,
   tagOf,
@@ -92,13 +93,18 @@ function filesFor(els: readonly El[], files: BinaryFiles | undefined) {
   return Object.keys(out).length ? out : undefined;
 }
 
-/** The live master of `componentId` in `elements`, or throws. */
+/**
+ * The master of `componentId` in `elements`: the live one, else rebuilt from an instance (its
+ * master lives off-canvas, FR-64). Throws when the component isn't in the drawing.
+ */
 function masterOf(
   elements: readonly El[],
   componentId: string,
 ): { info: ComponentInfo; els: El[] } {
   const info = listComponents(elements).find((c) => c.componentId === componentId);
-  if (!info?.masterGroupId) throw new ToolError(`No component "${componentId}" on this canvas`);
+  if (!info || (!info.masterGroupId && !info.instances.length))
+    throw new ToolError(`No component "${componentId}" on this canvas`);
+  if (!info.masterGroupId) return { info, els: masterSnapshot(elements, componentId).elements };
   const ids = new Set(info.masterIds);
   return { info, els: elements.filter((e) => ids.has(e.id) && !e.isDeleted) };
 }
@@ -170,13 +176,14 @@ export function insertMyComponent(
   at: { x: number; y: number },
   opts: { libraryBacked?: boolean } = {},
 ): InsertedMyComponent {
-  const existing = componentsOf(draft).find((c) => c.componentId === entry.id && c.masterGroupId);
-  if (existing) {
-    const instance = insertInstance(draft, entry.id, at);
+  const existing = componentsOf(draft).find((c) => c.componentId === entry.id);
+  if (existing?.masterGroupId || existing?.instances.length) {
+    // Already in this drawing: its own design wins (the master is rebuilt for the insert only).
+    const instance = withMaster(draft, entry.id, () => insertInstance(draft, entry.id, at));
     return {
       componentId: entry.id,
       placedMaster: false,
-      masterGroupId: existing.masterGroupId!,
+      masterGroupId: existing.masterGroupId,
       instance,
       files: [],
     };
@@ -227,7 +234,7 @@ export function insertMyComponent(
     // Library-backed: the master stays in My components. Place the instance at the point, then
     // take the scratch master away again; the tag tells the engine not to promote the instance.
     const instance = insertInstance(draft, entry.id, at);
-    for (const id of placed.masterIds) draft.update(id, { isDeleted: true });
+    for (const id of placed.masterIds) draft.discard(id);
     for (const id of instance.ids) {
       const el = draft.get(id)!;
       draft.update(id, { customData: withLibrarySource(el, entry.id, entry.id) });

@@ -5,6 +5,7 @@ import type { BinaryFileData } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/excalidraw/data/transform";
 import { Draft, ToolError, type El } from "../../agent/scene/draft";
 import { createComponent, insertInstance } from "../../extensions/components/actions";
+import { demoteMaster } from "../../extensions/components/library";
 import { listComponents, tagOf } from "../../extensions/components/model";
 import {
   entriesToExcalidrawLib,
@@ -74,6 +75,23 @@ describe("libraryCodec", () => {
     expect(res.placedMaster).toBe(false);
     const [c] = listComponents(draft.toArray());
     expect(c.instances).toHaveLength(1);
+  });
+
+  it("saves and inserts a component whose master lives off-canvas (FR-64)", () => {
+    const { draft, made } = withComponent();
+    demoteMaster(draft, made.masterGroupId);
+    const [before] = listComponents(draft.toArray());
+    expect(before.masterGroupId).toBeNull();
+    const entry = masterToEntry(draft.toArray(), undefined, made.componentId, 5);
+    expect(entry.elements).toHaveLength(3);
+    expect(topLeft(entry.elements)).toEqual({ x: 0, y: 0 });
+    const res = insertMyComponent(draft, entry, { x: 0, y: 400 });
+    expect(res).toMatchObject({ placedMaster: false, masterGroupId: null });
+    const [c] = listComponents(draft.toArray());
+    expect(c.masterGroupId).toBeNull();
+    expect(c.instances).toHaveLength(2);
+    // No master parts were left behind (not even as tombstones).
+    expect(draft.toArray().some((e) => tagOf(e)?.role === "master")).toBe(false);
   });
 
   it("inserts a library-backed instance alone, tagged with its library id", () => {

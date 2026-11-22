@@ -9,6 +9,7 @@ import type { DragEvent } from "react";
 import type { El } from "../../agent/scene/draft";
 import { insertInstance } from "../../extensions/components/actions";
 import { runComponentCommand } from "../../extensions/components/host";
+import { masterSnapshot, withMaster } from "../../extensions/components/library";
 import { listComponents } from "../../extensions/components/model";
 import { getMyComponents, type MyComponent } from "../../lib/componentLibraryStore";
 import { insertMyComponent } from "./libraryCodec";
@@ -69,10 +70,14 @@ function selectGroup(api: Api, groupId: string, ids: readonly string[]) {
   });
 }
 
+/** The component's master: live, or rebuilt from an instance when it lives off-canvas. */
 function masterEls(api: Api, componentId: string): El[] {
   const els = api.getSceneElements() as readonly El[];
   const info = listComponents(els).find((c) => c.componentId === componentId);
-  const ids = new Set(info?.masterIds ?? []);
+  if (!info) return [];
+  if (!info.masterGroupId)
+    return info.instances.length ? masterSnapshot(els, componentId).elements : [];
+  const ids = new Set(info.masterIds);
   return els.filter((e) => ids.has(e.id));
 }
 
@@ -80,7 +85,9 @@ function masterEls(api: Api, componentId: string): El[] {
 export function placeInstance(api: Api, componentId: string, center = viewportCenter(api)) {
   const { w, h } = sizeOf(masterEls(api, componentId));
   const res = runComponentCommand(api, (d) =>
-    insertInstance(d, componentId, { x: center.x - w / 2, y: center.y - h / 2 }),
+    withMaster(d, componentId, () =>
+      insertInstance(d, componentId, { x: center.x - w / 2, y: center.y - h / 2 }),
+    ),
   );
   if (res) selectGroup(api, res.groupId, res.ids);
   return res;
