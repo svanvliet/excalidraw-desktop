@@ -262,6 +262,28 @@ export function stableId(...parts: string[]): string {
   return `cmp${h1.toString(36)}${h2.toString(36)}`;
 }
 
+/**
+ * Content-addressed ids for the inner groups (nested instances, inner groups) of one master or
+ * instance of `componentId`: the same inner group gets the same id in every copy (it depends
+ * only on the component, the smallest slot inside it and its depth). Masterless components key
+ * nested property values (`npv`) by these, and a rebuilt master uses them as its inner groups.
+ */
+export function canonicalInner(children: readonly El[], componentId: string): Map<string, string> {
+  const first = new Map<string, { slot: string; depth: number }>();
+  for (const c of children) {
+    const t = tagFor(c, componentId);
+    if (!t) continue;
+    for (let j = 0; j < t.gi; j++) {
+      const h = c.groupIds[j];
+      const cur = first.get(h);
+      if (!cur || t.slot < cur.slot) first.set(h, { slot: t.slot, depth: t.gi - j });
+    }
+  }
+  return new Map(
+    [...first].map(([h, v]) => [h, stableId(componentId, "inner", String(v.depth), v.slot)]),
+  );
+}
+
 /** Public summary of one component (UI + agent). */
 export interface ComponentInfo {
   componentId: string;
